@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
+
 using System.Linq;
 using System.Text;
 using System.IO;
@@ -8,23 +10,15 @@ using System.Xml.Serialization;
 
 namespace Roboto
 {
+    
+
     public class settings
     {
+        private static string foldername = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Roboto\";
+        private static string filename = foldername + "settings.xml";
 
-        public class quote
-        {
-            public string by = "";
-            public string text = "";
-            public DateTime on = DateTime.Now;
-
-            internal quote(){}
-            public quote(String by, String text)
-            {
-                this.by = by;
-                this.text = text;
-
-            }
-        }
+        //module list. Static, as dont want to serialise the plugins, just the data.
+        public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>(); 
         
         public List<replacement> replacements = new List<replacement>();
 
@@ -33,198 +27,222 @@ namespace Roboto
         public string botUserName = "";
         public int waitDuration = 60; //wait duration for long polling. 
         public int lastUpdate = 0; //last update index, needs to be passed back with each call. 
-        public int chatID = 0; //id for the chat to send/recieve from
-
-        //word craft storage
-        public List<String> craft_words = new List<string>();
-        public List<quote> quotes = new List<quote>();
-
-
+        
+        //generic plugin storage
+        public List<Modules.RobotoModuleDataTemplate> pluginData = new List<Modules.RobotoModuleDataTemplate>();
+        public List<chat> chatData = new List<chat>();
 
         //stuff
-        Random randGen = new Random();
+        static Random randGen = new Random();
+
+        /// <summary>
+        /// Load all the plugins BEFORE loading the settings file. We need to be able to enumerate the extra types when loading the XML. 
+        /// </summary>
+        public static void loadPlugins()
+        {
+            //load all plugins by looking for all objects derived from the abstract class. 
+            Assembly currAssembly = Assembly.GetExecutingAssembly();
+
+            foreach (Type type in currAssembly.GetTypes())
+            {
+                if (type.IsClass && !type.IsAbstract && type.IsSubclassOf(typeof(Modules.RobotoModuleTemplate)))
+                {
+                    Console.WriteLine("Registering plugin " + type.Name);
+
+                    if (pluginExists(type))
+                    {
+                        //TODO - this is going to be looking for the template, not the datatemplate!
+                        //Console.WriteLine("Registering plugin " + type.Name);
+                    }
+                    else
+                    {
+                        Modules.RobotoModuleTemplate plugin = (Modules.RobotoModuleTemplate)Activator.CreateInstance(type);
+                        Console.WriteLine("Added " + plugin.GetType().ToString());
+                        plugins.Add(plugin);
+                        plugin.init();
+                    }
+
+                }
+            }
+        }
+
 
         /// <summary>
         /// Makes sure there is some sample data in place. 
         /// </summary>
         public void validate()
         {
-            if (craft_words.Count < 5)
+            foreach (Modules.RobotoModuleTemplate plugin in plugins)
             {
-                addCraftWord("Bilge");
-                addCraftWord("Rabbit");
-                addCraftWord("Moose");
-                addCraftWord("Ramp");
-                addCraftWord("Clown");
-                addCraftWord("Glimp");
-                addCraftWord("Hop");
-                addCraftWord("Mop");
+                plugin.initData();
             }
 
-            if (botUserName == "") { botUserName = "Roboto_its_alive_bot"; }
+            if (telegramAPIURL == null) {telegramAPIURL = "https://api.telegram.org/bot";};
+            if (telegramAPIKey == null) { telegramAPIKey = "ENTERYOURAPIKEYHERE"; };
+            if (botUserName == "") { botUserName = "Roboto_bot_name"; }
 
         }
 
 
         public static settings load()
         {
+
             try
             {
-                XmlSerializer deserializer = new XmlSerializer(typeof(settings));
-                TextReader textReader = new StreamReader(@"sett.ings");
+                XmlSerializer deserializer = new XmlSerializer(typeof(settings), getPluginDataTypes());
+                TextReader textReader = new StreamReader(filename);
                 settings setts = (settings)deserializer.Deserialize(textReader);
                 textReader.Close();
                 return setts;
             }
 
 
-            catch (System.IO.FileNotFoundException)
-            {
-                //create a new one
-                settings sets = new settings();
-
-                #region populate defaults
-                // TODO remove
-                sets.telegramAPIURL = "https://api.telegram.org/bot";
-                sets.telegramAPIKey = "137327694:AAGqvSh1YEAN_GgHYf9Cx0rFwuX6uXufhNU";
-                
-                //sets.replacements.Add(new replacement(@"F:\eps\", @"\\davepine\eps2\"));
-                //sets.replacements.Add(new replacement(@"D:\eps\", @"\\davepine\eps\"));
-
-                #endregion
-                return sets;
-
-            }
-
-
-
-                
-
             catch (Exception e)
             {
-                string n = e.ToString();
-            }
+                if (e is System.IO.FileNotFoundException || e is System.IO.DirectoryNotFoundException)
+                {
+                    //create a new one
+                    settings sets = new settings();
 
+                    return sets;
+                }
+                else
+                {
+                    Console.WriteLine(e.ToString());
+                }
+            }
             return null;
 
+        }
+
+        public static Type[] getPluginDataTypes()
+        {
+            Type[] extraTypes = new Type[plugins.Count];
+            for (int i = 0; i < plugins.Count; i++)
+            {
+                extraTypes[i] = plugins[i].pluginDataType;
+            }
+            return extraTypes;
         }
 
         public void save()
         {
 
-            XmlSerializer serializer = new XmlSerializer(typeof(settings));
-            TextWriter textWriter = new StreamWriter(@"sett.ings");
+
+            XmlSerializer serializer = new XmlSerializer(typeof(settings), getPluginDataTypes() );
+
+            //create folder if doesnt exist:
+            DirectoryInfo di = new DirectoryInfo(foldername);
+            if (!di.Exists)
+            {
+                di.Create();
+            }
+
+            TextWriter textWriter = new StreamWriter(filename);
             serializer.Serialize(textWriter, this);
             textWriter.Close();
         }
 
-        public void addCraftWord(string word)
+
+
+        public static int getRandom(int maxInt)
         {
-            craft_words.Add(word);
+            return randGen.Next(maxInt);
         }
 
-        public bool removeCraftWord(string word)
-        {
-           return craft_words.Remove(word);
-        }
-
-        public String craftWord()
-        {
-            String result = "";
-            List<String> pickedWords = new List<string>();
-            //pick a random word
-            
-
-            int words = randGen.Next(4) + 1;
-            for (int i = 0; i < words; i++)
-            {
-                int wordID = randGen.Next(craft_words.Count);
-                String word = craft_words[wordID];
-                if (!pickedWords.Contains(word))
-                {
-                    if (result != "") { result += " "; }
-                    result += word;
-                    pickedWords.Add(word);
-                }
-            }
 
 
-            //add a number like 20% of the time
-            if (randGen.Next(100) < 20)
-            {
-                result += " " + randGen.Next(9).ToString();
-                //add another number like 10% of the time (so 2 digit
-                if (randGen.Next(100) < 10)
-                {
-                    result += randGen.Next(9).ToString();
-                }
-
-                //add a 0 like 20% of the time a numbers been added
-                if (randGen.Next(100) < 20)
-                {
-                    result += "0";
-                    //add another 0 like 70% of the time we have a nr and a 0
-                    if (randGen.Next(100) < 70)
-                    {
-                        result += "0";
-                    }
-
-                }
-            }
-            return result;
-
-        }
-
-        public bool addQuote(string by, string text)
-        {
-            if (!quoteExists(by, text))
-            {
-                quotes.Add(new quote(by, text));
-                save();
-                return true;
-            }
-            return false;
-
-        }
-
-        public bool quoteExists(string by, string text)
-        {
-            foreach (quote q in quotes)
-            {
-                if (q.by == by && q.text == text)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// gets a FORMATTED string for the quote
-        /// </summary>
-        /// <returns></returns>
-        public string getQuote()
-        {
-            if (quotes.Count > 0)
-            {
-                quote q = quotes[randGen.Next(quotes.Count)];
-                return(
-                    "*" + q.by + "* said \r\n" +
-                    q.text + "\r\n" +
-                    "on " + q.on.ToString("g"));
-            }
-            else
-            {
-                return "No quotes in DB";
-            }
-        }
+        
 
         public int getUpdateID()
         {
             return lastUpdate + 1;
         }
+
+        public void registerData(Modules.RobotoModuleDataTemplate data)
+        {
+
+            if (typeDataExists(data.GetType()) == false)
+            {
+                pluginData.Add(data);
+                Console.WriteLine("Added data of type " + data.GetType().ToString());
+            }
+            else
+            {
+                Console.WriteLine("Plugin data of type " + data.GetType().ToString() + " already exists!");
+            }
+
+        }
+
+        /// <summary>
+        /// Check if a plugins datastore exists
+        /// </summary>
+        /// <param name="t"></param>
+        /// <returns></returns>
+        public bool typeDataExists(Type t)
+        {
+            bool found = false;
+            foreach (Modules.RobotoModuleDataTemplate existing in pluginData)
+            {
+                if (t.GetType() == existing.GetType())
+                {
+                    
+                    found = true;
+                }
+            }
+            return found;
+        }
+
+        /// <summary>
+        /// check if a plugin Type exists
+        /// </summary>
+        /// <param name="t"></param>
+        /// <returns></returns>
+        public static bool pluginExists(Type t)
+        {
+            bool found = false;
+            foreach (Modules.RobotoModuleTemplate existing in plugins)
+            {
+                if (t.GetType() == existing.GetType())
+                {
+
+                    found = true;
+                }
+            }
+            return found;
+        }
+
+        public T getPluginData<T>()
+        {
+            foreach (Modules.RobotoModuleDataTemplate existing in pluginData)
+            {
+                if (existing.GetType() == typeof(T))
+                {
+                    //Console.WriteLine("Plugin data of type " + data.GetType().ToString() + " already exists!");
+                    T retVal = (T) Convert.ChangeType(existing, typeof(T));
+                    return retVal;
+                }
+            }
+
+            Console.WriteLine("Couldnt find plugin data of type " + typeof(T).ToString());
+            throw new InvalidDataException("Couldnt find plugin data of type " + typeof(T).ToString());
+            
+        }
+
+
+        public Modules.RobotoModuleDataTemplate getPluginData(Type pluginDataType)
+        {
+            foreach (Modules.RobotoModuleDataTemplate existing in pluginData)
+            {
+                if (existing.GetType() == pluginDataType)
+                {
+                    return existing;
+                }
+            }
+
+            Console.WriteLine("Couldnt find plugin data of type " + pluginDataType.ToString());
+            throw new InvalidDataException("Couldnt find plugin data of type " + pluginDataType.ToString());
+        }
     }
-
-
 
 }

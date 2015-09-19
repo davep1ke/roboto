@@ -51,6 +51,12 @@
     </DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <DebugSymbols>false</DebugSymbols>
+    <UseVSHostingProcess>false</UseVSHostingProcess>
+    <AllowedReferenceRelatedFileExtensions>
+      <!-- Prevent default XML and PDB files copied to output in RELEASE. Only *.allowedextension files will be included (which doesn't exist).-->
+      .allowedextension
+    </AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
   <PropertyGroup>
     <ManifestCertificateThumbprint>B8D43D020BC5BB2683741370F8418E701E1361E7</ManifestCertificateThumbprint>
@@ -59,10 +65,16 @@
     <ManifestKeyFile>Roboto_TemporaryKey.pfx</ManifestKeyFile>
   </PropertyGroup>
   <PropertyGroup>
-    <GenerateManifests>true</GenerateManifests>
+    <GenerateManifests>false</GenerateManifests>
   </PropertyGroup>
   <PropertyGroup>
-    <SignManifests>true</SignManifests>
+    <SignManifests>false</SignManifests>
+  </PropertyGroup>
+  <PropertyGroup>
+    <TargetZone>LocalIntranet</TargetZone>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Newtonsoft.Json">
@@ -74,13 +86,22 @@
     <Reference Include="System.Xml.Linq" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="chat.cs" />
+    <Compile Include="message.cs" />
+    <Compile Include="Modules\mod_birthdays.cs" />
+    <Compile Include="Modules\mod_wordcraft.cs" />
+    <Compile Include="Modules\RobotoModuleTemplate.cs" />
+    <Compile Include="Modules\RobotoModuleDataTemplate.cs" />
+    <Compile Include="Modules\RobotoModuleChatDataTemplate.cs" />
+    <Compile Include="Modules\mod_quote.cs" />
     <Compile Include="objects.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="TelegramAPI.cs" />
     <Compile Include="settings.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
-    <None Include="Roboto_TemporaryKey.pfx" />
+    <None Include="Properties\app.manifest" />
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include=".NETFramework,Version=v4.0">
