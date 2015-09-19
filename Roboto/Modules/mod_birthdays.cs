@@ -55,6 +55,13 @@ namespace Roboto.Modules
 
         }
 
+        public override string getMethodDescriptions()
+        {
+            return
+                "birthday_add - Adds a birthday reminder for the current chat" + "\n\r" +
+                "birthday_remove - Removes a birthday reminder for the current chat";
+        }
+
         public override void initData()
         {
             try

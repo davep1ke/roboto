@@ -75,12 +75,24 @@ namespace Roboto
             foreach (Modules.RobotoModuleTemplate plugin in plugins)
             {
                 plugin.initData();
+                if (plugin.pluginDataType == null)
+                {
+                    Console.WriteLine("Plugin " + plugin.GetType().ToString() + " has no data type assosciated with it!");
+                    throw new InvalidDataException("Plugin " + plugin.GetType().ToString() + " has no data type assosciated with it!");
+
+                    //TODO - check if this datatype is a subclass of RobotoModuleDataTemplate
+
+                }
             }
 
             if (telegramAPIURL == null) {telegramAPIURL = "https://api.telegram.org/bot";};
             if (telegramAPIKey == null) { telegramAPIKey = "ENTERYOURAPIKEYHERE"; };
             if (botUserName == "") { botUserName = "Roboto_bot_name"; }
 
+            Console.WriteLine("=========");
+            Console.WriteLine("All Plugins initialised");
+            Console.WriteLine(Modules.mod_standard.getAllMethodDescriptions());
+            Console.WriteLine("=========");
         }
 
 
@@ -89,6 +101,7 @@ namespace Roboto
 
             try
             {
+
                 XmlSerializer deserializer = new XmlSerializer(typeof(settings), getPluginDataTypes());
                 TextReader textReader = new StreamReader(filename);
                 settings setts = (settings)deserializer.Deserialize(textReader);

@@ -34,6 +34,15 @@ namespace Roboto.Modules
 
         }
 
+        public override string getMethodDescriptions()
+        {
+            return
+                "craft - Crafts a random phrase badger" + "\n\r" +
+                "craft_add - Adds a birthday reminder for the current chat" + "\n\r" +
+                "craft_remove - Removes a birthday reminder for the current chat"
+                ;
+        }
+
         public override void initData()
         {
             try

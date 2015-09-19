@@ -16,6 +16,7 @@ namespace Roboto.Modules
         public int backgroundMins = 10;
 
         public Type pluginDataType;
+        public Type pluginChatDataType;
        
         /// <summary>
         /// Initialise any code
@@ -25,6 +26,11 @@ namespace Roboto.Modules
         /// Initialise general data
         /// </summary>
         public abstract void initData();
+        /// <summary>
+        /// Return the list of valid commands for the plugin (returned during /operations, and on startup for sending to BotFather
+        /// </summary>
+        /// <returns></returns>
+        public abstract string getMethodDescriptions();
         /// <summary>
         /// Initialise chat specific data
         /// </summary>

@@ -53,6 +53,13 @@ namespace Roboto.Modules
 
         }
 
+        public override string getMethodDescriptions()
+        {
+            return
+                "addquote - Adds a quote for the current chat" + "\n\r" +
+                "quote - Picks a randon quote from the chat's database";
+        }
+
         public override void initData()
         {
             try
@@ -75,17 +82,13 @@ namespace Roboto.Modules
 
         private bool addQuote(string by, string text)
         {
-
             if (!quoteExists(by, text))
             {
-
-
                 localData.quotes.Add(new mod_quote_quote(by, text));
                 Roboto.Settings.save();
                 return true;
             }
             return false;
-
         }
 
         private bool quoteExists(string by, string text)

@@ -163,7 +163,6 @@ save - Saves anything that hasnt been saved to disk yet
 
                                             message m = new message(update_TK);
 
-                                            #region actions
                                             //now decide what to do with this stuff.
                                             bool processed = false;
                                             //TODO - do this in priority order :(
@@ -176,15 +175,6 @@ save - Saves anything that hasnt been saved to disk yet
                                                 }
                                             }
 
-
-                                            #region save
-                                            if (m.text_msg.StartsWith("/save"))
-                                            {
-                                                Settings.save();
-                                                TelegramAPI.SendMessage(m.chatID, "Saved settings");
-                                            }
-                                            #endregion
-                                            #endregion
                                         }
                                         //dont know what other update types we want to monitor? 
 
