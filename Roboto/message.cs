@@ -17,6 +17,9 @@ namespace Roboto
         public int chatID;
         public String text_msg;
         public String userFirstName;
+        public String userSurname;
+        public String userFullName;
+        public int userID = -1;
 
         //is this in reply to another text that we sent? 
         public bool isReply = false;
@@ -30,7 +33,10 @@ namespace Roboto
             message_id = update_TK.SelectToken(".message_id").Value<int>();
             chatID = update_TK.SelectToken(".chat.id").Value<int>();
             text_msg = update_TK.SelectToken(".text").Value<String>();
+            userID = update_TK.SelectToken(".from.id").Value<int>();
             userFirstName = update_TK.SelectToken(".from.first_name").Value<String>();
+            userSurname = update_TK.SelectToken(".from.last_name").Value<String>();
+            userFullName = userFirstName + " " + userSurname;
 
             //in reply to...
             JToken replyMsg_TK = update_TK.SelectToken(".reply_to_message");

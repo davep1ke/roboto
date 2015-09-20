@@ -48,23 +48,6 @@ namespace Roboto
             args.Cancel = true; //prevent actual close. Wait for loop to exit.
         }
 
-        //Commands
-        /*
-          
-BotFather:
-
-/setcommands
-         
-craft - Wordcraft something
-craft_add - Adds a word to the craft dictionary (prompts)
-craft_remove - Removes a word from the craft dictionary (prompts)
-quote - Says a quote
-addquote - Adds a quote to the quote DB (prompts)
-birthday - Add a birthday to the database (will be announced on the day)
-reminder - Adds a reminder that will be announced on the day
-save - Saves anything that hasnt been saved to disk yet 
-          
-         */
 
 
         /// <summary>
@@ -124,36 +107,35 @@ save - Saves anything that hasnt been saved to disk yet
                                     //open the response and parse it using JSON. Probably only one result, but should be more? 
                                     foreach (JToken token in jo.SelectTokens("result.[*]"))//jo.Children()) //) records[*].data.importedPath"
                                     {
-                                        
-                                        //Sample Message looks like this:
-                                        /*
-                                          "update_id": 824722492,
-                                          "message": {
-                                                "message_id": 2,
-                                                "from": {
-                                                      "id": 120498152,
-                                                      "first_name": "Phil",
-                                                      "last_name": "Hornby"
-                                                },
-                                                "chat": {
-                                                      "id": 120498152,
-                                                      "first_name": "Phil",
-                                                      "last_name": "Hornby"
-                                                },
-                                                "date": 1441754934,
-                                                "text": "/start"
-                                             }
-                                         */
-
                                         Console.WriteLine(token.ToString());
                                         
+
+                                        //Find out what kind of message this is.
+
                                         //TOP LEVEL TOKENS
                                         JToken updateID_TK = token.First;
                                         JToken update_TK = updateID_TK.Next.First;
-
-                                        int updateID = updateID_TK.First.Value<int>();
                                         
-                                        Settings.lastUpdate = updateID;
+
+                                        //is this for a group chat?
+                                        
+                                        int chatID = update_TK.SelectToken("chat.id").Value<int>();
+                                        chat chatData = null;
+                                        if (chatID < 0)
+                                        {
+                                            //find the chat 
+                                            chatData = Settings.getChat(chatID);
+                                            //new chat, add
+                                            if (chatData == null)
+                                            {
+                                                chatData = Settings.addChat(chatID);
+                                            }
+                                            if (chatData == null)
+                                            {
+                                                throw new DataMisalignedException("Something went wrong creating the new chat data");
+                                            }
+                                        }
+
 
                                         //Do we have an incoming message?
                                         if (update_TK.Path == "result[0].message" && update_TK.SelectToken(".text") != null)
@@ -170,7 +152,7 @@ save - Saves anything that hasnt been saved to disk yet
                                             {
                                                 if (plugin.chatHook && (!processed  || plugin.chatEvenIfAlreadyMatched))
                                                 {
-                                                    plugin.chatEvent(m);
+                                                    plugin.chatEvent(m, chatData);
 
                                                 }
                                             }
@@ -178,6 +160,11 @@ save - Saves anything that hasnt been saved to disk yet
                                         }
                                         //dont know what other update types we want to monitor? 
 
+
+
+                                        //Flag the update ID as processed.
+                                        int updateID = updateID_TK.First.Value<int>();
+                                        Settings.lastUpdate = updateID;
                                     }
                                 }
                             }

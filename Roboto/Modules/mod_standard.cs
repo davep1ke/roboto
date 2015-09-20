@@ -9,26 +9,17 @@ using System.Xml.Serialization;
 namespace Roboto.Modules
 {
 
-    /// <summary>
-    /// Data to be stored in the XML store
-    /// </summary>
-    [XmlType("mod_standard_data")]
-    [Serializable]
-    public class mod_standard_data : RobotoModuleDataTemplate
-    {
-        internal mod_standard_data() { }
-    }
- 
+
     public class mod_standard : RobotoModuleTemplate
     {
 
         public override void init()
         {
-            pluginDataType = typeof(mod_standard_data);
+            pluginDataType = null;
 
             chatHook = true;
             chatEvenIfAlreadyMatched = false;
-            chatPriority = 5;
+            chatPriority = 1;
 
         }
 
@@ -58,14 +49,14 @@ namespace Roboto.Modules
 
         }
 
-        public override void initChatData()
+        public override void initChatData(chat c)
         {
-            
+            //no specific data, as the enabled flag is on the core chat object.
         }
 
        
 
-        public override bool chatEvent(message m)
+        public override bool chatEvent(message m, chat c = null)
         {
             bool processed = false;
 

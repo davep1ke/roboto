@@ -28,7 +28,7 @@ namespace Roboto
         public int waitDuration = 60; //wait duration for long polling. 
         public int lastUpdate = 0; //last update index, needs to be passed back with each call. 
         
-        //generic plugin storage
+        //generic plugin storage. NB: Chats DO want to be serialised. 
         public List<Modules.RobotoModuleDataTemplate> pluginData = new List<Modules.RobotoModuleDataTemplate>();
         public List<chat> chatData = new List<chat>();
 
@@ -68,22 +68,20 @@ namespace Roboto
 
 
         /// <summary>
-        /// Makes sure there is some sample data in place. 
+        /// Basic checks on the data. 
         /// </summary>
         public void validate()
         {
             foreach (Modules.RobotoModuleTemplate plugin in plugins)
             {
-                plugin.initData();
-                if (plugin.pluginDataType == null)
+                plugin.initData(); //this data probably already exists if loaded by XML, but if not, allow the plugin to create it. 
+                if (plugin.pluginDataType != null)
                 {
-                    Console.WriteLine("Plugin " + plugin.GetType().ToString() + " has no data type assosciated with it!");
-                    throw new InvalidDataException("Plugin " + plugin.GetType().ToString() + " has no data type assosciated with it!");
-
                     //TODO - check if this datatype is a subclass of RobotoModuleDataTemplate
-
                 }
+                //TODO - do same for chat data types. 
             }
+
 
             if (telegramAPIURL == null) {telegramAPIURL = "https://api.telegram.org/bot";};
             if (telegramAPIKey == null) { telegramAPIKey = "ENTERYOURAPIKEYHERE"; };
@@ -93,9 +91,19 @@ namespace Roboto
             Console.WriteLine("All Plugins initialised");
             Console.WriteLine(Modules.mod_standard.getAllMethodDescriptions());
             Console.WriteLine("=========");
+
+
+            foreach (chat c in chatData)
+            {
+                c.initPlugins();
+            }
+
         }
 
-
+        /// <summary>
+        /// Load all our data from XML
+        /// </summary>
+        /// <returns></returns>
         public static settings load()
         {
 
@@ -128,16 +136,26 @@ namespace Roboto
 
         }
 
+        /// <summary>
+        /// Get all the custom types used, for serialising / deserialising data to XML.
+        /// </summary>
+        /// <returns></returns>
         public static Type[] getPluginDataTypes()
         {
-            Type[] extraTypes = new Type[plugins.Count];
-            for (int i = 0; i < plugins.Count; i++)
+            //put into a list first
+            List<Type> customTypes = new List<Type>();
+            foreach (Modules.RobotoModuleTemplate plugin in plugins)
             {
-                extraTypes[i] = plugins[i].pluginDataType;
+                if (plugin.pluginDataType != null) { customTypes.Add(plugin.pluginDataType);}
+                if (plugin.pluginChatDataType != null) { customTypes.Add(plugin.pluginChatDataType); }
             }
-            return extraTypes;
+            
+            return customTypes.ToArray();
         }
 
+        /// <summary>
+        /// Save all data to XML
+        /// </summary>
         public void save()
         {
 
@@ -256,6 +274,43 @@ namespace Roboto
             Console.WriteLine("Couldnt find plugin data of type " + pluginDataType.ToString());
             throw new InvalidDataException("Couldnt find plugin data of type " + pluginDataType.ToString());
         }
+
+        /// <summary>
+        /// find a chat by its chat ID
+        /// </summary>
+        /// <param name="chat_id"></param>
+        /// <returns></returns>
+        public chat getChat(int chat_id)
+        {
+            foreach (chat c in chatData)
+            {
+                if (c.chatID == chat_id)
+                {
+                    return c;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Add data about a chat to the store. 
+        /// </summary>
+        /// <param name="chat_id"></param>
+        public chat addChat(int chat_id)
+        {
+            if (getChat(chat_id) == null)
+            {
+                Console.WriteLine("Creating data for chat " + chat_id.ToString());
+                chat chatObj = new chat(chat_id);
+                chatData.Add(chatObj);
+                return chatObj;
+            }
+            else
+            {
+                throw new InvalidDataException("Chat already exists!");
+            }
+        }
+
     }
 
 }

@@ -7,7 +7,16 @@ namespace Roboto.Modules
 {
     public abstract class RobotoModuleChatDataTemplate
     {
-        public Type pluginType;
+        public int chatID = -1;
         internal RobotoModuleChatDataTemplate() {} //for serialisation
+        protected RobotoModuleChatDataTemplate(int chatID)
+        {
+            this.chatID = chatID;
+        }
+        public bool isValid()
+        {
+            if (chatID == -1) { return false; }
+            return true;
+        }
     }
 }

@@ -34,7 +34,7 @@ namespace Roboto.Modules
         /// <summary>
         /// Initialise chat specific data
         /// </summary>
-        public abstract void initChatData();
+        public abstract void initChatData(chat c);
         /// <summary>
         /// If creating a sample settings file, populate some dummy data in a RobotoModuleDataTemplate class, and store in settings
         /// using storeModuleData
@@ -46,7 +46,7 @@ namespace Roboto.Modules
         /// <param name="chatID"></param>
         /// <param name="chatString"></param>
         /// <param name="userName"></param>
-        public abstract bool chatEvent(message m);
+        public abstract bool chatEvent(message m, chat c = null);
         /// <summary>
         /// Called periodically, if Settings.RegisterBackgroundHook has been called during init
         /// </summary>
@@ -89,6 +89,19 @@ namespace Roboto.Modules
             RobotoModuleDataTemplate data = getPluginData();
             data.lastBackgroundUpdate = update;
 
+        }
+
+        internal void validateChatData(chat chat)
+        {
+            if (pluginChatDataType != null)
+            {
+                RobotoModuleChatDataTemplate chatData = chat.getPluginData(pluginChatDataType);
+                if (chatData == null || !chatData.isValid())
+                {
+                    Console.WriteLine("chat data was invalid!");
+                    throw new InvalidOperationException("Chat Data was Invalid");
+                }
+            }
         }
     }
 }

@@ -16,7 +16,15 @@ namespace Roboto
     /// </summary>
     public static class TelegramAPI
     {
-        public static void SendMessage(int chatID, string text, bool markDown = false, int replyToMessageID = -1)
+        /// <summary>
+        /// Send a message. Returns the ID of the send message
+        /// </summary>
+        /// <param name="chatID"></param>
+        /// <param name="text"></param>
+        /// <param name="markDown"></param>
+        /// <param name="replyToMessageID"></param>
+        /// <returns></returns>
+        public static int SendMessage(int chatID, string text, bool markDown = false, int replyToMessageID = -1)
         {
 
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage" +
@@ -25,25 +33,46 @@ namespace Roboto
             if (replyToMessageID != -1) { postURL += "&reply_to_message_id=" + replyToMessageID; }
             if (markDown == true) { postURL += "&parse_mode=Markdown"; }
 
-            sendPOST(postURL);
+            JObject response = sendPOST(postURL);
 
+            //get the message ID
+            int messageID = response.SelectToken("result.message_id").Value<int>();
+            return messageID;
         }
 
 
-        public static void GetReply(int chatID, string text, int replyToMessageID = -1, bool selective = false)
+        public static int GetReply(int chatID, string text, int replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
         {
 
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage" +
                    "?chat_id=" + chatID +
-                   "&text=" + text +
-                   "&reply_markup={\"force_reply\":true,\"selective\":" + selective.ToString().ToLower() + "}";
+                   "&text=" + text;
+
+            if (answerKeyboard == "")
+            {
+                postURL += "&reply_markup={\"force_reply\":true,\"selective\":" + selective.ToString().ToLower() + "}";
+            }
+            else
+            {
+                postURL += "&reply_markup={" + answerKeyboard + "}";
+            }
+
 
             if (replyToMessageID != -1) { postURL += "&reply_to_message_id=" + replyToMessageID; }
             //TODO - should URLEncode the text.
-            sendPOST(postURL);
+            JObject response = sendPOST(postURL);
 
+            //get the message ID
+            int messageID = response.SelectToken("result.message_id").Value<int>();
+            return messageID;
         }
-        public static void sendPOST(String postURL)
+
+        /// <summary>
+        /// Sends a POST message, returns the reply object
+        /// </summary>
+        /// <param name="postURL"></param>
+        /// <returns></returns>
+        public static JObject sendPOST(String postURL)
         {
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(postURL);
 
@@ -76,6 +105,8 @@ namespace Roboto
                                 //throw new WebException("Failure code from web service");
 
                             }
+
+                            return jo;
                         }
                     }
                 }
@@ -84,6 +115,32 @@ namespace Roboto
             {
                 throw new WebException("Error during method call", e);
             }
+            return null;
         }
+
+        
+        public static string createKeyboard(List<string> options)
+        {
+            //["Answer1"],["Answer3"],["Answer12"],["Answer1"],["Answer3"],["Answer12"]
+            string reply = "\"keyboard\":[";
+            bool firstItem = true;
+            foreach (String s in options)
+            {
+                if (!firstItem)
+                {
+                    reply += ",";
+                }
+                else
+                {
+                    firstItem = false;
+                }
+                reply += "[\"" + s + "\"]";
+            }
+            reply += "],\"one_time_keyboard\":true,\"resize_keyboard\":true";
+
+            return reply;
+        }
+
+
     }
 }

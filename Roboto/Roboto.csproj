@@ -88,6 +88,7 @@
   <ItemGroup>
     <Compile Include="chat.cs" />
     <Compile Include="message.cs" />
+    <Compile Include="Modules\mod_xyzzy.cs" />
     <Compile Include="Modules\mod_standard.cs" />
     <Compile Include="Modules\mod_birthdays.cs" />
     <Compile Include="Modules\mod_wordcraft.cs" />

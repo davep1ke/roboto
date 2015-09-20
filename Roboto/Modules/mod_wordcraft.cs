@@ -16,7 +16,7 @@ namespace Roboto.Modules
     public class mod_wordcraft_data : RobotoModuleDataTemplate
     {
         public List<String> words = new List<String>();
-        internal mod_wordcraft_data() { }
+        //internal mod_wordcraft_data() { }
     }
 
     
@@ -51,6 +51,7 @@ namespace Roboto.Modules
             }
             catch (InvalidDataException)
             {
+                //Data doesnt exist, create, populate with sample data and register for saving
                 localData = new mod_wordcraft_data();
                 sampleData();
                 Roboto.Settings.registerData(localData);
@@ -58,14 +59,14 @@ namespace Roboto.Modules
 
         }
 
-        public override void initChatData()
+        public override void initChatData(chat c)
         {
             
         }
 
        
 
-        public override bool chatEvent(message m)
+        public override bool chatEvent(message m, chat c = null)
         {
             bool processed = false;
 

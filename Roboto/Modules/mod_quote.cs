@@ -13,10 +13,10 @@ namespace Roboto.Modules
     /// </summary>
     [XmlType("mod_quote_data")]
     [Serializable]
-    public class mod_quote_data : RobotoModuleDataTemplate
+    public class mod_quote_data : RobotoModuleChatDataTemplate
     {
         public List<mod_quote_quote> quotes = new List<mod_quote_quote>();
-        internal mod_quote_data() { }
+        //internal mod_quote_data() { }
     }
 
     /// <summary>
@@ -41,7 +41,7 @@ namespace Roboto.Modules
 
     public class mod_quote : RobotoModuleTemplate
     {
-        private mod_quote_data localData;
+        //TODO - Chat announcements? How do you know when someone is "back" though? 
 
         public override void init()
         {
@@ -62,27 +62,27 @@ namespace Roboto.Modules
 
         public override void initData()
         {
-            try
+
+        }
+
+        public override void initChatData(chat c)
+        {
+            mod_quote_data chatData = c.getPluginData<mod_quote_data>();
+
+            if (chatData == null)
             {
-                localData = Roboto.Settings.getPluginData<mod_quote_data>();
-            }
-            catch (InvalidDataException)
-            {
-                localData = new mod_quote_data();
-                sampleData();
-                Roboto.Settings.registerData(localData);
+                //Data doesnt exist, create, populate with sample data and register for saving
+                chatData = new mod_quote_data();
+                c.addChatData(chatData);
             }
 
         }
 
-        public override void initChatData()
+        private bool addQuote(string by, string text, chat c)
         {
-            
-        }
+            mod_quote_data localData = c.getPluginData<mod_quote_data>();
 
-        private bool addQuote(string by, string text)
-        {
-            if (!quoteExists(by, text))
+            if (!quoteExists(by, text, c))
             {
                 localData.quotes.Add(new mod_quote_quote(by, text));
                 Roboto.Settings.save();
@@ -91,8 +91,9 @@ namespace Roboto.Modules
             return false;
         }
 
-        private bool quoteExists(string by, string text)
+        private bool quoteExists(string by, string text, chat c)
         {
+            mod_quote_data localData = c.getPluginData<mod_quote_data>();
             foreach (mod_quote_quote q in localData.quotes)
             {
                 if (q.by == by && q.text == text)
@@ -107,8 +108,9 @@ namespace Roboto.Modules
         /// gets a FORMATTED string for the quote
         /// </summary>
         /// <returns></returns>
-        private string getQuote()
+        private string getQuote(chat c)
         {
+            mod_quote_data localData = c.getPluginData<mod_quote_data>();
             if (localData.quotes.Count > 0)
             {
 
@@ -125,33 +127,34 @@ namespace Roboto.Modules
         }
 
 
-        public override bool chatEvent(message m)
+        public override bool chatEvent(message m, chat c = null)
         {
             bool processed = false;
-
-            if (m.text_msg.StartsWith("/addquote"))
+            if (c != null)
             {
-                TelegramAPI.GetReply(m.chatID, "Who is the quote by", m.message_id, true);
-                processed = true;
+                if (m.text_msg.StartsWith("/addquote"))
+                {
+                    TelegramAPI.GetReply(m.chatID, "Who is the quote by", m.message_id, true);
+                    processed = true;
+                }
+                else if (m.isReply && m.replyOrigMessage == "Who is the quote by" && m.replyOrigUser == Roboto.Settings.botUserName)
+                {
+                    TelegramAPI.GetReply(m.chatID, "What was the quote from " + m.text_msg, m.message_id, true);
+                    processed = true;
+                }
+                else if (m.isReply && m.replyOrigMessage.StartsWith("What was the quote from ") && m.replyOrigUser == Roboto.Settings.botUserName)
+                {
+                    string quoteBy = m.replyOrigMessage.Replace("What was the quote from ", "");
+                    bool success = addQuote(quoteBy, m.text_msg,c);
+                    TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
+                    processed = true;
+                }
+                else if (m.text_msg.StartsWith("/quote"))
+                {
+                    TelegramAPI.SendMessage(m.chatID, getQuote(c), true, m.message_id);
+                    processed = true;
+                }
             }
-            else if (m.isReply && m.replyOrigMessage == "Who is the quote by" && m.replyOrigUser == Roboto.Settings.botUserName)
-            {
-                TelegramAPI.GetReply(m.chatID, "What was the quote from " + m.text_msg, m.message_id, true);
-                processed = true;
-            }
-            else if (m.isReply && m.replyOrigMessage.StartsWith("What was the quote from ") && m.replyOrigUser == Roboto.Settings.botUserName)
-            {
-                string quoteBy = m.replyOrigMessage.Replace("What was the quote from ", "");
-                bool success = addQuote(quoteBy, m.text_msg);
-                TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
-                processed = true;
-            }
-            else if (m.text_msg.StartsWith("/quote"))
-            {
-                TelegramAPI.SendMessage(m.chatID, getQuote(), true, m.message_id);
-                processed = true;
-            }
-            
             return processed;
         }
 
@@ -160,11 +163,11 @@ namespace Roboto.Modules
             throw new NotImplementedException();
         }
 
-
         public override void sampleData()
         {
-            localData.quotes.Add(new mod_quote_quote("Michael Bluth", "I've made a huge mistake"));
+          
         }
+
 
     }
 }
