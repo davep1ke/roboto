@@ -64,7 +64,7 @@ namespace Roboto.Modules
     [Serializable]
     public class mod_xyzzy_data : RobotoModuleChatDataTemplate
     {
-        public enum statusTypes { Stopped, Setup_NrQs, Invites, Question, Judging }
+        public enum statusTypes { Stopped, SetGameLength, Invites, Question, Judging }
         public statusTypes status = statusTypes.Stopped;
         public List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
 
@@ -145,18 +145,16 @@ namespace Roboto.Modules
                     if (player == tzar)
                     {
                         TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text);
-                    }//TODO - only send cards to players, not tzar
-                    //else
-                    //{
-
-                    int questionMsg = TelegramAPI.GetReply(player.playerID, tzar.name + " asks: "
-                        + "\n\r" + question.text, -1,true, player.getAnswerKeyboard(localData));
-
-                    //we are expecting a reply to this:
-                    localData.expectedReplies.Add(new mod_xyzzy_expectedReply(questionMsg, player.playerID , chatID, ""));
-
-                    //}
+                    }
+                    else
+                    {
+                        int questionMsg = TelegramAPI.GetReply(player.playerID, tzar.name + " asks: "
+                            + "\n\r" + question.text, -1, true, player.getAnswerKeyboard(localData));
+                        //we are expecting a reply to this:
+                        localData.expectedReplies.Add(new mod_xyzzy_expectedReply(questionMsg, player.playerID, chatID, ""));
+                    }
                 }
+
                 //todo - should this be winner stays on, or round-robbin?
                 lastPlayerAsked = playerPos;
                 currentQuestion = remainingQuestions[0];
@@ -173,6 +171,7 @@ namespace Roboto.Modules
         {
             mod_xyzzy_coredata localData = getLocalData();
             mod_xyzzy_player player = getPlayer(playerID);
+            mod_xyzzy_card question = localData.getQuestionCard(currentQuestion);
             //make sure the response is in the list of cards the player has
             mod_xyzzy_card answerCard = null;
             foreach (string cardUID in player.cardsInHand)
@@ -187,7 +186,7 @@ namespace Roboto.Modules
 
             if (answerCard == null)
             {
-                TelegramAPI.SendMessage(playerID, "Not a valid answer! Reply to the origianl message again, using the keyboard");
+                TelegramAPI.SendMessage(playerID, "Not a valid answer! Reply to the original message again, using the keyboard");
                 return false;
             }
             else
@@ -198,17 +197,42 @@ namespace Roboto.Modules
                 {
                     throw new InvalidDataException("Card couldnt be selected for some reason!");
                 }
+                else
+                {
+                    //just check if this needs more responses:
+                    if (player.selectedCards.Count == question.nrAnswers)
+                    {
+                        //remove the expected reply. 
+                        mod_xyzzy_expectedReply playerReply = null;
+                        foreach (mod_xyzzy_expectedReply reply in localData.expectedReplies)
+                        {
+                            if (reply.chatID == chatID && reply.playerID == playerID)
+                            {
+                                playerReply = reply;
+                            }
+                        }
+                        if (playerReply != null) { localData.expectedReplies.Remove(playerReply); }
+                    }
+                    else
+                    {
+                        //more responses needed
+                        int questionMsg = TelegramAPI.GetReply(player.playerID, "Pick your next card", -1, true, player.getAnswerKeyboard(localData));
+                        //dont need to add expected reply, one already there. 
+                    }
+                }
             }
 
             //have all responses been recieved? 
-            if (outstandingResponses().Count == 0)
-            {
-                beginJudging();
-            }
+            if (outstandingResponses().Count == 0) { beginJudging(); }
 
             return true;
         }
 
+
+        /// <summary>
+        /// Calculate which players still need to responsd.
+        /// </summary>
+        /// <returns></returns>
         private List<mod_xyzzy_player> outstandingResponses()
         {
             List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
@@ -555,20 +579,27 @@ namespace Roboto.Modules
                     //Start a new game!
                     chatData.reset();
                     localData.clearExpectedReplies(c.chatID);
-                    chatData.status = mod_xyzzy_data.statusTypes.Invites;
+                    chatData.status = mod_xyzzy_data.statusTypes.SetGameLength;
                     //add the player that started the game
                     chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
 
                     //send out invites
-                    TelegramAPI.GetReply(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave at any time - you will be included next time a question is asked!", -1, true);
+                    TelegramAPI.GetReply(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave" +
+                        "at any time - you will be included next time a question is asked. You will need to open a private chat to " + 
+                        Roboto.Settings.botUserName + " if you haven't got one yet - unfortunately I am a stupid bot and can't do it myself :(" 
+                        , -1, true);
 
                     //confirm number of questions
-                    TelegramAPI.GetReply(m.chatID, "How many questions do you want the round to last for? -1 for infinite", m.message_id, true);
+                    int nrQuestionID = TelegramAPI.GetReply(m.userID , "How many questions do you want the round to last for? -1 for infinite", m.message_id, true);
+                    localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, ""));
+
                 }
 
                 //Set up the game, once we get a reply from the user. 
-                else if ((m.isReply && m.replyOrigMessage.StartsWith("How many questions do you want the round to last for?") && m.replyOrigUser == Roboto.Settings.botUserName))
+                else if (chatData.status == mod_xyzzy_data.statusTypes.SetGameLength && expectedInReplyTo != null)
                 {
+                    localData.clearExpectedReplies(c.chatID);
+
                     int questions;
 
                     if (int.TryParse(m.text_msg, out questions) && questions >= -1)
@@ -644,6 +675,8 @@ namespace Roboto.Modules
                 //player joining
                 else if (m.text_msg.StartsWith("/xyzzy_join"))
                 {
+                    //TODO - try send a test message. If it fails, tell the user to open a 1:1 chat.
+
                     bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
                     if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
                     else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }

@@ -115,7 +115,10 @@ namespace Roboto
                                         //TOP LEVEL TOKENS
                                         JToken updateID_TK = token.First;
                                         JToken update_TK = updateID_TK.Next.First;
-                                        
+
+                                        //Flag the update ID as processed.
+                                        int updateID = updateID_TK.First.Value<int>();
+                                        Settings.lastUpdate = updateID;
 
                                         //is this for a group chat?
                                         
@@ -162,9 +165,7 @@ namespace Roboto
 
 
 
-                                        //Flag the update ID as processed.
-                                        int updateID = updateID_TK.First.Value<int>();
-                                        Settings.lastUpdate = updateID;
+                                       
                                     }
                                 }
                             }
