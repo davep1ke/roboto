@@ -127,6 +127,7 @@ namespace Roboto.Modules
         internal void askQuestion()
         {
             mod_xyzzy_coredata localData = getLocalData();
+            localData.clearExpectedReplies(chatID); //shouldnt be needed, but handy if we are forcing a question in debug.
 
             if (remainingQuestions.Count > 0)
             {
@@ -211,7 +212,10 @@ namespace Roboto.Modules
                                 playerReply = reply;
                             }
                         }
-                        if (playerReply != null) { localData.expectedReplies.Remove(playerReply); }
+                        if (playerReply != null) 
+                        { 
+                            localData.expectedReplies.Remove(playerReply); 
+                        }
                     }
                     else
                     {
@@ -223,7 +227,10 @@ namespace Roboto.Modules
             }
 
             //have all responses been recieved? 
-            if (outstandingResponses().Count == 0) { beginJudging(); }
+            if (outstandingResponses().Count == 0) 
+            { 
+                beginJudging(); 
+            }
 
             return true;
         }
@@ -285,8 +292,8 @@ namespace Roboto.Modules
             mod_xyzzy_player tzar = players[lastPlayerAsked];
             //get all the responses for the keyboard, and the chat message
             List<string> responses = new List<string>();
-            string chatMsg = "All answers recieved! " + tzar.name + " to judge!" + "\n\r" + 
-                "Question: " + q.text + "\n\r";
+            string chatMsg = "All answers recieved! " + tzar.name + " to judge." + "\n\r" +
+                "Question: " + q.text + "\n\r" + "\n\r";
             foreach (mod_xyzzy_player p in players) 
             {
                 //handle multiple answers for a question 
@@ -298,7 +305,7 @@ namespace Roboto.Modules
                     answer += card.text;
                 }
                 responses.Add(answer);
-                chatMsg += answer + "\n\r";
+                chatMsg += "  - " + answer + "\n\r";
             }
             responses.Sort(); //sort so that player order isnt same each time.
 
@@ -590,7 +597,7 @@ namespace Roboto.Modules
                         , -1, true);
 
                     //confirm number of questions
-                    int nrQuestionID = TelegramAPI.GetReply(m.userID , "How many questions do you want the round to last for? -1 for infinite", m.message_id, true);
+                    int nrQuestionID = TelegramAPI.GetReply(m.userID, "How many questions do you want the round to last for&#63; (-1 for infinite)", m.message_id, true);
                     localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, ""));
 
                 }
@@ -598,12 +605,14 @@ namespace Roboto.Modules
                 //Set up the game, once we get a reply from the user. 
                 else if (chatData.status == mod_xyzzy_data.statusTypes.SetGameLength && expectedInReplyTo != null)
                 {
-                    localData.clearExpectedReplies(c.chatID);
+                    
 
                     int questions;
 
                     if (int.TryParse(m.text_msg, out questions) && questions >= -1)
                     {
+                        localData.clearExpectedReplies(c.chatID);
+
                         if (questions > localData.questions.Count || questions == -1) { questions = localData.questions.Count; }
 
                         //pick n questions and put them in the deck
@@ -622,6 +631,7 @@ namespace Roboto.Modules
                         int expectedMessageID = TelegramAPI.GetReply(m.userID, "OK, to start the game once enough players have joined reply to this with \"start\". You'll be sent a message when a user joins.", -1, true, keyboard);
                         //only one message expecting a reply at this point, so no need for data. 
                         localData.expectedReplies.Add(new mod_xyzzy_expectedReply(expectedMessageID, m.userID, c.chatID, ""));
+                        chatData.status = mod_xyzzy_data.statusTypes.Invites;
                     }
                     else
                     {

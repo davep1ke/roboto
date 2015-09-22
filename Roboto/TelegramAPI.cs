@@ -60,11 +60,22 @@ namespace Roboto
 
             if (replyToMessageID != -1) { postURL += "&reply_to_message_id=" + replyToMessageID; }
             //TODO - should URLEncode the text.
-            JObject response = sendPOST(postURL);
+            try
+            {
+                JObject response = sendPOST(postURL);
+                int messageID = response.SelectToken("result.message_id").Value<int>();
+                return messageID;
+            }
+            catch (WebException e)
+            {
+                Console.WriteLine("Couldnt send message to " + chatID.ToString());
+                return -1;
+
+            }
+
 
             //get the message ID
-            int messageID = response.SelectToken("result.message_id").Value<int>();
-            return messageID;
+            
         }
 
         /// <summary>
