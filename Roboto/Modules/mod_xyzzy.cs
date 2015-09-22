@@ -296,16 +296,19 @@ namespace Roboto.Modules
                 "Question: " + q.text + "\n\r" + "\n\r";
             foreach (mod_xyzzy_player p in players) 
             {
-                //handle multiple answers for a question 
-                string answer = "";
-                foreach (string cardUID in p.selectedCards)
+                if (p != tzar)
                 {
-                    mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                    if (answer != "") {answer += " >> ";}
-                    answer += card.text;
+                    //handle multiple answers for a question 
+                    string answer = "";
+                    foreach (string cardUID in p.selectedCards)
+                    {
+                        mod_xyzzy_card card = localData.getAnswerCard(cardUID);
+                        if (answer != "") { answer += " >> "; }
+                        answer += card.text;
+                    }
+                    responses.Add(answer);
+                    chatMsg += "  - " + answer + "\n\r";
                 }
-                responses.Add(answer);
-                chatMsg += "  - " + answer + "\n\r";
             }
             responses.Sort(); //sort so that player order isnt same each time.
 
@@ -591,7 +594,7 @@ namespace Roboto.Modules
                     chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
 
                     //send out invites
-                    TelegramAPI.GetReply(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave" +
+                    TelegramAPI.GetReply(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
                         "at any time - you will be included next time a question is asked. You will need to open a private chat to " + 
                         Roboto.Settings.botUserName + " if you haven't got one yet - unfortunately I am a stupid bot and can't do it myself :(" 
                         , -1, true);

@@ -29,26 +29,52 @@ namespace Roboto
 
         public message(JToken update_TK)
         {
-            //get the message details
-            message_id = update_TK.SelectToken(".message_id").Value<int>();
-            chatID = update_TK.SelectToken(".chat.id").Value<int>();
-            text_msg = update_TK.SelectToken(".text").Value<String>();
-            userID = update_TK.SelectToken(".from.id").Value<int>();
-            userFirstName = update_TK.SelectToken(".from.first_name").Value<String>();
-            userSurname = update_TK.SelectToken(".from.last_name").Value<String>();
-            userFullName = userFirstName + " " + userSurname;
-
-            //in reply to...
-            JToken replyMsg_TK = update_TK.SelectToken(".reply_to_message");
-            if (replyMsg_TK != null)
+            try
             {
-                isReply = true;
-                replyOrigMessage = replyMsg_TK.SelectToken(".text").Value<String>();
-                replyOrigUser = replyMsg_TK.SelectToken(".from.username").Value<String>();
-                replyMessageID = replyMsg_TK.SelectToken(".message_id").Value<int>();
+                //get the message details
+                message_id = update_TK.SelectToken(".message_id").Value<int>();
+                chatID = update_TK.SelectToken(".chat.id").Value<int>();
+                text_msg = update_TK.SelectToken(".text").Value<String>();
+                userID = update_TK.SelectToken(".from.id").Value<int>();
+
+
+                userFirstName = getNullableString(update_TK.SelectToken(".from.first_name"));
+                userSurname = getNullableString(update_TK.SelectToken(".from.last_name"));
+                userFullName = userFirstName + " " + userSurname;
+
+                //in reply to...
+                JToken replyMsg_TK = update_TK.SelectToken(".reply_to_message");
+                if (replyMsg_TK != null)
+                {
+                    isReply = true;
+                    replyOrigMessage = replyMsg_TK.SelectToken(".text").Value<String>();
+                    replyOrigUser = replyMsg_TK.SelectToken(".from.username").Value<String>();
+                    replyMessageID = replyMsg_TK.SelectToken(".message_id").Value<int>();
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine("Error parsing message " + e.ToString());
+
             }
 
         }
+
+        public string getNullableString(JToken token)
+        {
+            string rtn = "";
+
+            if (token != null)
+            {
+                rtn = token.Value<String>();
+            }
+
+            return rtn;
+
+        }
+        
+
+
 
     }
 }
