@@ -55,6 +55,17 @@ namespace Roboto.Modules
             return null;
         }
 
+        public List<String> getPackFilterList()
+        {
+            //include "all"
+            List<String> packs = new List<string>();
+            foreach (mod_xyzzy_card q in questions)
+            {
+                packs.Add(q.category.Trim());
+            }
+            return packs.Distinct().ToList();
+        }
+
     }
 
     /// <summary>
@@ -64,11 +75,12 @@ namespace Roboto.Modules
     [Serializable]
     public class mod_xyzzy_data : RobotoModuleChatDataTemplate
     {
-        public enum statusTypes { Stopped, SetGameLength, Invites, Question, Judging }
+        public List<String> packFilter = new List<string>{"Base"};
+        public enum statusTypes { Stopped, SetGameLength, setPackFilter, Invites, Question, Judging }
         public statusTypes status = statusTypes.Stopped;
         public List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
-
-        public int lastPlayerAsked = -1;
+        public int enteredQuestionCount = -1;
+        public int lastPlayerAsked = -1; //todo - should be an ID!
         
         //Store these here, per-chat, so that theres no overlap between chats. Could also help if we want to filter card sets later. Bit heavy on memory, probably. 
         public List<String> remainingQuestions = new List<string>();
@@ -94,6 +106,17 @@ namespace Roboto.Modules
             }
             return null;
         }
+
+        internal mod_xyzzy_player getPlayer(string p)
+        {
+            foreach (mod_xyzzy_player existing in players)
+            {
+                if (existing.name.Trim() == p) { return existing; }
+            }
+            return null;
+        }
+
+
 
         public mod_xyzzy_coredata getLocalData()
         {
@@ -274,10 +297,16 @@ namespace Roboto.Modules
         /// <returns></returns>
         internal bool allPlayersAnswered()
         {
+            
+
             //TODO - remove the tzar from this!
             foreach (mod_xyzzy_player p in players)
             {
-                if (p.selectedCards.Count < getLocalData().getQuestionCard(currentQuestion).nrAnswers) { return false; }
+                if (p != players[lastPlayerAsked])
+                {
+                    //if so, have we got one? 
+                    if (p.selectedCards.Count < getLocalData().getQuestionCard(currentQuestion).nrAnswers) { return false; }
+                }
             }
             return true;
 
@@ -312,7 +341,7 @@ namespace Roboto.Modules
             }
             responses.Sort(); //sort so that player order isnt same each time.
 
-            string keyboard = TelegramAPI.createKeyboard(responses);
+            string keyboard = TelegramAPI.createKeyboard(responses,1);
             int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
             localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
 
@@ -352,7 +381,7 @@ namespace Roboto.Modules
             {
                 //give the winning player a point. 
                 winner.wins++;
-                string message = winner.name + " wins a point! There are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
+                string message = winner.name + " wins a point with " + chosenAnswer + ". There are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
                 foreach (mod_xyzzy_player p in players)
                 {
                     message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
@@ -370,6 +399,143 @@ namespace Roboto.Modules
                 return false;
             }
             return true;
+        }
+
+
+        /// <summary>
+        /// Check consistenct of game state
+        /// </summary>
+        internal void check()
+        {
+            mod_xyzzy_coredata localData = getLocalData();
+            List<mod_xyzzy_expectedReply> repliesToRemove = new List<mod_xyzzy_expectedReply>();
+
+            //is the tzar valid?
+            if (lastPlayerAsked >= players.Count) { lastPlayerAsked = 0; }
+
+            //responses from non-existent players
+            foreach (mod_xyzzy_expectedReply reply in localData.expectedReplies)
+            {
+                if (reply.chatID == chatID)
+                {
+                    if (getPlayer(reply.playerID) == null)
+                    {
+                        repliesToRemove.Add(reply);
+                    }
+                }
+            }
+            foreach (mod_xyzzy_expectedReply r in repliesToRemove)
+            {
+                localData.expectedReplies.Remove(r);
+            }
+
+
+
+            //current status
+            //TODO - pad this out more
+            //TODO - call regularly. 
+            //TODO - does the tzar exist?
+            //TODO - check when removing the tzar
+            switch (status) 
+            {
+                case statusTypes.Question :
+                    if (allPlayersAnswered())
+                    {
+                        beginJudging();
+                    }
+                    break;
+            }
+            
+        }
+
+        /// <summary>
+        /// Ask the organiser which packs they want to play with. Option to continue, or to select all packs. 
+        /// </summary>
+        /// <param name="m"></param>
+        internal void setPackFilter(message m)
+        {
+            mod_xyzzy_coredata localData = getLocalData();
+
+            //did they actually give us an answer? 
+            if (m.text_msg == "All")
+            {
+                packFilter.Clear();
+                packFilter.AddRange(localData.getPackFilterList());
+            }
+            else if (m.text_msg == "None")
+            {
+                packFilter.Clear();
+            }
+            else if (!localData.getPackFilterList().Contains(m.text_msg))
+            {
+                TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", false, m.message_id);
+            }
+            else
+            {
+                //toggle the pack
+                if (packFilter.Contains(m.text_msg))
+                {
+                    packFilter.Remove(m.text_msg);
+                }
+                else
+                {
+                    packFilter.Add(m.text_msg);
+                }
+            }
+            
+        }
+
+        public void sendPackFilterMessage(message m)
+        {
+            mod_xyzzy_coredata localData = getLocalData();
+            String response = "The following packs are available, and their current status is as follows:" + "\n\r" + getPackFilterStatus() +
+             "You can toggle the messages using the keyboard below, or click Continue to start the game";
+            
+            
+            //Now build up keybaord
+            List<String> keyboardResponse = new List<string> { "Continue", "All", "None" };
+            foreach (string packName in localData.getPackFilterList())
+            {
+                keyboardResponse.Add(packName);
+            }
+
+            //now send the new list. 
+            string keyboard = TelegramAPI.createKeyboard(keyboardResponse,3);//todo columns
+            TelegramAPI.GetReply(m.userID, response, -1, true, keyboard);
+            //NB: Should already be an expected response here, as we havent cleared it from last time. 
+        }
+
+
+        public bool packEnabled(string packName)
+        {
+            if (packFilter.Contains("*") || packFilter.Contains(packName))
+            {
+                return true;
+            }
+            return false;
+
+        }
+
+        internal string getPackFilterStatus()
+        {
+            //Now build up a message to the user
+            string response = "";
+            mod_xyzzy_coredata localData = getLocalData();
+            foreach (string packName in localData.getPackFilterList())
+            {
+                //is it currently enabled
+                if (packEnabled(packName))
+                {
+                    response += "ON  ";
+                }
+                else
+                {
+                    response += "OFF ";
+                }
+                response += packName + "\n\r";
+            }
+            return response;
+
         }
     }
 
@@ -445,7 +611,7 @@ namespace Roboto.Modules
                 mod_xyzzy_card c = localData.getAnswerCard(cardID);
                 answers.Add(c.text);
             }
-            return (TelegramAPI.createKeyboard(answers));
+            return (TelegramAPI.createKeyboard(answers,1));
          }
 
 
@@ -501,7 +667,10 @@ namespace Roboto.Modules
                 "xyzzy_start - Starts a game of xyzzy with the players in the chat" + "\n\r" +
                 "xyzzy_join - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
                 "xyzzy_leave - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
-                "xyzzy_status - Gets the current status of the game";
+                "xyzzy_abandon - Abandons the game" + "\n\r" +
+                "xyzzy_kick - Kicks a player from a game" + "\n\r" +
+                "xyzzy_status - Gets the current status of the game" + "\n\r" +
+                "xyzzy_filter - Shows the filters and their current status";
         }
 
         public override void initData()
@@ -559,7 +728,7 @@ namespace Roboto.Modules
                 }
             }
 
-            if (c == null)
+          if (c == null)
             {
                 //except for this stupid thing, where if you reply to a message in a private chat, it doesnt give the original ID. So guess if it is or not. 
                 //TODO - will fuck up playuing in multiple games. 
@@ -584,6 +753,25 @@ namespace Roboto.Modules
                 //get current game data. 
                 mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
 
+
+                if (m.isReply && m.replyOrigMessage == "Which player do you want to kick" && m.replyOrigUser == Roboto.Settings.botUserName)
+                {
+                    mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
+                    if (p != null)
+                    {
+                        chatData.players.Remove(p);
+                        TelegramAPI.SendMessage(m.chatID, "Kicked " + p.name, false, m.message_id);
+                    }
+                    chatData.check();
+
+                    
+
+                    processed = true;
+                }
+
+
+
+
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == mod_xyzzy_data.statusTypes.Stopped)
                 {
                     //Start a new game!
@@ -600,22 +788,18 @@ namespace Roboto.Modules
                         , -1, true);
 
                     //confirm number of questions
-                    int nrQuestionID = TelegramAPI.GetReply(m.userID, "How many questions do you want the round to last for&#63; (-1 for infinite)", m.message_id, true);
-                    localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, ""));
+                    int nrQuestionID = TelegramAPI.GetReply(m.userID, "How many questions do you want the round to last for (-1 for infinite)", -1, true);
+                    localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, "")); //this will last until the game is started. 
 
                 }
 
                 //Set up the game, once we get a reply from the user. 
                 else if (chatData.status == mod_xyzzy_data.statusTypes.SetGameLength && expectedInReplyTo != null)
                 {
-                    
-
                     int questions;
 
                     if (int.TryParse(m.text_msg, out questions) && questions >= -1)
                     {
-                        localData.clearExpectedReplies(c.chatID);
-
                         if (questions > localData.questions.Count || questions == -1) { questions = localData.questions.Count; }
 
                         //pick n questions and put them in the deck
@@ -629,17 +813,60 @@ namespace Roboto.Modules
                             chatData.remainingAnswers.Add(answer.uniqueID);
                         }
 
-                        //tell the player they can start when they want
-                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" });
-                        int expectedMessageID = TelegramAPI.GetReply(m.userID, "OK, to start the game once enough players have joined reply to this with \"start\". You'll be sent a message when a user joins.", -1, true, keyboard);
-                        //only one message expecting a reply at this point, so no need for data. 
-                        localData.expectedReplies.Add(new mod_xyzzy_expectedReply(expectedMessageID, m.userID, c.chatID, ""));
-                        chatData.status = mod_xyzzy_data.statusTypes.Invites;
+                        //next, ask which packs they want:
+                        chatData.sendPackFilterMessage(m);
+                        chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
                     }
                     else
                     {
                         TelegramAPI.GetReply(m.chatID, "Thats not a valid number", m.message_id, true);
                         TelegramAPI.GetReply(m.chatID, "How many questions do you want the round to last for? -1 for infinite", m.message_id, true);
+                    }
+                }
+
+                //Set up the game filter, once we get a reply from the user. 
+                else if (chatData.status == mod_xyzzy_data.statusTypes.setPackFilter && expectedInReplyTo != null)
+                {
+                    if (m.text_msg != "Continue")
+                    {
+                        chatData.setPackFilter(m);
+                        chatData.sendPackFilterMessage(m);   
+                    }
+                    else if (chatData.packFilter.Count == 0)
+                    {
+                        chatData.sendPackFilterMessage(m);
+                    }
+                    else
+                    {
+                        //get a filtered list of q's and a's
+                        List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
+                        List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
+                        foreach (mod_xyzzy_card q in localData.questions)
+                        {
+                            if (chatData.packEnabled(q.category)) { questions.Add(q); }
+                        }
+                        foreach (mod_xyzzy_card a in localData.questions)
+                        {
+                            if (chatData.packEnabled(a.category)) { answers.Add(a); }
+                        }
+
+                        if (chatData.enteredQuestionCount > questions.Count || chatData.enteredQuestionCount == -1) { chatData.enteredQuestionCount = questions.Count; }
+
+                        //pick n questions and put them in the deck
+                        List<int> cardsPositions = getUniquePositions(questions.Count, chatData.enteredQuestionCount);
+                        foreach (int pos in cardsPositions)
+                        {
+                            chatData.remainingQuestions.Add(questions[pos].uniqueID);
+                        }
+                        foreach (mod_xyzzy_card answer in answers)
+                        {
+                            chatData.remainingAnswers.Add(answer.uniqueID);
+                        }
+
+                        //tell the player they can start when they want
+                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" },1);
+                        int expectedMessageID = TelegramAPI.GetReply(m.userID, "OK, to start the game once enough players have joined reply to this with \"start\". You'll be sent a message when a user joins.", -1, true, keyboard);
+                        chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
                     }
                 }
 
@@ -662,12 +889,10 @@ namespace Roboto.Modules
                 //A player answering the question
                 else if (chatData.status == mod_xyzzy_data.statusTypes.Question && expectedInReplyTo != null)
                 {
-                    
                     bool answerAccepted = chatData.logAnswer(m.userID, m.text_msg);
                     if (answerAccepted)
                     {
                         //no longer expecting a reply from this player
-                        localData.expectedReplies.Remove(expectedInReplyTo);
                         if (chatData.allPlayersAnswered())
                         {
                             chatData.beginJudging();
@@ -689,7 +914,6 @@ namespace Roboto.Modules
                 else if (m.text_msg.StartsWith("/xyzzy_join"))
                 {
                     //TODO - try send a test message. If it fails, tell the user to open a 1:1 chat.
-
                     bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
                     if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
                     else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
@@ -703,10 +927,29 @@ namespace Roboto.Modules
                     else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " isnt part of the game, and can't be removed!"); }
                     processed = true;
                 }
+                //player kicked
+                else if (m.text_msg.StartsWith("/xyzzy_kick"))
+                {
+                    List<string> players = new List<string>();
+                    foreach (mod_xyzzy_player p in chatData.players) {players.Add(p.name);}
+                    string keyboard = TelegramAPI.createKeyboard(players,2);
+                    TelegramAPI.GetReply(m.userID, "Which player do you want to kick", -1, true, keyboard);
+                    processed = true;
+                }
+                //player kicked
+                else if (m.text_msg.StartsWith("/xyzzy_abandon"))
+                {
+                    chatData.status = mod_xyzzy_data.statusTypes.Stopped;
+                    localData.clearExpectedReplies(c.chatID);
+                    TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game.");
+                    processed = true;
+                }
+                //debug question
                 else if (m.text_msg.StartsWith("/xyzzy_question") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                 {
                     //TODO - DEBUG ONLY
                     chatData.askQuestion();
+                    processed = true;
                 }
                 else if (m.text_msg.StartsWith("/xyzzy_status"))
                 {
@@ -730,24 +973,26 @@ namespace Roboto.Modules
                                     if (p != null) { response += " " + p.name; }
                                 }
                             }
-
                             break;
 
                         case mod_xyzzy_data.statusTypes.Judging:
                             response += "Waiting for " + chatData.players[chatData.lastPlayerAsked].name + " to judge";
                             break;
-
                     }
 
                     TelegramAPI.SendMessage(m.chatID, response, false, m.message_id);
-
+                    processed = true;
                 }
-
+                else if (m.text_msg.StartsWith("/xyzzy_filter"))
+                {
+                    string response = "The following pack filters are currently set. These can be changed when starting a new game : " + "\n\r" +
+        chatData.getPackFilterStatus();
+                    TelegramAPI.SendMessage(m.chatID, response, false, m.message_id);
+                    processed = true;
+                }
             }
             
-          
-                
-            
+               
             return processed;
         }
 
@@ -2895,7 +3140,6 @@ namespace Roboto.Modules
             localData.answers.Add(new mod_xyzzy_card("Bec Noir.", "Alternia"));
             localData.answers.Add(new mod_xyzzy_card("Becoming Tumblr famous.", "Alternia"));
             localData.answers.Add(new mod_xyzzy_card("Being fuck deep in meowcats.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Being in a relationship with a non-Homestuck.", "Alternia"));
             localData.answers.Add(new mod_xyzzy_card("Being in a relationship with a non-Homestuck.", "Alternia"));
             localData.answers.Add(new mod_xyzzy_card("Being locked in a Prospitian prison.", "Alternia"));
             localData.answers.Add(new mod_xyzzy_card("Being the other guy.", "Alternia"));

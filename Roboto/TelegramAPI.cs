@@ -130,22 +130,40 @@ namespace Roboto
         }
 
         
-        public static string createKeyboard(List<string> options)
+        public static string createKeyboard(List<string> options, int width)
         {
             //["Answer1"],["Answer3"],["Answer12"],["Answer1"],["Answer3"],["Answer12"]
             string reply = "\"keyboard\":[";
-            bool firstItem = true;
+            int column = 0;
+            int pos = 0;
             foreach (String s in options)
             {
-                if (!firstItem)
+                //first element
+                if (column == 0)
                 {
-                    reply += ",";
+                    reply += "[";
                 }
                 else
                 {
-                    firstItem = false;
+                    reply += ",";
                 }
-                reply += "[\"" + s + "\"]";
+
+                reply += "\"" + s + "\"";
+
+                column++;
+                //last element
+                if (column == width && pos != options.Count - 1)
+                {
+                    column = 0;
+                    reply += "],";
+                }
+                //very final element, 
+                else if (pos == options.Count - 1)
+                {
+                    reply += "]";
+                }
+
+                pos++;
             }
             reply += "],\"one_time_keyboard\":true,\"resize_keyboard\":true";
 
