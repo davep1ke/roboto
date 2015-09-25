@@ -68,7 +68,7 @@ namespace Roboto
             }
             catch (WebException e)
             {
-                Console.WriteLine("Couldnt send message to " + chatID.ToString());
+                Console.WriteLine("Couldnt send message to " + chatID.ToString() + " because " + e.ToString());
                 return -1;
 
             }
@@ -86,7 +86,7 @@ namespace Roboto
         public static JObject sendPOST(String postURL)
         {
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(postURL);
-
+            Console.WriteLine("Sending Message:\n\r" + postURL);
             request.Method = "POST";
             request.ContentType = "application/json";
             //request.ContentLength = DATA.Length;
@@ -116,7 +116,7 @@ namespace Roboto
                                 //throw new WebException("Failure code from web service");
 
                             }
-
+                            Console.WriteLine("Message Success");
                             return jo;
                         }
                     }
@@ -126,6 +126,7 @@ namespace Roboto
             {
                 throw new WebException("Error during method call", e);
             }
+            
             return null;
         }
 

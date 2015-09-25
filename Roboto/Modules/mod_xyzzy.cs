@@ -50,7 +50,10 @@ namespace Roboto.Modules
         {
             foreach (mod_xyzzy_card c in answers)
             {
-                if (c.uniqueID == cardUID) { return c; }
+                if (c.uniqueID == cardUID) 
+                { 
+                    return c; 
+                }
             }
             return null;
         }
@@ -62,6 +65,10 @@ namespace Roboto.Modules
             foreach (mod_xyzzy_card q in questions)
             {
                 packs.Add(q.category.Trim());
+            }
+            foreach (mod_xyzzy_card a in answers)
+            {
+                packs.Add(a.category.Trim());
             }
             return packs.Distinct().ToList();
         }
@@ -281,7 +288,7 @@ namespace Roboto.Modules
         private void wrapUp()
         {
             status = statusTypes.Stopped;
-            String message = "Game over! Scores are: ";
+            String message = "Game over! You can continue this game with the same players with /xyzzy_extend \n\rScores are: ";
             foreach (mod_xyzzy_player p in players)
             {
                 message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
@@ -321,7 +328,7 @@ namespace Roboto.Modules
             mod_xyzzy_player tzar = players[lastPlayerAsked];
             //get all the responses for the keyboard, and the chat message
             List<string> responses = new List<string>();
-            string chatMsg = "All answers recieved! " + tzar.name + " to judge." + "\n\r" +
+            string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
                 "Question: " + q.text + "\n\r" + "\n\r";
             foreach (mod_xyzzy_player p in players) 
             {
@@ -381,7 +388,7 @@ namespace Roboto.Modules
             {
                 //give the winning player a point. 
                 winner.wins++;
-                string message = winner.name + " wins a point with " + chosenAnswer + ". There are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
+                string message = winner.name + " wins a point!\n\rQuestion: " + q.text+ "\n\rAnswer:" + chosenAnswer + "\n\rThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
                 foreach (mod_xyzzy_player p in players)
                 {
                     message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
@@ -508,7 +515,7 @@ namespace Roboto.Modules
 
         public bool packEnabled(string packName)
         {
-            if (packFilter.Contains("*") || packFilter.Contains(packName))
+            if (packFilter.Contains("*") || packFilter.Contains(packName.Trim()))
             {
                 return true;
             }
@@ -535,6 +542,25 @@ namespace Roboto.Modules
                 response += packName + "\n\r";
             }
             return response;
+
+        }
+
+        internal void addQuestions()
+        {
+            //get a filtered list of q's and a's
+            mod_xyzzy_coredata localData = getLocalData();
+            List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
+            foreach (mod_xyzzy_card q in localData.questions)
+            {
+                if (packEnabled(q.category)) { questions.Add(q); }
+            }
+            if (enteredQuestionCount > questions.Count || enteredQuestionCount == -1) { enteredQuestionCount = questions.Count; }
+            //pick n questions and put them in the deck
+            List<int> cardsPositions = mod_xyzzy.getUniquePositions(questions.Count, enteredQuestionCount);
+            foreach (int pos in cardsPositions)
+            {
+                remainingQuestions.Add(questions[pos].uniqueID);
+            }
 
         }
     }
@@ -667,6 +693,7 @@ namespace Roboto.Modules
                 "xyzzy_start - Starts a game of xyzzy with the players in the chat" + "\n\r" +
                 "xyzzy_join - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
                 "xyzzy_leave - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
+                "xyzzy_extend - Extends a running game with more cards, or restarts a game that has just stopped" + "\n\r" +
                 "xyzzy_abandon - Abandons the game" + "\n\r" +
                 "xyzzy_kick - Kicks a player from a game" + "\n\r" +
                 "xyzzy_status - Gets the current status of the game" + "\n\r" +
@@ -800,19 +827,7 @@ namespace Roboto.Modules
 
                     if (int.TryParse(m.text_msg, out questions) && questions >= -1)
                     {
-                        if (questions > localData.questions.Count || questions == -1) { questions = localData.questions.Count; }
-
-                        //pick n questions and put them in the deck
-                        List<int> cardsPositions = getUniquePositions(localData.questions.Count, questions);
-                        foreach (int pos in cardsPositions)
-                        {
-                            chatData.remainingQuestions.Add(localData.questions[pos].uniqueID);
-                        }
-                        foreach (mod_xyzzy_card answer in localData.answers)
-                        {
-                            chatData.remainingAnswers.Add(answer.uniqueID);
-                        }
-
+                        chatData.enteredQuestionCount = questions;
                         //next, ask which packs they want:
                         chatData.sendPackFilterMessage(m);
                         chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
@@ -838,26 +853,15 @@ namespace Roboto.Modules
                     }
                     else
                     {
-                        //get a filtered list of q's and a's
-                        List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
+
+                        chatData.addQuestions();
+
                         List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
-                        foreach (mod_xyzzy_card q in localData.questions)
-                        {
-                            if (chatData.packEnabled(q.category)) { questions.Add(q); }
-                        }
-                        foreach (mod_xyzzy_card a in localData.questions)
+                        foreach (mod_xyzzy_card a in localData.answers)
                         {
                             if (chatData.packEnabled(a.category)) { answers.Add(a); }
                         }
-
-                        if (chatData.enteredQuestionCount > questions.Count || chatData.enteredQuestionCount == -1) { chatData.enteredQuestionCount = questions.Count; }
-
-                        //pick n questions and put them in the deck
-                        List<int> cardsPositions = getUniquePositions(questions.Count, chatData.enteredQuestionCount);
-                        foreach (int pos in cardsPositions)
-                        {
-                            chatData.remainingQuestions.Add(questions[pos].uniqueID);
-                        }
+                        //TODO - shuffle the list
                         foreach (mod_xyzzy_card answer in answers)
                         {
                             chatData.remainingAnswers.Add(answer.uniqueID);
@@ -866,7 +870,7 @@ namespace Roboto.Modules
                         //tell the player they can start when they want
                         string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" },1);
                         int expectedMessageID = TelegramAPI.GetReply(m.userID, "OK, to start the game once enough players have joined reply to this with \"start\". You'll be sent a message when a user joins.", -1, true, keyboard);
-                        chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
+                        chatData.status = mod_xyzzy_data.statusTypes.Invites;
                     }
                 }
 
@@ -914,9 +918,24 @@ namespace Roboto.Modules
                 else if (m.text_msg.StartsWith("/xyzzy_join"))
                 {
                     //TODO - try send a test message. If it fails, tell the user to open a 1:1 chat.
-                    bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
-                    if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
-                    else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
+                    int i = -1;
+                    try
+                    {
+                        i = TelegramAPI.SendMessage(m.userID, "You joined the xyzzy game in " + m.chatName);
+                    }
+                    catch
+                    {
+                        TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. " 
+                            + m.userFullName + " probably needs to open a chat session with me. "
+                            + "Create a message session, then try /xyzzy_join again. Asshole.", false, m.message_id);
+                    }
+
+                    if (i != -1)
+                    {
+                        bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
+                        if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
+                        else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
+                    }
                     processed = true;
                 }
                 //player leaving
@@ -937,13 +956,28 @@ namespace Roboto.Modules
                     processed = true;
                 }
                 //player kicked
-                else if (m.text_msg.StartsWith("/xyzzy_abandon"))
+                else if (m.text_msg.StartsWith("/xyzzy_abandon") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                 {
                     chatData.status = mod_xyzzy_data.statusTypes.Stopped;
                     localData.clearExpectedReplies(c.chatID);
                     TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game.");
                     processed = true;
                 }
+                //extend a game
+                else if (m.text_msg.StartsWith("/xyzzy_extend"))
+                {
+                    chatData.addQuestions();
+
+                    TelegramAPI.SendMessage(c.chatID, "Added additional cards to the game!");
+                    if (chatData.status == mod_xyzzy_data.statusTypes.Stopped)
+                    {
+                        chatData.askQuestion();
+                    }
+
+                    processed = true;
+                }
+
+
                 //debug question
                 else if (m.text_msg.StartsWith("/xyzzy_question") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                 {
@@ -956,28 +990,32 @@ namespace Roboto.Modules
                     string response = "The current status of the game is " + chatData.status.ToString();
                     if (chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                     {
-                        response += " with " + chatData.remainingQuestions.Count.ToString() + " questions remaining \n\r";
-                    }
-
-                    switch (chatData.status)
-                    {
-                        case mod_xyzzy_data.statusTypes.Question:
-                            response += "The current question is : " + "\n\r" +
-                                localData.getQuestionCard(chatData.currentQuestion).text + "\n\r" +
-                                "The following responses are outstanding :";
-                            foreach (mod_xyzzy_expectedReply r in localData.expectedReplies)
-                            {
-                                if (r.chatID == c.chatID)
+                        response += " with " + chatData.remainingQuestions.Count.ToString() + " questions remaining. Say /xyzzy_join to join. The following players are currently playing: \n\r";
+                        foreach (mod_xyzzy_player p in chatData.players)
+                        {
+                            response += p.name + " " + p.wins.ToString() + " points. \n\r";
+                        }
+                        
+                        switch (chatData.status)
+                        {
+                            case mod_xyzzy_data.statusTypes.Question:
+                                response += "The current question is : " + "\n\r" +
+                                    localData.getQuestionCard(chatData.currentQuestion).text + "\n\r" +
+                                    "The following responses are outstanding :";
+                                foreach (mod_xyzzy_expectedReply r in localData.expectedReplies)
                                 {
-                                    mod_xyzzy_player p = chatData.getPlayer(r.playerID);
-                                    if (p != null) { response += " " + p.name; }
+                                    if (r.chatID == c.chatID)
+                                    {
+                                        mod_xyzzy_player p = chatData.getPlayer(r.playerID);
+                                        if (p != null) { response += " " + p.name; }
+                                    }
                                 }
-                            }
-                            break;
+                                break;
 
-                        case mod_xyzzy_data.statusTypes.Judging:
-                            response += "Waiting for " + chatData.players[chatData.lastPlayerAsked].name + " to judge";
-                            break;
+                            case mod_xyzzy_data.statusTypes.Judging:
+                                response += "Waiting for " + chatData.players[chatData.lastPlayerAsked].name + " to judge";
+                                break;
+                        }
                     }
 
                     TelegramAPI.SendMessage(m.chatID, response, false, m.message_id);
@@ -990,6 +1028,7 @@ namespace Roboto.Modules
                     TelegramAPI.SendMessage(m.chatID, response, false, m.message_id);
                     processed = true;
                 }
+
             }
             
                
@@ -1003,8 +1042,9 @@ namespace Roboto.Modules
         /// <param name="p"></param>
         /// <param name="questions"></param>
         /// <returns></returns>
-        private List<int> getUniquePositions(int arraySize, int questions)
+        public static List<int> getUniquePositions(int arraySize, int questions)
         {
+            //TODO - generic
             List<int> results = new List<int>();
             //create a dummy array
             List<int> dummy = new List<int>();
