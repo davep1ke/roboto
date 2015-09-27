@@ -894,7 +894,7 @@ namespace Roboto.Modules
                 else if (chatData.status == mod_xyzzy_data.statusTypes.Question && expectedInReplyTo != null)
                 {
                     bool answerAccepted = chatData.logAnswer(m.userID, m.text_msg);
-                    if (answerAccepted)
+                    /*if (answerAccepted) - covered in the logAnswer step
                     {
                         //no longer expecting a reply from this player
                         if (chatData.allPlayersAnswered())
@@ -902,6 +902,7 @@ namespace Roboto.Modules
                             chatData.beginJudging();
                         }
                     }
+                    */
                 }
 
                 //A judges response
