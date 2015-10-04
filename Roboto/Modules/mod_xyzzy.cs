@@ -146,11 +146,21 @@ namespace Roboto.Modules
         internal bool removePlayer(int playerID)
         {
             mod_xyzzy_player existing = getPlayer(playerID);
+            //keep track of the judge!
+            mod_xyzzy_player judge = getPlayer(lastPlayerAsked);
+            //TODO - what if this is the judge that we are removing?
             if (existing != null) 
             { 
                 players.Remove(existing);
                 return true;
             }
+
+            //reset the judge ID
+            for (int i = 0; i < players.Count; i++)
+            {
+                if (players[i] == judge) { lastPlayerAsked = i; }
+            }
+
             return false;
         }
 
@@ -343,10 +353,13 @@ namespace Roboto.Modules
                         answer += card.text;
                     }
                     responses.Add(answer);
-                    chatMsg += "  - " + answer + "\n\r";
+                    
                 }
             }
             responses.Sort(); //sort so that player order isnt same each time.
+
+            foreach (string answer in responses) { chatMsg += "  - " + answer + "\n\r"; }
+            
 
             string keyboard = TelegramAPI.createKeyboard(responses,1);
             int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
@@ -741,6 +754,11 @@ namespace Roboto.Modules
             //Various bits of setup before starting to process the message
             bool processed = false;
             mod_xyzzy_expectedReply expectedInReplyTo = null;
+            if (m.text_msg == "bip")
+            {
+                int i = 1;
+            }
+
             if (c == null && m.isReply)
             {
                 //any non-chat messages should only be in reply to messages that we have logged. Find the chatID of the message, and get the chat object
@@ -787,7 +805,7 @@ namespace Roboto.Modules
                     if (p != null)
                     {
                         chatData.players.Remove(p);
-                        TelegramAPI.SendMessage(m.chatID, "Kicked " + p.name, false, m.message_id);
+                        TelegramAPI.SendMessage(m.chatID, "Kicked " + p.name, false, m.message_id, true);
                     }
                     chatData.check();
 
@@ -953,7 +971,7 @@ namespace Roboto.Modules
                     List<string> players = new List<string>();
                     foreach (mod_xyzzy_player p in chatData.players) {players.Add(p.name);}
                     string keyboard = TelegramAPI.createKeyboard(players,2);
-                    TelegramAPI.GetReply(m.userID, "Which player do you want to kick", -1, true, keyboard);
+                    TelegramAPI.GetReply(m.chatID, "Which player do you want to kick", m.message_id, true, keyboard);
                     processed = true;
                 }
                 //player kicked
@@ -994,7 +1012,7 @@ namespace Roboto.Modules
                         response += " with " + chatData.remainingQuestions.Count.ToString() + " questions remaining. Say /xyzzy_join to join. The following players are currently playing: \n\r";
                         foreach (mod_xyzzy_player p in chatData.players)
                         {
-                            response += p.name + " " + p.wins.ToString() + " points. \n\r";
+                            response += p.name + " - " + p.wins.ToString() + " points. \n\r";
                         }
                         
                         switch (chatData.status)
@@ -1018,8 +1036,9 @@ namespace Roboto.Modules
                                 break;
                         }
                     }
-
-                    TelegramAPI.SendMessage(m.chatID, response, false, m.message_id);
+                    
+                    TelegramAPI.SendMessage(m.chatID, response, false, m.message_id,true);
+                    chatData.check();
                     processed = true;
                 }
                 else if (m.text_msg.StartsWith("/xyzzy_filter"))

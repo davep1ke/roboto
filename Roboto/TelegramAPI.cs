@@ -24,14 +24,15 @@ namespace Roboto
         /// <param name="markDown"></param>
         /// <param name="replyToMessageID"></param>
         /// <returns></returns>
-        public static int SendMessage(int chatID, string text, bool markDown = false, int replyToMessageID = -1)
+        public static int SendMessage(int chatID, string text, bool markDown = false, int replyToMessageID = -1, bool clearKeyboard = false)
         {
 
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage" +
                    "?chat_id=" + chatID +
                    "&text=" + text;
             if (replyToMessageID != -1) { postURL += "&reply_to_message_id=" + replyToMessageID; }
-            if (markDown == true) { postURL += "&parse_mode=Markdown"; }
+            if (markDown) { postURL += "&parse_mode=Markdown"; }
+            if (clearKeyboard) { postURL += "&reply_markup ={\"hide_keyboard\":true}"; }
 
             JObject response = sendPOST(postURL);
 
