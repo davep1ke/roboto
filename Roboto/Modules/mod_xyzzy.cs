@@ -331,6 +331,7 @@ namespace Roboto.Modules
 
         internal void beginJudging()
         {
+
             status = statusTypes.Judging;
             mod_xyzzy_coredata localData = getLocalData();
 
@@ -449,8 +450,12 @@ namespace Roboto.Modules
                 localData.expectedReplies.Remove(r);
             }
 
-
-
+            //do we have any duplicate cards? rebuild the list
+            int count_q = remainingQuestions.Count;
+            int count_a = remainingAnswers.Count;
+            remainingQuestions = remainingQuestions.Distinct().ToList();
+            remainingAnswers = remainingAnswers.Distinct().ToList();
+            
             //current status
             //TODO - pad this out more
             //TODO - call regularly. 

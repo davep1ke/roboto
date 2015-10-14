@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
+using System.Web;
 using Newtonsoft.Json.Linq;
 
 
@@ -36,7 +37,8 @@ namespace Roboto
                 message_id = update_TK.SelectToken(".message_id").Value<int>();
                 chatID = update_TK.SelectToken(".chat.id").Value<int>();
                 chatName = getNullableString(update_TK.SelectToken(".chat.title"));
-                text_msg = update_TK.SelectToken(".text").Value<String>();
+                text_msg =  update_TK.SelectToken(".text").Value<String>();
+                //text_msg = (String)JsonConvert.DeserializeObject(text_msg);
                 userID = update_TK.SelectToken(".from.id").Value<int>();
 
                 userFirstName = getNullableString(update_TK.SelectToken(".from.first_name"));

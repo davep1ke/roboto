@@ -8,14 +8,30 @@ using System.Xml.Serialization;
 
 namespace Roboto.Modules
 {
+
     /// <summary>
-    /// Data to be stored in the XML store
+    /// Core Data to be stored in the XML store. NEeded to hold the "last update date" for backgorund processing
+    /// </summary>
+    [XmlType("mod_quote_core_data")]
+    [Serializable]
+    public class mod_quote_core_data : RobotoModuleDataTemplate
+    {
+       
+        //internal mod_quote_data() { }
+    }
+
+
+    /// <summary>
+    /// ChatData to be stored in the XML store
     /// </summary>
     [XmlType("mod_quote_data")]
     [Serializable]
     public class mod_quote_data : RobotoModuleChatDataTemplate
     {
         public List<mod_quote_quote> quotes = new List<mod_quote_quote>();
+        public DateTime nextAutoQuoteAfter = DateTime.MinValue;
+        public int autoQuoteHours = 24;
+        public bool autoQuoteEnabled = true;
         //internal mod_quote_data() { }
     }
 
@@ -42,14 +58,19 @@ namespace Roboto.Modules
     public class mod_quote : RobotoModuleTemplate
     {
         //TODO - Chat announcements? How do you know when someone is "back" though? 
+        private mod_quote_core_data localData;
 
         public override void init()
         {
-            pluginDataType = typeof(mod_quote_data);
+            pluginChatDataType = typeof(mod_quote_data);
+            pluginDataType = typeof(mod_quote_core_data);
 
             chatHook = true;
             chatEvenIfAlreadyMatched = false;
             chatPriority = 5;
+            this.backgroundHook = true;
+            this.backgroundMins = 10;
+            
 
         }
 
@@ -62,7 +83,17 @@ namespace Roboto.Modules
 
         public override void initData()
         {
-
+            try
+            {
+                localData = Roboto.Settings.getPluginData<mod_quote_core_data>();
+            }
+            catch (InvalidDataException)
+            {
+                //Data doesnt exist, create, populate with sample data and register for saving
+                localData = new mod_quote_core_data();
+                sampleData();
+                Roboto.Settings.registerData(localData);
+            }
         }
 
         public override void initChatData(chat c)
@@ -160,7 +191,22 @@ namespace Roboto.Modules
 
         protected override void backgroundProcessing()
         {
-            throw new NotImplementedException();
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_quote_data localData = c.getPluginData<mod_quote_data>();
+                
+                if (localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.quotes.Count > 0)
+                {
+                    TelegramAPI.SendMessage(c.chatID, getQuote(c));
+                    int maxMins = localData.autoQuoteHours * 60;
+                    //go back 1/8, then add rand 1/4 on
+                    int randomMins = settings.getRandom((localData.autoQuoteHours * 60) /4);
+                    maxMins = maxMins - ( maxMins / 8) + randomMins;
+                    localData.nextAutoQuoteAfter = DateTime.Now.AddMinutes(maxMins);
+                    
+                }
+
+            }
         }
 
         public override void sampleData()
