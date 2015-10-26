@@ -9,580 +9,8 @@ using System.Xml.Serialization;
 namespace Roboto.Modules
 {
 
-    /// <summary>
-    /// General Data to be stored in the plugin XML store.
-    /// </summary>
-    [XmlType("mod_xyzzy_coredata")]
-    [Serializable]
-    public class mod_xyzzy_coredata : RobotoModuleDataTemplate
-    {
-        public DateTime lastDayProcessed = DateTime.MinValue;
-        public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
-        public List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
-        public List<mod_xyzzy_expectedReply> expectedReplies = new List<mod_xyzzy_expectedReply>(); //replies expected by the various chats
-        //internal mod_xyzzy_coredata() { }
-
-        public void clearExpectedReplies(int chat_id)
-        {
-            //find replies for this chat, and add them to a temp list
-            List<mod_xyzzy_expectedReply> repliesToRemove = new List<mod_xyzzy_expectedReply>();
-            foreach (mod_xyzzy_expectedReply reply in expectedReplies)
-            {
-                if (reply.chatID == chat_id) { repliesToRemove.Add(reply); }
-            }
-            //now remove them
-            foreach (mod_xyzzy_expectedReply reply in repliesToRemove)
-            {
-                expectedReplies.Remove(reply);
-            }
-        }
-
-        public mod_xyzzy_card getQuestionCard(string cardUID)
-        {
-            foreach (mod_xyzzy_card c in questions)
-            {
-                if (c.uniqueID == cardUID) { return c; }
-            }
-            return null;
-        }
-
-        public mod_xyzzy_card getAnswerCard(string cardUID)
-        {
-            foreach (mod_xyzzy_card c in answers)
-            {
-                if (c.uniqueID == cardUID) 
-                { 
-                    return c; 
-                }
-            }
-            return null;
-        }
-
-        public List<String> getPackFilterList()
-        {
-            //include "all"
-            List<String> packs = new List<string>();
-            foreach (mod_xyzzy_card q in questions)
-            {
-                packs.Add(q.category.Trim());
-            }
-            foreach (mod_xyzzy_card a in answers)
-            {
-                packs.Add(a.category.Trim());
-            }
-            return packs.Distinct().ToList();
-        }
-
-    }
-
-    /// <summary>
-    /// CHAT (i.e. game) Data to be stored in the XML store
-    /// </summary>
-    [XmlType("mod_xyzzy_data")]
-    [Serializable]
-    public class mod_xyzzy_data : RobotoModuleChatDataTemplate
-    {
-        public List<String> packFilter = new List<string>{"Base"};
-        public enum statusTypes { Stopped, SetGameLength, setPackFilter, Invites, Question, Judging }
-        public statusTypes status = statusTypes.Stopped;
-        public List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
-        public int enteredQuestionCount = -1;
-        public int lastPlayerAsked = -1; //todo - should be an ID!
-        
-        //Store these here, per-chat, so that theres no overlap between chats. Could also help if we want to filter card sets later. Bit heavy on memory, probably. 
-        public List<String> remainingQuestions = new List<string>();
-        public string currentQuestion;
-        public List<String> remainingAnswers = new List<string>();
-        //internal mod_xyzzy_data() { }
-
-
-        public void reset()
-        {
-            status = statusTypes.Stopped;
-            players.Clear();
-            remainingAnswers.Clear();
-            remainingQuestions.Clear();
-            lastPlayerAsked = -1;
-        }
-
-        public mod_xyzzy_player getPlayer(int playerID)
-        {
-            foreach (mod_xyzzy_player existing in players)
-            {
-                if (existing.playerID == playerID) { return existing; }
-            }
-            return null;
-        }
-
-        internal mod_xyzzy_player getPlayer(string p)
-        {
-            foreach (mod_xyzzy_player existing in players)
-            {
-                if (existing.name.Trim() == p) { return existing; }
-            }
-            return null;
-        }
-
-
-
-        public mod_xyzzy_coredata getLocalData()
-        {
-            return Roboto.Settings.getPluginData<mod_xyzzy_coredata>();
-        }
-
-        internal bool addPlayer(mod_xyzzy_player newPlayer)
-        {
-
-            mod_xyzzy_player existing = getPlayer(newPlayer.playerID);
-            if (existing == null) 
-            { 
-                players.Add(newPlayer);
-                return true;
-            }
-
-            return false;
-        }
-
-        internal bool removePlayer(int playerID)
-        {
-            mod_xyzzy_player existing = getPlayer(playerID);
-            //keep track of the judge!
-            mod_xyzzy_player judge = getPlayer(lastPlayerAsked);
-            //TODO - what if this is the judge that we are removing?
-            if (existing != null) 
-            { 
-                players.Remove(existing);
-                return true;
-            }
-
-            //reset the judge ID
-            for (int i = 0; i < players.Count; i++)
-            {
-                if (players[i] == judge) { lastPlayerAsked = i; }
-            }
-
-            return false;
-        }
-
-        internal void askQuestion()
-        {
-            mod_xyzzy_coredata localData = getLocalData();
-            localData.clearExpectedReplies(chatID); //shouldnt be needed, but handy if we are forcing a question in debug.
-
-            if (remainingQuestions.Count > 0)
-            {
-
-                mod_xyzzy_card question = localData.getQuestionCard(remainingQuestions[0]);
-                int playerPos = lastPlayerAsked+1;
-                if (playerPos >= players.Count) { playerPos = 0; }
-                mod_xyzzy_player tzar = players[playerPos];
-
-                //loop through each player and act accordingly
-                foreach (mod_xyzzy_player player in players)
-                {
-                    //throw away old cards and select new ones. 
-                    player.selectedCards.Clear();
-                    player.topUpCards(10, remainingAnswers);
-                    if (player == tzar)
-                    {
-                        TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text);
-                    }
-                    else
-                    {
-                        int questionMsg = TelegramAPI.GetReply(player.playerID, tzar.name + " asks: "
-                            + "\n\r" + question.text, -1, true, player.getAnswerKeyboard(localData));
-                        //we are expecting a reply to this:
-                        localData.expectedReplies.Add(new mod_xyzzy_expectedReply(questionMsg, player.playerID, chatID, ""));
-                    }
-                }
-
-                //todo - should this be winner stays on, or round-robbin?
-                lastPlayerAsked = playerPos;
-                currentQuestion = remainingQuestions[0];
-                remainingQuestions.Remove(currentQuestion);
-                status = mod_xyzzy_data.statusTypes.Question;
-            }
-            else
-            {
-                wrapUp();
-            }
-        }
-
-        public bool logAnswer(int playerID, string answer)
-        {
-            mod_xyzzy_coredata localData = getLocalData();
-            mod_xyzzy_player player = getPlayer(playerID);
-            mod_xyzzy_card question = localData.getQuestionCard(currentQuestion);
-            //make sure the response is in the list of cards the player has
-            mod_xyzzy_card answerCard = null;
-            foreach (string cardUID in player.cardsInHand)
-            {
-                //find the card, then check the text matches the response.
-                mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                if (card != null && card.text == answer)
-                {
-                    answerCard = card;
-                }
-            }
-
-            if (answerCard == null)
-            {
-                TelegramAPI.SendMessage(playerID, "Not a valid answer! Reply to the original message again, using the keyboard");
-                return false;
-            }
-            else
-            {
-                //valid response, remove the card from the deck, and add it to our list of 
-                bool success = player.SelectAnswerCard(answerCard.uniqueID);
-                if (!success)
-                {
-                    throw new InvalidDataException("Card couldnt be selected for some reason!");
-                }
-                else
-                {
-                    //just check if this needs more responses:
-                    if (player.selectedCards.Count == question.nrAnswers)
-                    {
-                        //remove the expected reply. 
-                        mod_xyzzy_expectedReply playerReply = null;
-                        foreach (mod_xyzzy_expectedReply reply in localData.expectedReplies)
-                        {
-                            if (reply.chatID == chatID && reply.playerID == playerID)
-                            {
-                                playerReply = reply;
-                            }
-                        }
-                        if (playerReply != null) 
-                        { 
-                            localData.expectedReplies.Remove(playerReply); 
-                        }
-                    }
-                    else
-                    {
-                        //more responses needed
-                        int questionMsg = TelegramAPI.GetReply(player.playerID, "Pick your next card", -1, true, player.getAnswerKeyboard(localData));
-                        //dont need to add expected reply, one already there. 
-                    }
-                }
-            }
-
-            //have all responses been recieved? 
-            if (outstandingResponses().Count == 0) 
-            { 
-                beginJudging(); 
-            }
-
-            return true;
-        }
-
-
-        /// <summary>
-        /// Calculate which players still need to responsd.
-        /// </summary>
-        /// <returns></returns>
-        private List<mod_xyzzy_player> outstandingResponses()
-        {
-            List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
-            
-            foreach (mod_xyzzy_expectedReply r in getLocalData().expectedReplies)
-            {
-                if (r.chatID == chatID)
-                {
-                    mod_xyzzy_player player = getPlayer(r.playerID);
-                    players.Add(player);
-                }
-            }
-            return players;
-        }
-
-        private void wrapUp()
-        {
-            status = statusTypes.Stopped;
-            String message = "Game over! You can continue this game with the same players with /xyzzy_extend \n\rScores are: ";
-            foreach (mod_xyzzy_player p in players)
-            {
-                message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
-            }
-
-            TelegramAPI.SendMessage(chatID, message);
-
-        }
-
-        /// <summary>
-        /// Check if all players have answered
-        /// </summary>
-        /// <returns></returns>
-        internal bool allPlayersAnswered()
-        {
-            
-
-            //TODO - remove the tzar from this!
-            foreach (mod_xyzzy_player p in players)
-            {
-                if (p != players[lastPlayerAsked])
-                {
-                    //if so, have we got one? 
-                    if (p.selectedCards.Count < getLocalData().getQuestionCard(currentQuestion).nrAnswers) { return false; }
-                }
-            }
-            return true;
-
-        }
-
-        internal void beginJudging()
-        {
-
-            status = statusTypes.Judging;
-            mod_xyzzy_coredata localData = getLocalData();
-
-            mod_xyzzy_card q = localData.getQuestionCard(currentQuestion);
-            mod_xyzzy_player tzar = players[lastPlayerAsked];
-            //get all the responses for the keyboard, and the chat message
-            List<string> responses = new List<string>();
-            string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
-                "Question: " + q.text + "\n\r" + "\n\r";
-            foreach (mod_xyzzy_player p in players) 
-            {
-                if (p != tzar)
-                {
-                    //handle multiple answers for a question 
-                    string answer = "";
-                    foreach (string cardUID in p.selectedCards)
-                    {
-                        mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                        if (answer != "") { answer += " >> "; }
-                        answer += card.text;
-                    }
-                    responses.Add(answer);
-                    
-                }
-            }
-            responses.Sort(); //sort so that player order isnt same each time.
-
-            foreach (string answer in responses) { chatMsg += "  - " + answer + "\n\r"; }
-            
-
-            string keyboard = TelegramAPI.createKeyboard(responses,1);
-            int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
-            localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
-
-            TelegramAPI.SendMessage(chatID, chatMsg);
-
-        }
-
-        /// <summary>
-        /// A judge has replied to their PM asking to vote for the winning answer.
-        /// </summary>
-        /// <param name="p"></param>
-        internal bool judgesResponse(string chosenAnswer)
-        {
-            mod_xyzzy_coredata localData = getLocalData();
-            mod_xyzzy_card q = localData.getQuestionCard(currentQuestion);
-            mod_xyzzy_player tzar = players[lastPlayerAsked];
-            mod_xyzzy_player winner = null;
-            //find the response that matches
-            foreach (mod_xyzzy_player p in players)
-            {
-                //handle multiple answers for a question 
-                string answer = "";
-                foreach (string cardUID in p.selectedCards)
-                {
-                    mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                    if (answer != "") { answer += " >> "; }
-                    answer += card.text;
-                }
-
-                if (answer == chosenAnswer)
-                {
-                    winner = p;
-                }
-            }
-
-            if (winner != null)
-            {
-                //give the winning player a point. 
-                winner.wins++;
-                string message = winner.name + " wins a point!\n\rQuestion: " + q.text+ "\n\rAnswer:" + chosenAnswer + "\n\rThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
-                foreach (mod_xyzzy_player p in players)
-                {
-                    message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
-                }
-
-                TelegramAPI.SendMessage(chatID, message);
-
-                //ask the next question (will jump to summary if no more questions). 
-                askQuestion();
-            }
-            else
-            {
-                //answer not found?
-                TelegramAPI.SendMessage(tzar.playerID, "Couldnt find your answer, try again?");
-                return false;
-            }
-            return true;
-        }
-
-
-        /// <summary>
-        /// Check consistenct of game state
-        /// </summary>
-        internal void check()
-        {
-            mod_xyzzy_coredata localData = getLocalData();
-            List<mod_xyzzy_expectedReply> repliesToRemove = new List<mod_xyzzy_expectedReply>();
-
-            //is the tzar valid?
-            if (lastPlayerAsked >= players.Count) { lastPlayerAsked = 0; }
-
-            //responses from non-existent players
-            foreach (mod_xyzzy_expectedReply reply in localData.expectedReplies)
-            {
-                if (reply.chatID == chatID)
-                {
-                    if (getPlayer(reply.playerID) == null)
-                    {
-                        repliesToRemove.Add(reply);
-                    }
-                }
-            }
-            foreach (mod_xyzzy_expectedReply r in repliesToRemove)
-            {
-                localData.expectedReplies.Remove(r);
-            }
-
-            //do we have any duplicate cards? rebuild the list
-            int count_q = remainingQuestions.Count;
-            int count_a = remainingAnswers.Count;
-            remainingQuestions = remainingQuestions.Distinct().ToList();
-            remainingAnswers = remainingAnswers.Distinct().ToList();
-            
-            //current status
-            //TODO - pad this out more
-            //TODO - call regularly. 
-            //TODO - does the tzar exist?
-            //TODO - check when removing the tzar
-            switch (status) 
-            {
-                case statusTypes.Question :
-                    if (allPlayersAnswered())
-                    {
-                        beginJudging();
-                    }
-                    break;
-            }
-            
-        }
-
-        /// <summary>
-        /// Ask the organiser which packs they want to play with. Option to continue, or to select all packs. 
-        /// </summary>
-        /// <param name="m"></param>
-        internal void setPackFilter(message m)
-        {
-            mod_xyzzy_coredata localData = getLocalData();
-
-            //did they actually give us an answer? 
-            if (m.text_msg == "All")
-            {
-                packFilter.Clear();
-                packFilter.AddRange(localData.getPackFilterList());
-            }
-            else if (m.text_msg == "None")
-            {
-                packFilter.Clear();
-            }
-            else if (!localData.getPackFilterList().Contains(m.text_msg))
-            {
-                TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", false, m.message_id);
-            }
-            else
-            {
-                //toggle the pack
-                if (packFilter.Contains(m.text_msg))
-                {
-                    packFilter.Remove(m.text_msg);
-                }
-                else
-                {
-                    packFilter.Add(m.text_msg);
-                }
-            }
-            
-        }
-
-        public void sendPackFilterMessage(message m)
-        {
-            mod_xyzzy_coredata localData = getLocalData();
-            String response = "The following packs are available, and their current status is as follows:" + "\n\r" + getPackFilterStatus() +
-             "You can toggle the messages using the keyboard below, or click Continue to start the game";
-            
-            
-            //Now build up keybaord
-            List<String> keyboardResponse = new List<string> { "Continue", "All", "None" };
-            foreach (string packName in localData.getPackFilterList())
-            {
-                keyboardResponse.Add(packName);
-            }
-
-            //now send the new list. 
-            string keyboard = TelegramAPI.createKeyboard(keyboardResponse,3);//todo columns
-            TelegramAPI.GetReply(m.userID, response, -1, true, keyboard);
-            //NB: Should already be an expected response here, as we havent cleared it from last time. 
-        }
-
-
-        public bool packEnabled(string packName)
-        {
-            if (packFilter.Contains("*") || packFilter.Contains(packName.Trim()))
-            {
-                return true;
-            }
-            return false;
-
-        }
-
-        internal string getPackFilterStatus()
-        {
-            //Now build up a message to the user
-            string response = "";
-            mod_xyzzy_coredata localData = getLocalData();
-            foreach (string packName in localData.getPackFilterList())
-            {
-                //is it currently enabled
-                if (packEnabled(packName))
-                {
-                    response += "ON  ";
-                }
-                else
-                {
-                    response += "OFF ";
-                }
-                response += packName + "\n\r";
-            }
-            return response;
-
-        }
-
-        internal void addQuestions()
-        {
-            //get a filtered list of q's and a's
-            mod_xyzzy_coredata localData = getLocalData();
-            List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
-            foreach (mod_xyzzy_card q in localData.questions)
-            {
-                if (packEnabled(q.category)) { questions.Add(q); }
-            }
-            if (enteredQuestionCount > questions.Count || enteredQuestionCount == -1) { enteredQuestionCount = questions.Count; }
-            //pick n questions and put them in the deck
-            List<int> cardsPositions = mod_xyzzy.getUniquePositions(questions.Count, enteredQuestionCount);
-            foreach (int pos in cardsPositions)
-            {
-                remainingQuestions.Add(questions[pos].uniqueID);
-            }
-
-        }
-    }
-
+    /*
+    Moved to settings / telegramAPI
     /// <summary>
     /// Represents a reply we are expecting
     /// TODO - maybe genericise this?
@@ -602,7 +30,7 @@ namespace Roboto.Modules
             this.replyData = replyData;
         }
     }
-
+    */
 
     /// <summary>
     /// Represents a xyzzy player
@@ -758,12 +186,13 @@ namespace Roboto.Modules
         {
             //Various bits of setup before starting to process the message
             bool processed = false;
-            mod_xyzzy_expectedReply expectedInReplyTo = null;
+            
             if (m.text_msg == "bip")
             {
                 int i = 1;
             }
 
+            /* All of this kind of stuff should come in through replyRecieved now
             if (c == null && m.isReply)
             {
                 //any non-chat messages should only be in reply to messages that we have logged. Find the chatID of the message, and get the chat object
@@ -795,7 +224,7 @@ namespace Roboto.Modules
                     }
                 }
             }
-
+            */
 
 
             if (c != null) //Setup needs to be done in a chat! Other replies will now have a chat object passed in here too!
@@ -804,20 +233,7 @@ namespace Roboto.Modules
                 mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
 
 
-                if (m.isReply && m.replyOrigMessage == "Which player do you want to kick" && m.replyOrigUser == Roboto.Settings.botUserName)
-                {
-                    mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
-                    if (p != null)
-                    {
-                        chatData.players.Remove(p);
-                        TelegramAPI.SendMessage(m.chatID, "Kicked " + p.name, false, m.message_id, true);
-                    }
-                    chatData.check();
-
-                    
-
-                    processed = true;
-                }
+                
 
 
 
@@ -826,118 +242,27 @@ namespace Roboto.Modules
                 {
                     //Start a new game!
                     chatData.reset();
-                    localData.clearExpectedReplies(c.chatID);
+                    Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
                     chatData.status = mod_xyzzy_data.statusTypes.SetGameLength;
                     //add the player that started the game
                     chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
 
                     //send out invites
-                    TelegramAPI.GetReply(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
+                    TelegramAPI.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
                         "at any time - you will be included next time a question is asked. You will need to open a private chat to " + 
                         Roboto.Settings.botUserName + " if you haven't got one yet - unfortunately I am a stupid bot and can't do it myself :(" 
-                        , -1, true);
+                        , false, -1, true);
 
                     //confirm number of questions
-                    int nrQuestionID = TelegramAPI.GetReply(m.userID, "How many questions do you want the round to last for (-1 for infinite)", -1, true);
-                    localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, "")); //this will last until the game is started. 
+                    //TODO - wrap the TelegramAPI calls into methods in the plugin and pluginData classes. 
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
+
+                    //int nrQuestionID = TelegramAPI.GetReply(m.userID, "How many questions do you want the round to last for (-1 for infinite)", -1, true);
+                    //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, "")); //this will last until the game is started. 
 
                 }
 
-                //Set up the game, once we get a reply from the user. 
-                else if (chatData.status == mod_xyzzy_data.statusTypes.SetGameLength && expectedInReplyTo != null)
-                {
-                    int questions;
-
-                    if (int.TryParse(m.text_msg, out questions) && questions >= -1)
-                    {
-                        chatData.enteredQuestionCount = questions;
-                        //next, ask which packs they want:
-                        chatData.sendPackFilterMessage(m);
-                        chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
-                    }
-                    else
-                    {
-                        TelegramAPI.GetReply(m.chatID, "Thats not a valid number", m.message_id, true);
-                        TelegramAPI.GetReply(m.chatID, "How many questions do you want the round to last for? -1 for infinite", m.message_id, true);
-                    }
-                }
-
-                //Set up the game filter, once we get a reply from the user. 
-                else if (chatData.status == mod_xyzzy_data.statusTypes.setPackFilter && expectedInReplyTo != null)
-                {
-                    if (m.text_msg != "Continue")
-                    {
-                        chatData.setPackFilter(m);
-                        chatData.sendPackFilterMessage(m);   
-                    }
-                    else if (chatData.packFilter.Count == 0)
-                    {
-                        chatData.sendPackFilterMessage(m);
-                    }
-                    else
-                    {
-
-                        chatData.addQuestions();
-
-                        List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
-                        foreach (mod_xyzzy_card a in localData.answers)
-                        {
-                            if (chatData.packEnabled(a.category)) { answers.Add(a); }
-                        }
-                        //TODO - shuffle the list
-                        foreach (mod_xyzzy_card answer in answers)
-                        {
-                            chatData.remainingAnswers.Add(answer.uniqueID);
-                        }
-
-                        //tell the player they can start when they want
-                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" },1);
-                        int expectedMessageID = TelegramAPI.GetReply(m.userID, "OK, to start the game once enough players have joined reply to this with \"start\". You'll be sent a message when a user joins.", -1, true, keyboard);
-                        chatData.status = mod_xyzzy_data.statusTypes.Invites;
-                    }
-                }
-
-
-                //start the game proper
-                else if (chatData.status == mod_xyzzy_data.statusTypes.Invites && expectedInReplyTo != null && m.text_msg == "start" )
-                {
-                    localData.clearExpectedReplies(c.chatID);
-                    if (chatData.players.Count > 0) //TODO - should be min 2
-                    {
-                        chatData.askQuestion();
-                    }
-                    else
-                    {
-                        TelegramAPI.SendMessage(m.chatID, "Not enough players");
-                    }
-                    processed = true;
-                }
-
-                //A player answering the question
-                else if (chatData.status == mod_xyzzy_data.statusTypes.Question && expectedInReplyTo != null)
-                {
-                    bool answerAccepted = chatData.logAnswer(m.userID, m.text_msg);
-                    /*if (answerAccepted) - covered in the logAnswer step
-                    {
-                        //no longer expecting a reply from this player
-                        if (chatData.allPlayersAnswered())
-                        {
-                            chatData.beginJudging();
-                        }
-                    }
-                    */
-                }
-
-                //A judges response
-                else if (chatData.status == mod_xyzzy_data.statusTypes.Judging && expectedInReplyTo != null)
-                {
-                    bool success = chatData.judgesResponse(m.text_msg);
-                    if (success)
-                    {
-                        //no longer expecting a reply from this player
-                        localData.expectedReplies.Remove(expectedInReplyTo);
-                    }
-                }
+                
                 //player joining
                 else if (m.text_msg.StartsWith("/xyzzy_join"))
                 {
@@ -976,14 +301,14 @@ namespace Roboto.Modules
                     List<string> players = new List<string>();
                     foreach (mod_xyzzy_player p in chatData.players) {players.Add(p.name);}
                     string keyboard = TelegramAPI.createKeyboard(players,2);
-                    TelegramAPI.GetReply(m.chatID, "Which player do you want to kick", m.message_id, true, keyboard);
+                    TelegramAPI.GetExpectedReply(m.chatID, m.userID,  "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", -1, true, keyboard);
                     processed = true;
                 }
-                //player kicked
+                //abandon game
                 else if (m.text_msg.StartsWith("/xyzzy_abandon") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                 {
                     chatData.status = mod_xyzzy_data.statusTypes.Stopped;
-                    localData.clearExpectedReplies(c.chatID);
+                    Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
                     TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game.");
                     processed = true;
                 }
@@ -1026,11 +351,11 @@ namespace Roboto.Modules
                                 response += "The current question is : " + "\n\r" +
                                     localData.getQuestionCard(chatData.currentQuestion).text + "\n\r" +
                                     "The following responses are outstanding :";
-                                foreach (mod_xyzzy_expectedReply r in localData.expectedReplies)
+                                foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), c.chatID, -1, "question"))
                                 {
                                     if (r.chatID == c.chatID)
                                     {
-                                        mod_xyzzy_player p = chatData.getPlayer(r.playerID);
+                                        mod_xyzzy_player p = chatData.getPlayer(r.userID);
                                         if (p != null) { response += " " + p.name; }
                                     }
                                 }
@@ -1088,6 +413,125 @@ namespace Roboto.Modules
 
         protected override void backgroundProcessing()
         {
+            //TODO - time people out and stuff.
+            throw new NotImplementedException();
+        }
+
+        public override bool replyReceived(ExpectedReply e, message m)
+        {
+            bool processed = false;
+            chat c = Roboto.Settings.getChat(e.chatID);
+            mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
+
+            //Set up the game, once we get a reply from the user. 
+            if (chatData.status == mod_xyzzy_data.statusTypes.SetGameLength && e.messageData == "SetGameLength")
+            {
+                int questions;
+
+                if (int.TryParse(m.text_msg, out questions) && questions >= -1)
+                {
+                    chatData.enteredQuestionCount = questions;
+                    //next, ask which packs they want:
+                    chatData.sendPackFilterMessage(m);
+                    chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
+                }
+                else
+                {
+                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, m.text_msg + " is not a valid number. How many questions do you want the round to last for? -1 for infinite", true, typeof(mod_xyzzy), "SetGameLength");
+                }
+                processed = true;
+            }
+
+            //Set up the game filter, once we get a reply from the user. 
+            else if (chatData.status == mod_xyzzy_data.statusTypes.setPackFilter && e.messageData == "setPackFilter")
+            {
+                if (m.text_msg != "Continue")
+                {
+                    chatData.setPackFilter(m);
+                    chatData.sendPackFilterMessage(m);
+                }
+                else if (chatData.packFilter.Count == 0)
+                {
+                    chatData.sendPackFilterMessage(m);
+                }
+                else
+                {
+
+                    chatData.addQuestions();
+
+                    List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
+                    foreach (mod_xyzzy_card a in localData.answers)
+                    {
+                        if (chatData.packEnabled(a.category)) { answers.Add(a); }
+                    }
+                    //TODO - shuffle the list
+                    foreach (mod_xyzzy_card answer in answers)
+                    {
+                        chatData.remainingAnswers.Add(answer.uniqueID);
+                    }
+
+                    //tell the player they can start when they want
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
+                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true,typeof(mod_xyzzy), "start", -1, true, keyboard);
+                    chatData.status = mod_xyzzy_data.statusTypes.Invites;
+                }
+                processed = true;
+            }
+
+
+            //start the game proper
+            else if (chatData.status == mod_xyzzy_data.statusTypes.Invites && e.messageData == "Invites" && m.text_msg == "start")
+            {
+                if (chatData.players.Count > 0) //TODO - should be min 2
+                {
+                    chatData.askQuestion();
+                }
+                else
+                {
+                    TelegramAPI.SendMessage(m.chatID, "Not enough players");
+                }
+                processed = true;
+            }
+
+            //A player answering the question
+            else if (chatData.status == mod_xyzzy_data.statusTypes.Question && e.messageData == "Question")
+            {
+                bool answerAccepted = chatData.logAnswer(m.userID, m.text_msg);
+                processed = true;
+                /*if (answerAccepted) - covered in the logAnswer step
+                {
+                    //no longer expecting a reply from this player
+                    if (chatData.allPlayersAnswered())
+                    {
+                        chatData.beginJudging();
+                    }
+                }
+                */
+            }
+
+            //A judges response
+            else if (chatData.status == mod_xyzzy_data.statusTypes.Judging && e.messageData == "Judging")
+            {
+                bool success = chatData.judgesResponse(m.text_msg);
+               
+                processed = true;
+            }
+
+            else if (e.messageData == "kick")
+            {
+                mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
+                if (p != null)
+                {
+                    chatData.players.Remove(p);
+                    TelegramAPI.SendMessage(e.chatID, "Kicked " + p.name, false,-1 , true);
+
+                }
+                chatData.check();
+                
+                processed = true;
+            }
+
+            return processed;
         }
 
 
@@ -1844,223 +1288,6 @@ namespace Roboto.Modules
             localData.questions.Add(new mod_xyzzy_card("Before _, all we had was _.", " CAHe2", 2));
             localData.questions.Add(new mod_xyzzy_card("Tonight on 20/20: What you don't know about _ could kill you.", " CAHe2", 1));
             localData.questions.Add(new mod_xyzzy_card("You haven't truly lived until you've experienced _ and _ at the same time.", " CAHe2", 2));
-            localData.questions.Add(new mod_xyzzy_card("D&D 4.0 isn't real D&D because of the _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("It's a D&D retroclone with _ added.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("Storygames aren't RPGs because of the _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("The Slayer's Guide to _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("Worst character concept ever: _, but with _.", "CAHgrognards", 2));
-            localData.questions.Add(new mod_xyzzy_card("Alightment: Chaotic _", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("It's a D&D retroclone with _ added.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("What made the paladin fall? _", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("The portal leads to the quasi-elemental plane of _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("The Temple of Elemental _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("Pathfinder is basically D&D _ Edition.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ : The Storytelling Game.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("People are wondering why Steve Jackson published GURPS _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("Linear Fighter, Quadratic _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("You start with 1d4 _ points.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("Back when I was 12 and I was just starting playing D&D, the game had _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("Big Eyes, Small _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the grim darkness of the future there is only _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("My innovative new RPG has a stat for _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("A true gamer has no problem with _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("Elminster cast a potent _ spell and then had sex with _.", "CAHgrognards", 2));
-            localData.questions.Add(new mod_xyzzy_card("The Deck of Many _.", "CAHgrognards", 1));
-            localData.questions.Add(new mod_xyzzy_card("You are all at a tavern when _ approach you.", "CAHgrognards", 1));
-            localData.answers.Add(new mod_xyzzy_card("Dragon boobs.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Verisimilitude.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Dissociated mechanics.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Rape.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Storygames.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Random chargen", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("RPG.net.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Dice inserted somewhere painful.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("FATAL.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Ron Edwards' brain damage.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Boob plate armor.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Gamer chicks.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("GNS theory.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Drizzt.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("The entire Palladium Books&reg; Megaverse&trade;", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("BadWrongFun.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Misogynerds.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Cultural Marxism.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Pissing on Gary Gygax's grave.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Steve Jackson's beard.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Natural 20.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Rapenards.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("The Crisis of Treachery&trade;.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Game balance.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Fishmalks.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("A kick to the dicebags.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Bearded dwarven women.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Owlbear's tears.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Magic missile.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("THAC0.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Bigby's Groping Hands.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Drow blackface.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Save or die.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Swine.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("The Forge.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Healing Surges.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Gelatinous Cubes.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Total Party Kill.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Quoting Monty Python.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Dumbed down shit for ADD WoW babies.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Mike Mearls.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Comeliness.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Vampire: The Masquerade.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Rifts&trade;.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("The random prostitute table.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Dildo of Enlightenment +2", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Grognards Against Humanity.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Cthulhu.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("The naked succubus in the Monster Manual.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Role-playing and roll-playing.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Fun Tyrant.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("4rries.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Martial dailies.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Black Tokyo.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Killfuck Soulshitter.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Cheetoism.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Grimdark.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Kobolds.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Oozemaster.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Rocks fall, everyone dies.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Mark Rein&middot;Hagen.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Maid RPG.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Splugorth blind warrior women.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Dying during chargen.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Slaughtering innocent orc children.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Lesbian stripper ninjas.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Magical tea party.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Grinding levels.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Dice animism.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("White privilege.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Githyanki therapy.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Amber Diceless Roleplaying.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("A ratcatcher with a small but vicious dog.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Bribing the GM with sexual favors.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Eurocentric fantasy.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Sacred cows.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Gygaxian naturalism.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Special snowflakes.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Neckbeards.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Gazebos.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Lorraine Williams.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Nude larping.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Portable holes.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Steampunk bullshit.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Dump stats.", "CAHgrognards"));
-            localData.answers.Add(new mod_xyzzy_card("Ale and whores.", "CAHgrognards"));
-            localData.questions.Add(new mod_xyzzy_card("For the convention I cosplayed as Sailor Moon, except with _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("The worst part of Grave of the Fireflies is all the _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the Evangelion remake, Shinji has to deal with _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("Worst anime convention purchase ever? _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("While powering up Vegeta screamed, _!", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("You evaded my _ attack. Most impressive.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("I downloaded a doujin where _ got into _.", "CAHweeaboo", 2));
-            localData.questions.Add(new mod_xyzzy_card("The magical girl found out that the Power of Love is useless against _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("The Japanese government has spent billions of yen researching _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the dubbed version they changed _ into _.", "CAHweeaboo", 2));
-            localData.questions.Add(new mod_xyzzy_card("_ is Best Pony.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("The _ of Haruhi Suzumiya.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("The new thing in Akihabara is fetish cafes where you can see girls dressed up as _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("Your drill can pierce _!", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("Avatar: The Last _ bender.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the name of _ Sailor Moon will punish you!", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("No harem anime is complete without _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("My boyfriend's a _ now.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("The _ of _ has left me in despair!", "CAHweeaboo", 2));
-            localData.questions.Add(new mod_xyzzy_card("_.tumblr.com", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("Somehow they made a cute mascot girl out of _.", "CAHweeaboo", 1));
-            localData.questions.Add(new mod_xyzzy_card("Haruko hit Naoto in the head with her bass guitar and _ came out.", "CAHweeaboo", 1));
-            localData.answers.Add(new mod_xyzzy_card("Japanese schoolgirl porn.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Horny catgirls.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Japanese people.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Cimo.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("ZA WARUDO!", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("40 gigs of lolicon.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Goku's hair.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Slashfic.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Star Gentle Uterus", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Naruto headbands.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Homestuck troll horns.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Hayao Miyazaki.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("The tsunami.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Death Note.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Small breasts.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Asians being racist against each other.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Weeaboo bullshit.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Tsundere.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Body pillows.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("A lifelike silicone love doll.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Anime figures drenched in jizz.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Surprise sex.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Yaoi.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Girls with glasses.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Bronies.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Blue and white striped panties.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("4chan.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Hello Kitty vibrator.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Finishing attack.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Keikaku* *(keikaku means plan).", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Hatsune Miku's screams.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("School swimsuits.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Lovingly animated bouncing boobs.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Dragon Balls.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Zangief's chest hair.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("DeviantArt.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Giant fucking robots.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Crossplay.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Moeblob.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Carl Macek's rotting corpse.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("My waifu.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Voice actress Megumi Hayashibara.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Lynn Minmei.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Panty shots.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Love and Justice.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Consensual tentacle rape.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Gundam.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Captain Bright slapping Amuro.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("The Wave Undulation Cannon.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Having sex in the P.E. equipment shed.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Tainted sushi.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Shitty eurobeat music.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Bad dubbing.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Fangirls.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Kawaii desu uguu.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Futanari.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Lesbian schoolgirls.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Osamu Tezuka, rolling in his grave forever.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("FUNimation.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Underage cosplayers in bondage gear.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Jackie Chan.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Exchanging Pocky for sexual favors.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Shipping.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Chiyo's father.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Magikarp.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Derpy.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Nanoha and her special friend Fate.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("The marbles from Ramune bottles.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Wideface.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Spoilers.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Man-Faye.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Oppai mousepads.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Another dimension.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Homura sniffing Madoka's panties.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Hadouken.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Asian ball-jointed dolls.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("J-list.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Childhood friends.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Monkey D. Luffy's rubbery cock.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Cloud's giant fucking Buster Swords.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Taking a dump in Char's helmet.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Hentai marathons.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Gothic Lolita.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Onaholes.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Super Saiyan Level 2.", "CAHweeaboo"));
-            localData.answers.Add(new mod_xyzzy_card("Gaia Online.", "CAHweeaboo"));
             localData.questions.Add(new mod_xyzzy_card("After blacking out during New year's Eve, I was awoken by _.", "CAHxmas", 1));
             localData.questions.Add(new mod_xyzzy_card("This holiday season, Tim Allen must overcome his fear of _ to save Christmas.", "CAHxmas", 1));
             localData.questions.Add(new mod_xyzzy_card("Jesus is _.", "CAHxmas", 1));
@@ -2091,52 +1318,6 @@ namespace Roboto.Modules
             localData.answers.Add(new mod_xyzzy_card("A visually arresting turtleneck.", "CAHxmas"));
             localData.answers.Add(new mod_xyzzy_card("A toxic family environment.", "CAHxmas"));
             localData.answers.Add(new mod_xyzzy_card("Eating an entire snowman.", "CAHxmas"));
-            localData.answers.Add(new mod_xyzzy_card("Bumpses.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("A Vin Gerard H8 X 10.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("We got the third rope, now where's the fourth?", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Harry Acropolis.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Under the ring.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("Tonights main event, _ vs. _.", "NEIndy", 2));
-            localData.answers.Add(new mod_xyzzy_card("Afa The Wild Samoan.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("Tackle, Dropdown, _.", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Peanut Butter and Baby sandwiches.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("Christopher Daniels is late on his _.", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Yard Tards.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Two girls, one cup.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Ugly Mexican Hookers.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Duct tape.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Sodaj.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("Instead of booking _, they should have booked _.", "NEIndy", 2));
-            localData.questions.Add(new mod_xyzzy_card("Genius is 10% inspiration, 90% _.", "NEIndy", 1));
-            localData.questions.Add(new mod_xyzzy_card("They found _ in the dumpster behind _.", "NEIndy", 2));
-            localData.answers.Add(new mod_xyzzy_card("Steve The Teacher.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("The best thing I ever got for Christmas was _.", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Jefferee.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("There's no crying in _.", "NEIndy", 1));
-            localData.questions.Add(new mod_xyzzy_card("Mastodon! Pterodactyl! Triceratops! Sabretooth Tiger! _!", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Autoerotic Asphyxiation.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("Don't eat the _.", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Sonic The Hedgehog.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Lotto Money.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("He did _ with the _!?!", "NEIndy", 2));
-            localData.answers.Add(new mod_xyzzy_card("Jailbait.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Prison rape.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("SOOOOO hot, want to touch the _.", "NEIndy", 1));
-            localData.questions.Add(new mod_xyzzy_card("Stop looking at me _!", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Two And A Half Men.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Anne Frank.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Black Santa.", "NEIndy"));
-            localData.questions.Add(new mod_xyzzy_card("I'm cuckoo for _ puffs.", "NEIndy", 1));
-            localData.questions.Add(new mod_xyzzy_card("Silly rabbit, _ are for kids.", "NEIndy", 1));
-            localData.answers.Add(new mod_xyzzy_card("Jesus Christ (our lord and saviour).", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Farting with your armpits.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Poopsicles.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Slaughtering innocent children.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Sex with vegetables.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("My gay ex-husband.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Accidentally sexting your mom.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Tabasco in your pee-hole.", "NEIndy"));
-            localData.answers.Add(new mod_xyzzy_card("Pee Wee Herman.", "NEIndy"));
             localData.answers.Add(new mod_xyzzy_card("A breath of fresh air.", "NSFH"));
             localData.answers.Add(new mod_xyzzy_card("A great big floppy donkey dick.", "NSFH"));
             localData.answers.Add(new mod_xyzzy_card("A pyramid scheme.", "NSFH"));
@@ -2417,537 +1598,6 @@ namespace Roboto.Modules
             localData.questions.Add(new mod_xyzzy_card("Baskin Robbins just added a 32nd flavor: _!", " Image1", 1));
             localData.questions.Add(new mod_xyzzy_card("I can drive and _ at the same time.", " Image1", 1));
             localData.questions.Add(new mod_xyzzy_card("_ ain't nothin' to fuck wit'!", " Image1", 1));
-            localData.answers.Add(new mod_xyzzy_card("Jaime Lannister, 'The Kingslayer'", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Cersei Lannister, the Queen", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Joffrey Baratheon, the Prince", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Tyrion Lannister, 'The Imp'", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Ned Stark, Lord of Winterfell, Warden of the North", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Robb Stark, heir apparent of Winterfell", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Jon Snow, the bastard", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Catelyn Stark, Lady of Winterfell", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Sansa Stark, betrothed to Prince Joffrey", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Arya Stark", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Bran Stark", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Hodor", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("The Wall", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("The Night's Watch", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Danerys Targaryen, Khaleesi of the Dothraki", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Theon Greyjoy, Ned Stark's youthful ward", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Peter 'Littlefinger' Baelish", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Lord Varys, the Spider", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("King Robert Baratheon, First of His Name, King of the Andals and the First Men, Lord Protector of the Realm", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Khal Drogo, Dothraki horse lord", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("The Iron Throne", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("HODOR!!", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Ros, the red-headed whore", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Winterfell", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Kings's Landing", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("The North", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Beyond the Wall", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Westeros", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("The Seven Kingdoms", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Direwolves", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("White Walkers", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Dragons", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("'Winter is Coming'", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("The old gods and the new", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Incest, hot twin on twin action", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("House Stark", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("House Lannister", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("House Targaryen", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("George R. R. Martin", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Gratuitous nudity, the way only HBO® can provide", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Throwing a boy out of a window to cover up incest", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Joining the Night's Watch", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Selling your sister to Dothraki nomads", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Making your husband love you through cunning use of reverse cowgirl", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Running a whorehouse, which is better than owning ships", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Conquering the continent with dragons", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Being forced to marry an abusive king", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Beheading a man for having no honor", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Explaining complicated plot with lots of naked women around", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Trusting Littlefinger", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Learning the prince is a bastard and the product of incest", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Slapping Joffrey. Repeatedly.", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Cutting off your enemies' heads and mounting them on spikes", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Raising your husband's bastard son as your own", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Asking a teenage girl if she's 'bled yet'", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Making millions of fans cry by killing off beloved characters", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Hodoring", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Riding off to join your best friend's rebellion", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Breastfeeding your creepy son until he's 9 years old", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Having a giant wolf for a pet", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Beheaded on the steps of the Sept of Baelor", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Killed by a member of the Kingsguard", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Seized the Iron Throne by any means necessary", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Built a 700 foot high wall to keep out bad things", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Born a bastard", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Butchered by White Walkers and arranged in an artful pattern", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Appointed as Hand of the King", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Found enough wolf cubs for all the children", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Fondled by your brother on your wedding day", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Climbed the wrong wall at the wrong time", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Started a pointless vendetta with another House", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Increased ratings with the use of gratuitous nudity", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Carried by Hodor", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Pissed off of the Wall just because", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Swore an oath to the old gods and the new", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Brought home a new baby bastard for your wife to hate", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Negotiated a wedding no one will like", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Rode a dragon, like a boss", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Changed things from the book, infuriating fans", "GOT"));
-            localData.answers.Add(new mod_xyzzy_card("Spent an entire reign chasing boars and fucking whores", "GOT"));
-            localData.questions.Add(new mod_xyzzy_card("If Ned Stark had _, he never would have _.", "GOT", 2));
-            localData.questions.Add(new mod_xyzzy_card("Brace yourselves, _ is coming.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("In exchange for his sister, Viserys was given _.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("Despite his best efforts, King Robert filled his reign with _.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ was proclaimed the true king of the Seven Kingdoms.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("In _, you win or you lose.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("Because of _, Danerys was called _ by everyone.", "GOT", 2));
-            localData.questions.Add(new mod_xyzzy_card("I will take what is mine with _ and _.", "GOT", 2));
-            localData.questions.Add(new mod_xyzzy_card("There is no word for _ in Dothraki.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the next Game of Thrones book, George R. R. Martin said _ will _.", "GOT", 2));
-            localData.questions.Add(new mod_xyzzy_card("All hail _! King of _!", "GOT", 2));
-            localData.questions.Add(new mod_xyzzy_card("A Lannister always pays _.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("First lesson, stick them with _.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the name of _, first of his _.", "GOT", 2));
-            localData.questions.Add(new mod_xyzzy_card("The things I do for _.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("Hodor only ever says _.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("The next Game of Thrones book will be titled _ of _.", "GOT", 2));
-            localData.questions.Add(new mod_xyzzy_card("A Dothraki wedding without _ is considered a dull affair.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("After I was caught _, I was forced to join the Night's Watch.", "GOT", 1));
-            localData.questions.Add(new mod_xyzzy_card("A man without _ is a man without power.", "GOT", 1));
-            localData.answers.Add(new mod_xyzzy_card("Full HD.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("The Gravity Gun.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Reading the comments.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("70,000 gamers sweating and farting inside an airtight steel dome.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Allowing nacho cheese to curdle in your beard while you creep in League of Legends.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Achieving the manual dexterity and tactical brilliance of a 12-year-old Korean boy.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Rolling a D20 to save a failing marriage.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("The collective wail of every Magic player suddenly realizing that they've spent hundreds of dollars on pieces of cardboard.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Being an attractive elf trapped in an unattractive human's body.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Temporary invincibility.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("The Sarlacc.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Filling every pouch of a UtiliKilt&trade; with pizza.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Bowser's aching heart.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Mario Kart rage.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Nude-Modding Super Mario World.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("An angry stone head that stomps on the floor every three seconds.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Yoshi's huge egg-laying cloaca.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("The Cock Ring of Alacrity.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Offering sexual favors for an ore and a sheep.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("A home-made, cum-stained Star Trek uniform.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Unlocking a new sex position.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("The boner hatch in the Iron Man suit.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Never watching, discussing, or thinking about My Little Pony.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Turn-of-the-century sky racists.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("The decade of legal inquests following a single hour of Grand Theft Auto.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("A fully-dressed female video game character.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Buying virtual clothes for a Sim family instead of real clothes for a real family.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Google Glass + e-Cigarette: Ultimate Combo!", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Tapping Serra Angel.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Charles Barkley Shut Up and Jam!", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Legendary Creature - Robert Khoo.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Winning the approval of Cooking Mama that you never got from actual mama.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Eating a pizza that's lying in the street to gain health.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Getting into a situation with an Owlbear.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("Grand Theft Auto: Fort Lauderdale.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("A madman who lives in a police box and kidnaps women.", "PAXP13"));
-            localData.answers.Add(new mod_xyzzy_card("SNES cartridge cleaning fluid.", "PAXP13"));
-            localData.questions.Add(new mod_xyzzy_card("The most controversial game at PAX this year is an 8-bit indie platformer about _.", "PAXP13", 1));
-            localData.questions.Add(new mod_xyzzy_card("What made Spock cry?", "PAXP13", 1));
-            localData.questions.Add(new mod_xyzzy_card("_: Achievement unlocked.", "PAXP13", 1));
-            localData.questions.Add(new mod_xyzzy_card("There was a riot at the Gearbox panel when they gave the attendees _.", "PAXP13", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the new DLC for Mass Effect, Shepard must save the galaxy from _.", "PAXP13", 1));
-            localData.questions.Add(new mod_xyzzy_card("What's the latest bullshit that's troubling this quaint fantasy town?", "PAXP13", 1));
-            localData.questions.Add(new mod_xyzzy_card("No Enforcer wants to manage the panel on _.", "PAXP13", 1));
-            localData.answers.Add(new mod_xyzzy_card("An immediately regrettable $9 hot dog from the Boston Convention Center.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Running out of stamina.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Casting Magic Missile at a bully.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Getting bitch slapped by Dhalsim.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Firefly: Season 2.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Rotating shapes in mid-air so that they fit into other shapes when they fall.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Jiggle physics.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Paying the iron price.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Sharpening a foam broadsword on a foam whetstone.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("The rocket launcher.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("The depression that ensues after catching 'em all.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Loading from a previous save.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Violating the first Law of Robotics.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Getting inside the Horadic Cube with a hot babe and pressing the transmute button.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Punching a tree to gather wood.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Spending the year's insulin budget on Warhammer 40k figurines.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("The Klobb.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Achieving 500 actions per minute.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Vespene gas.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Wil Wheaton crashing an actual spaceship.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Charging up all the way.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Judging elves by the color of their skin and not the content of their character.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Smashing all the pottery in a Pottery Barn in search of rupees.", "PAXE13"));
-            localData.answers.Add(new mod_xyzzy_card("Forgetting to eat and consequently dying.", "PAXE13"));
-            localData.questions.Add(new mod_xyzzy_card("I have an idea even better than Kickstarter, and it's called _starter", "PAXE13", 1));
-            localData.questions.Add(new mod_xyzzy_card("You have been waylaid by _ and must defend yourself.", "PAXE13", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the final round of this year's Omegathon, Omeganauts must face off in a game of _.", "PAXE13", 1));
-            localData.questions.Add(new mod_xyzzy_card("Action stations! Action stations! Set condition one throughout the fleet and brace for _!", "PAXE13", 1));
-            localData.questions.Add(new mod_xyzzy_card("Press &darr;&darr;&larr;&rarr; to unleash _.", "PAXE13", 1));
-            localData.questions.Add(new mod_xyzzy_card("I don't know exactly how I got the PAX plague, but I suspect it had something to do with _.", "PAXE13", 1));
-            localData.answers.Add(new mod_xyzzy_card("Zero F**K's Given!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Windows update", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Wilfrord Brimley's Mustache", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Wikileaks", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Why not Zoidberg?!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("White Shirt", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Warp core breach", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("W.O.P.R.", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Vinyl Vanna", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Vegas 2.0", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Using 4Chan for parenting advice", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("User Error", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Undercover NBC DateLine Reporter", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("UDP Handshake", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Two Girls One Cup", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Truffle Shuffle", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Trigger word", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Tractor Beam", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Toxic BBQ", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("I'm a text", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Tongue punch that fart box, boy", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("TL;DR", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Threat modeling", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Throat Punching", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("There's talks at DEF CON?", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("The Spanish Inquisition", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("The smell of glitter and lost dreams", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("The plan was to crowd source a plan", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("The fractured elements of her psyche reassembled themselves into an exact likeness of a snarling ferret and she self-destructed", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("The asshole sitting to my right.", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("The asshole sitting to my left", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("That's What ~ She", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("That's Racist!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("That place where I put that thing that time.", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("That just happened and we let that happen.", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Tentacle Porn", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("TARDIS", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Sweat, anger and shame", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Stolen laptops", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Sticky keyboard", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Steve Wozniak", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Steampunk", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("SRDF (Self Righteous Dick Face)", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Squirrel", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Spyware", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Spotting a FED", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("SPAM with Bacon", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Something something danger zone. I know. I'm not even trying anymore.", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Spacedicks", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Slow Clap", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Six gummy bears and some scotch", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Situational awareness", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Shut up and take my money", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Schrödinger's cat", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Shenanigans", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Security theater", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Security Evangelist", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Security by obscurity", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Script kiddies", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Said no one ever!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Sabu", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Running backwards through a corn field", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Rule 34", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ruby on Rails", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Rolling Natural 20's", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("ROFLCOPTER", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Riding a horse", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ridiculously Photogenic Guy", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ribbed for their pleasure", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Restore from backups", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Redbull without a cause", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Red Shirts", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("ReCaptcha", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Real men of Genius", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Rainbow tables", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Rageface", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Rage quit", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Put Kevin back", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Put a bird on it", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Purchasing challenge coins on eBay", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Prism", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Priest in a thong doing the Gangnam Style", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Pressing the red button", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Prenda Law", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Prairie dogging during an interview", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Practicing Gringo Warrior at home with baby oil. Naked.", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("P0rn", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("PORK CHOP SANDWICHES!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Pop, Pop, Ret", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Pool2Girl", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Please do the needful", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Pirate Party", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Pepper spray", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("PedoBear", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Patrick Star", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Pastebin password files", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Passwords emailed in plain text", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Password: Guest", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("0wning You", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Online backups", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("One Salty Hash", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("OMGBTFBBQ", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Obvious", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("NSA", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Now I'm into something... Darker", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Not a single fuck was given", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("North Korea's Twitter Account", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("No Starch Press", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("No Reason", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Nmap", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ninjas, Pirates, Robots, and Zombies!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ninja badge", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Nigerian scammers", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Neck beard", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("NAMBLA", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Na-ah-ah You didn't say the magic word!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("My sex robot Fisto Roboto", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("My massive SSD", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("My little Bronies", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("My first Prostate Exam", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Mouth Hugs", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Mega", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Mega Upload", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Math is hard. Lets go shopping!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Masturbating in a hot tub for a Ninja Badge", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Mansplaining", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Maniacally laughing while wearing a monocle", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Making a sandwich", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Maintaining the Ballmer Peak", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Lock picks", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Level 8 Portal", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Lemon Party", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Learning something at Con", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Lady boner", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("L0pht", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Keyloggers", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Kevin Mitnick", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Kegels", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Just the Tip", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Just a sniff", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Julian Assange", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("John McAfee", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("It's just a bunch of ones and zeros", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("It blended!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ingress", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Infected email attachments", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("In the cloud", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Implied Situational Consent", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ill-tempered sea bass", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("If you know what I mean", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Identity theft", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("ICANN", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("I should buy a boat", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Humperdink award", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("HuBot (Chatroom bot)", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Hookers & Blow", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Hashtag", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Handcuffs", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Grumpy Cat", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Gray beard, gray balls", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Grammar Nazi", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Got it done!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Good Guy Greg", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Golf cart", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Glasshole", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Getting thrown the the pool by the Goons with all your tech", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Getting hammered in the ass so much you die of getting hammered in the ass", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Getting F'd in the A with a D", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Getting a sympathy boner", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Fyodor", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("FX", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Forking someone's repo", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Forever Alone", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("FOIA Request", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Floppy Disk", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Flipping a table", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Flesh light", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Flame wars", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Fist full of assholes", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Fish fingers and custard", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("First World Problems", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Finished it last week!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("FemiNazi's", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Fear Uncertainty Doubt (FUD)", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Fapping while wearing a horse head mask", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Fapping on the family computer", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Fapped", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Facepalm", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("EXIF data stalking", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("End User License Agreement", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Electronic Frontier Foundation", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Edward Snowden", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Drunken Muppet", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Drones", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Double ROT13", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Double Facepalm", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Don't Blink", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Dr. Who", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Dongs", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Doing the '(you are) NOT the father' dance", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Digital Millennium Copyright Act (DMCA)", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Die in a fire", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Dick and/or Balls", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("derp.rar (yo.zip)", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Def Con Wireless", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Do not connect to this!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Deep C Phishing", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Dark Tangent", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Dan Kaminsky Password Generator", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Dan Kaminsky", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Daaaaaanger Zone!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Cyber war", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Cyber-douchery", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Cyber Punk", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Crying over spilt milk", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Crash Override", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Copyright trolls", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Coding while listening to whale songs", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Clicking shit", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Chuck Norris", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("China", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Check a look at you later", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Cat memes", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Caressing a man's hairy chest", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Captain Crunch (John Draper)", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Butthurt", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Butt chugging mom's boxed wine", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("But then I'd have to kill you", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Big Dongles", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Big Data", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Being the big spoon", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Being the little spoon", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Being sexually aroused by the sight of TSA's gloves", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Bath salts", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Bacon", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Babe caught me slippin'", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Awkward mouth hugs", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Awkward hugs", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Asymmetric encryption", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Arbitrary code execution", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("APT1", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Anonymous", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("And then it died", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("And boom goes the dynamite", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("An arrow to the knee", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Altair 8800", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("All the Things!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Alexis Park", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ain't nobody got time for dat!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("Ada Initiative approved flesh-light with anti-rape condom included!", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("ACTII pr0n", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A van down by the river", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A town with no ducks", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A series of explicit Post-It notes", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A series of tubes", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A Raspberry Pi", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A Payphone", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A Ninja-tel Phone", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A Hak5 Pineapple", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A Googly eyed blow job", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A giant cup of STFU", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A fake ID made from Kinko's", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A baby's arm holding an apple", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("A 'Pair of Docs'", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("64 Bit Keys", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("503 Card Unavailable", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("501 Card Error", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("500 internal card error", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("406 Not Allowed", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("404 Not Found", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("403 Forbidden", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("401 Unauthorized", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("3D printed P0rn", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("302 Card Redirect", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("10,000 Canadian Pennies", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("1.21 Jigawatts", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("(wub) (wub) (wub)", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("'I Survived Ada Camp' Challenge Coin", "HACK"));
-            localData.answers.Add(new mod_xyzzy_card("1337 Sp3ak", "HACK"));
-            localData.questions.Add(new mod_xyzzy_card("/r/ _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("The Ada Initiative is now attacking _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Not another _ in the hotel elevator!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Closing Ceremonies drinking game: Every time _ is mentioned... DRINK!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("In a Congressional hearing, US CYBERCOM commander Gen. Alexander claimed the latest data breach was due to _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("The Maker Faire was unexpectedly interrupted by _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Do you even _?", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Come to the dark side, we have _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Y U NO _!!!!!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("While alone in the server room I _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("When I get drunk I am an expert on _", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Well, guess what? I’ve got a fever, and the only prescription is more _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("We should take _ and push it _.", "HACK", 2));
-            localData.questions.Add(new mod_xyzzy_card("We decided to _ to raise money for the EFF.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("TSA wouldn't allow me through because of my _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Tonight's Final Hacker Jeopardy category will be _!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Today's PaulDotCom podcast featured _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("These are not the _ you are looking for.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("The snozberries taste like _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("The only winning move is to _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("The next cyber war will feature _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("The best part of Alexis Park was all the _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("So long and thanks for all the _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Security through obscurity is better than _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Rule 34 _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Rock, Paper, Scissors, Lizard, _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Our most powerful weapon for the Zombie Apocalypse will be _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Only half of programming is coding. The other 90% is _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("One does not simply _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("On the Internet, no one can tell you're _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Occupy _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Next year's scavenger hunt is rumored to include finding a _ with a _.", "HACK", 2));
-            localData.questions.Add(new mod_xyzzy_card("Next time we meet we should _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("My extremely large _ is what makes me better than you.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("My _ brings all the _ to the yard.", "HACK", 2));
-            localData.questions.Add(new mod_xyzzy_card("Most hackers smell like _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Las Vegas is best known for _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Keep calm and _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("It's dangerous to go alone. Take _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("It smells like _ in this room.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("In a shocking move Archive.org decided to NOT back up _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I'mma let you finish but _ is the best _ of all time.", "HACK", 2));
-            localData.questions.Add(new mod_xyzzy_card("I'm fucking tired of hearing about _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I would be doing more with my life, except for this _ in the way.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I work 80 hours a week and still can't afford a _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I used to be a hacker like you, until I took a(n) _ to the knee.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I use _ to secure all of my personal data.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I spotted the fed and all I got was _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I look like a geeky hacker, but I don't know anything about _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I have the biggest _, ever!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I find your lack of _ disturbing.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I can't believe they rejected my talk on _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("I can haz _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("HOLY _ BATMAN!!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("High Tech start-up company combines _ with _.", "HACK", 2));
-            localData.questions.Add(new mod_xyzzy_card("Go home _, you're drunk.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Go Go Gadget _!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Drink all the _. Hack all the _.", "HACK", 2));
-            localData.questions.Add(new mod_xyzzy_card("Def Con Kids will now focus on teaching young hackers _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Confession Bear Says: _", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("But does _ run NetBSD?", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("Am I the only one around here who _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("All I did was _ but someone gave me a red card.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("35% of all hackers have to deal with _.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_. There's an app for that.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_. This is why I can't have nice things!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_: You keep using that term. I do not think it means what you think it means.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ is now outsourced to call centers in India.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ shot first.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ Killed the barrel roll", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ A'int Nobody Got Time For Dat!!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ Put a bird on it!", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ makes me puke rainbows.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ is also monitored by Prism.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ is what keeps us together.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ is a better replacement for crypto.", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ riding a Segway", "HACK", 1));
-            localData.questions.Add(new mod_xyzzy_card("One day, over my fireplace, I'm going to have a massive painting of _. You know, to remind me where I came from.", "HACK", 1));
             localData.answers.Add(new mod_xyzzy_card("10 Incredible Facts About the Anus.", "CAHe4"));
             localData.answers.Add(new mod_xyzzy_card("A Native American who solves crimes by going into the spirit world.", "CAHe4"));
             localData.answers.Add(new mod_xyzzy_card("A Ugandan warlord.", "CAHe4"));
@@ -3068,754 +1718,6 @@ namespace Roboto.Modules
             localData.answers.Add(new mod_xyzzy_card("Being a motherfucking box.", "Box"));
             localData.answers.Add(new mod_xyzzy_card("Former President George W. Box.", "Box"));
             localData.answers.Add(new mod_xyzzy_card("Pandora's vagina.", "Box"));
-            localData.answers.Add(new mod_xyzzy_card("Tom Baker, in nothing but a scarf.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Walking in on Jack Harkness doing your mom. And your dad.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The buzzing noise that the Sonic Screwdriver makes.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Sharing a public restroom with a weeping angel.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Just now realizing that Torchwood is an anagram of Doctor Who.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Fifty years of fanfic.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Wanting to punch that teeny-bopper Whovian that's butthurt the new Doctor isn't in his twenties.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The Doctor going back in time to solve a REAL problem: Twilight.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A Doctor Who body pillow.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The Silence.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A Rusty Cyberman.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The Doctor having a chance encounter with a couple of 80s metalheads.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Drunkenly drawing tally marks on your face.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A shitty Doctor Who knock-knock joke.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Davros getting up on the wrong side of the bed.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The Master, baiting the doctor into a trap.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A Vashta Nerada that just wants a hug.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Wishing you could regenerate.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Kidnapping a barely-legal woman to time travel with.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Getting so much plastic surgery, you have to be framed and moisturized.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Quitting this panel after one round, because you are afraid of getting typecast.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The poor costume decisions that were made in the 1970s.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The Mary Jane Adventures.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Fondling a Dalek's slippery bits.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Sixteen feet of scarf bondage.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Air from my lungs.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Smoking 1000 cigarettes, just so you can sound like a Dalek when you talk.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Giving her the ol' plastic Mickey.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Companion Porn.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("An acid rain shower on Skaro.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Pointing to your crotch and saying Allons-y.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A sonic screwdriver stuck on the vibrate setting.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Pouting in a rain storm and having to take a wicked piss.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The poor decision that is having a staring contest with a weeping angel.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Sorry, this answer is only available in the fanfic version of Cards Against Con.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Plot holes so wide, you could drive a truck through them.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A blinged-out TARDIS, blasting dubstep when it is travelling.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Rose Tyler's teeth.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The Master singing Bad Case of Loving You.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Steven Moffat taking a big old dump in your Cheerios.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("K-9 humping your leg.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A bigger, bluer TARDIS.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Robot Anne Robinson.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A fez caked with semen.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A GUITARDIS", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The Celestial Toymaker's plaything.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Captain Jack Harkness.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A furry writing BAD WOLF everywhere.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Your dyslexic friend that wants you to come watch a marathon of Doctor How.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Fapping to Billie Piper portraying a callgirl.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Being used as a plot device by Steven Moffat.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A Costco-sized bag of Jelly Babies.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A global simulcast that forces Whovians to see sunlight for the first time in ages.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("THE END OF TIME ITSELF!", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Finding Autons oddly attractive.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The fuck machine dungeon of the Cybermen.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Glenn Beck convulsively puking as a brood of Daleks swarm in on him.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("River Song.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Low-budget special effects.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Eggs.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Dalek porn.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Taking a Doctor Poo.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The big banana in your pocket.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Opening the door of the TARDIS and leaving a deuce in the time-space continuum.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("David Tennant.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Matt Smith.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Chistopher Eccleston.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Siltheen farts.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("A kid in a gas mask asking if you are his mummy.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("Fish fingering your custard.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("The hideousness that is Raxacoricofallapatorious.", "Gallifrey"));
-            localData.answers.Add(new mod_xyzzy_card("An Ood getting a starring role in a hentai.", "Gallifrey"));
-            localData.questions.Add(new mod_xyzzy_card("They found some more lost episodes! They were found in _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("The Doctor did it! He saved the world again! This time using a _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ was sent to save _.", "Gallifrey", 2));
-            localData.questions.Add(new mod_xyzzy_card("I'd give up _ to travel with The Doctor.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("The next Doctor Who spin-off is going to be called _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("Who should be the 13th doctor?", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("The Chameleon circuit is working again... somewhat. Instead of a phone booth, the TARDIS is now a _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("Originally, the 50th anniversary special was going to have _ appear, but the BBC decided against it in the end.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("After we watch an episode, I've got some _-flavored Jelly Babies to hand out.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("Wibbly-wobbly timey-wimey _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("What's going to be The Doctor's new catch phrase.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("Bowties are _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("There's a new dance on Gallifrey, it's called the _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("They announced a LEGO Doctor Who game! Rumor has it that _ is an unlockable character.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("FUN FACT: The Daleks were originally shaped to look like _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("At this new Doctor Who themed restaurant, you can get a free _ if you can eat a plate of bangers and mash in under 3 minutes.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("According to the Daleks, _ is better at _.", "Gallifrey", 2));
-            localData.questions.Add(new mod_xyzzy_card("Who is going to be The Doctor's next companion?", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("I think the BBC is losing it. They just released a Doctor Who-themed _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("It's a little-known fact that if you send a _ to the BBC, they will send you a picture of The Doctor.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("I was okay with all the BAD WOLF graffiti, until someone wrote it on _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("Jack Harkness, I can't leave you alone for a minute! I turn around and you're trying to seduce _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("In all of time and space, you decide that _ is a good choice?!", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("Adipose were thought to be made of fat, but are really made of _.", "Gallifrey", 1));
-            localData.questions.Add(new mod_xyzzy_card("I hear the next thing that will cause The Doctor to regenerate is _.", "Gallifrey", 1));
-            localData.answers.Add(new mod_xyzzy_card("… . .-. . -. .. - -.—  (Serenity)", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("'Rails with pails.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Apple Juice.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A bull penis cane.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A chip in your heart that forces you to love.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A dead Ms. Paint.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A dominant Kankri.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A five minute video of Cronus giving Kankri a blowjob.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A mighty wwizard of wwhite science.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A Nicolas Cage body pillow.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A painting of a horse attacking a football player.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A rapist cuttlefish.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A slaughtered sperm whale.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A smuppet in Dirk’s pants.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A Strider sandwich.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("A VrisKan waffle.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Accidentally touching Gamze’s enormous codpiece.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Actual blind people who cosplay Terezi.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Alternian fine art.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Alternian rainbow-drinker romance novels.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("An acrobatic fucking pirouette.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Andrew Hussie.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Andrew Hussie’s lips.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Anonymous Soporifics Support.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Apple Juice.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Aradia Bot.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Aradia Megido.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Aradia’s charred, rotting corpse.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Aranea Serket.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Aranea's exposition stand.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Arguing over troll sexuality.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("ARquiusprite’s muscles.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Arthour the lusus.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("AVATAR.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Baby Dave.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Bard Quest.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Beating the shit out of Terezi.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Bec Noir.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Becoming Tumblr famous.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Being fuck deep in meowcats.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Being in a relationship with a non-Homestuck.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Being locked in a Prospitian prison.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Being the other guy.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("BETTY FUCKING CROCKER.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Binge reading every fanfiction for a pairing and then hating yourself a little bit.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("BL1ND JUST1C3.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Blackrom orgies.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Bro and Dave banging while Rose watches.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Bro.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Bro's rapping ventriloquism act.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Bro’s death.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("BUCKETS.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Butler Island.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("C4NDY R3D BLOOD >:]", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Caledscratch.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Caliborn.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Caliginous speed dating.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Calliope.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Can Town.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Can Town.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cards Against Alternia.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Carlos Maraka.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Casey.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Centaur milk.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Charging down halls, shouting profanities and being silly.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cherub m-preg.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cherub mating rituals.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Chest of WHIMSY.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cliched JohnKat fanfiction.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cod Palace.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cod Tier Gamzee.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Communism!", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Constantly breaking Hussie’s copyright.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cosplay sex.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cosplayers who do photo shoots in bondage (God bless them).", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cosplayers who do photo shoots in bondage (God bless them).", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cosplayers who don’t seal their paint.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Crabdad.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Creative uses for Aradia’s whip.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cronus actually getting laid.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Cronus Ampora.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dad Egbert/Dad Crocker.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dad's pipe.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dad’s fedora.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Damara Megido wearing white at her wedding.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Damara Megido.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Damara Megido’s existence.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dante Basco.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dating exclusively within the fandom.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dave Strider.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dave’s throbbing beef truncheon.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dead parents.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Destroying clocks.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Developing a deep fear of the sound of clown horns after becoming a Homestuck.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dirk Strider.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Dirk’s self-insert MLP fan character.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Discovering Sollux is red-blue colorblind.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Doc Scratch.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Drawing pornography for Caliborn.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Elf tears.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Equius cumming so hard he blows a hole straight through his partner.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Equius Zahhak.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Equius’s choice ass.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Equius’s copy of Fifty Shades of Neigh.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Equius’s towel.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Equius’s used towel pile.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan Ampora.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan crying after pailing Vriska for the first time.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan stripping to make rent.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan’s cape.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan’s empty quadrants.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan’s empty quadrants.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan’s lowwer half.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Eridan’s upper half.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Falling into a pool of lava.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Fat Vriska.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Faygo.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Feferi Peixes.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Feferi’s voluptuous curves.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Fiduspawn.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Fifty fucking Nepetas.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Filling all of your quadrants.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Filling all of your quadrants.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Finding grey paint on your bathroom door three weeks after the last meetup.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Fis)( puns!", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Flighty broads.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Flipping the fuck out.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Game Bro Magazine.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Gamzee Makara.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Gamzee’s clown horns.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("gAmZeE’S pOtIoNs: 420 bOoNbUcKs.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Geromy.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Getting forked by a 2x3dent.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Gl'bgolyb. AKA Feferi’s fucking lusus.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Going to the bark side.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Grandpa Harley/Grandma English.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Grimbark Jade.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Groincobblers.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Gross misinterpretations of your favorite character.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hateclown on the side.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Having STRONG surprise buttsex.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hellmurder Island.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hemostuck.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hemostuck.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Her Imperious Condescenscion.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Her Imperious Condescension’s royal butt-plug collection.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Homesmut Voices.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Homestuck stealing all the fans from Hetalia and then subsequently watching all its fans leave for OFF and Danganronpa.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Homestuck.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Homosuck.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("HONK HONK, MOTHER FUCKER.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Horsearoni.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Horuss Zahhak.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hot crossplayers.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hunk Rump Magazine.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hussie constantly breaking copyright and then telling his fans to not break his copyright.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hussie constantly breaking copyright.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Hussie jacking it to our tears of anguish.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jade Harley.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jade’s dog penis and knot.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jailbreak.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jake English standing there like a fucking idiot.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jake English.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jake English’s assless chaps.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jake English’s choice ass.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jake English’s manhood.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Jane Crocker.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("John Egbert.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("John’s flaming homosexuality.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("John’s Prankster’s Gambit.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Just KNOWING that Slick is going to stab Ms. Paint.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Kanaya destroying Cantown.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Kanaya Maryam.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Kanaya's ashen promiscuity.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Kanaya’s chainsaw.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Kankri Vantas.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat actually topping, for once.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat and Jade’s adorable little of mpreg puppies.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat dying of a burst blood vessel mid-rant.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat going through puberty before every other troll and being, like, nine feet tall.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat Tantrum Bingo.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat Vantas.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat’s ragegasm.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Karkat’s tiny, angry looking dick.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Kawaii Yaoi.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Kurloz Makara.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lame bucket jokes.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Latula Pyrope.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Laying back and thinking of Alternia.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Leprechaun m-preg.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Liberty. Reason. Justice. Civility. Edification. Perfection. MAIL.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lil' Cal's dead eyes.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lil’ Cal.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lil’ Cal’s raging boner.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lil’ Hal.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lil’ Seb.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Little children who poop hard in their baby ass diapers.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lord English.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lord English’s peg leg.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Lucky Charms.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Maid Equius.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Maple Hoof.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("March Eridan.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Masturbating while thinking of your OTP.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Masturbating while thinking of your OTP.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Maxing out your credit cards to buy Homestuck merchandise.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Meenah Piexes.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Meulin Leijon.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Mierfa Durgas.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Mierfa Durgas’ troll-horn nunchakus.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Mind honey.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Mister Dude, Sir Brah, Dood Dude, Vitamin D, Dude Esquire.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Mituna Captor.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Mom.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("MS Paint Adventures.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("MSPARP.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Murdering angels.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Muscle beasts.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("My Little Hoofbeast: Moirailigence Is Magic.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Nektan Whelan.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Neophyte Redglare.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Nepeta Leijon.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Nepeta violently mauling people with bad ships.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Nepeta’s heat cycle.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Nepeta’s shipping chart.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Never being able to look at apple juice, milk, buckets, or knitting needles without feeling a little bit uncormfortable.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Never dating a Serket.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Nic Cage saying boner.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("No homo.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Noping the fuck out of there.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Not shipping it.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Nyehs and wwehs.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Only cosplaying male characters when you get pregnant.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Overtaking entire conventions.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Paint splatters that look like troll cum.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("PantsKat.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Paradox slime.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Petstuck.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("PipeFan413.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Plush Rump Magazine.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Plush rump.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Porrim Maryam.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Porrim's condom stash.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Porrim’s motherly affections.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Post-apocalyptic shroudwear.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Problem Sleuth.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Recuperacoon.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Remembering that awkward time when Karkat called Future arachnidsGrip FAG.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Rose and Kanaya snuggling.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Rose Lalonde.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Rose telling John she’s a lesbian and they will never be together.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Rose’s review of My Immortal.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Roxy Lalonde.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Rufio.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Rufioh Nitram.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sacred leggings.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("SBAHJ hentai doujinshi.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Schrödinger's Nepeta.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("SCIENCE WAND!", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Seadweller dick fins.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Selling your soul to Hussie.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Shippers.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Shipping it.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Shipping the fuck out of something.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Ships ending in -cest.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Shitty swords.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Shopping with Terezi.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sick fires.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Skipping to Act 5.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sleeping ten people to a room at conventions.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sloppy inter-species makeouts.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Smuppets.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sobbing uncontrollably while reading fanfiction.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sollux Captor.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sollux’s bifurcated bone bulge.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sopor pies.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("SORD.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Soul portraits.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Species-swap fanfics.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Spidermom.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Staying up to three AM, cleaning the grey off every surface of your hotel room in a desperate bid to not get fined.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Stealing Tavros’s wheelchair.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Stridercest.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Sugoi Yuri.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("sweet bro and hell jeff.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("TAB.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tavros Nitram.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tavros’s wheelchair.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Telling Sollux what happens to male bees after sex.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tentabulges.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tentative thank-you stabs.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Terezi Pyrope.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("That dead crow with the sword through it.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("That human vacation with the giant red chimney-ass-hole.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("That shitty apple.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("That wonderful feeling when you take off your binder.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The special attachments we ALL know that Equius gave to AradiaBot.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The 7th Gate.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The animes.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Condesce’s crotch.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Condesce’s selfies.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Dildo of Oglogoth.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Disciple.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Dolorosa.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The E%ecutor/Expatri8 Darkleer.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Exiles.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Felt.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The gays.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The glory that is BroJohn.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Grand Highblood.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Great Hiatus of 2013.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The green sun.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The guy who fingered an Ampora.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Handmaid.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The hemospectrum.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Hilarocaust.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Homestuck drinking game (do a shot every time someone dies!)", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Insane Clown Posse.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The little red arm-swingy-dealy thing or whatever it is called.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Marquise Spinneret Mindfang.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Mayor.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The mere concept of the Olive Garden.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Midnight Crew.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The noises Mituna makes during sex.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Orphaner Dualscar.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Psiionic.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The ridiculous fact that some people communicate without luminous rear ends.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Shipping Olympics.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The significant purposes, biologically speaking, of troll nipples.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The slammer.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Sufferer/The Signless.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Summoner.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The sweat-drenched, rippling muscles of several truly majestically endowed hoofbeasts.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The undeniable fact that Gamzee did nothing wrong.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The unimaginable amounts of cash Faygo’s been making off of Homestucks.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Wrinklefucker.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("The Wrinklefucker.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Toilet displacement.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Topping from the bottom.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Triggers.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Troll blood.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Troll horns.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Troll Will Smith.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Trolls misunderstanding what Bucket List means.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tumblr spoilers.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tumblr user Egberts.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tumblr user Pizza.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Tumblr.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Unreal air.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("UPD8!!!!!!!!", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("UPS delivery woman Nepeta.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Viceroy Bubbles von Salamancer.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Violent Blackrom sex.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Vodka Mutini.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Vodka.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Vriska dying after being stabbed by Terezi.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Vriska Serket.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Vriska’s SEXY sex tips for having SEXY SEX!", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Warhammer of Zillyhoo.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("What pumpkin?", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("When your favorite character dies.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("where MAKING THIS HAPEN", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Willingly filling buckets with Eridan.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Wondering if Meenah has a pitch crush on John, what with the attempted stabbings.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("World building!", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Your 300 pound matronly freight-train.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Your lusus giving you The Talk.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Your Mary Sue fantroll.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Your privilege.", "Alternia"));
-            localData.answers.Add(new mod_xyzzy_card("Your significant other coming home and finding you in full grey cosplay.", "Alternia"));
-            localData.questions.Add(new mod_xyzzy_card("_ makes the Homestuck fandom uncomfortable.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("_ stays awake at night, crying over _.", "Alternia", 2));
-            localData.questions.Add(new mod_xyzzy_card("_ totally makes me question my sexuality.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("_. On the roof. Now.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("_. It keeps happening!", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Sacred leggings was a mistranslation. The Sufferer actually died in Sacred _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("After throwing _ at Karkat’s head, Dave made the intriguing discover that troll horns are very sensitive.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("AG: Who needs luck when you have _?", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("All _. All of it!", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Alternia’s political system was based upon _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Believe it or not, Kankri’s biggest trigger is _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Calliborn wants you to draw pornography of _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Dave Strider likes _, but only ironically.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Equius beats up Eridan for _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Everybody out of the god damn way. You’ve got a heart full of _, a soul full of _, and a body full of _. (Draw two, play three)", "Alternia", 3));
-            localData.questions.Add(new mod_xyzzy_card("Feferi secretly hates _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("For Betty Crocker’s latest ad campaign/brainwashing scheme, she is using _ as inspiration.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("For his birthday, Dave gave John _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Fuckin’ _. How do they work?", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Gamzee not only likes using his clubs for juggling and strifing, he also uses them for_.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Getting a friend to read Homestuck is like _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("How do I live without _?", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Hussie died on his quest bed and rose as the fully realized _ of _.", "Alternia", 2));
-            localData.questions.Add(new mod_xyzzy_card("Hussie unintentionally revealed that Homestuck will end with _ and _ consummating their relationship at last.", "Alternia", 2));
-            localData.questions.Add(new mod_xyzzy_card("I am _. It’s me.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("I finally became Tumblr famous when I released a gifset of _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("I just found _ in my closet it is like fucking christmas up in here.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("I warned you about _, bro! I told you, dog!", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("In the final battle, John distracts Lord English by showing him _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("It’s hard, being _. It’s hard and no one understands.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("John is a good boy. And he loves _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("John may not be a homosexual, but he has a serious thing for _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Kanaya reached into her dead lusus’s stomach and retrieved _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Kanaya tells Karkat about _ to cheer him up.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Karkat gave our universe _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Latula and Porrin have decided to teach Kankri about the wonders of _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Little did they know, the key to defeating Lord English was actually _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Little known fact: Kurloz’s stitching is actually made out of _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Nanna baked a cake for John to commemorate _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Nepeta only likes Karkat for his _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Nepeta’s secret OTP is _ with _.", "Alternia", 2));
-            localData.questions.Add(new mod_xyzzy_card("Nobody was surprised to find _ under Jade’s skirt. The surprise was she used it for/on _.", "Alternia", 2));
-            localData.questions.Add(new mod_xyzzy_card("Porrim made Kankri a sweater to cover his _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Problem Sleuth had a hard time investigating _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Rose was rather disgusted when she started reading about _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Terezi can top anyone except _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("The hole in Kanaya’s stomach is so large, she can fit _ in it.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("The next thing Hussie will turn into a sex joke will be _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("The only way to beat Vriska in an eating contest is to put _ on the table.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("The real reason Terezi stabbed Vriska was to punish her for _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("The secret way to achieve God Tier is to die on top of _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("The thing that made Kankri break his vow of celibacy was _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Turns out, pre-entry prototyping with _ was not the best idea.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Vriska killed Spidermom with _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Vriska roleplays _ with Terezi as _.", "Alternia", 2));
-            localData.questions.Add(new mod_xyzzy_card("Vriska’s greatest regret is _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Wear  _. Be _.", "Alternia", 2));
-            localData.questions.Add(new mod_xyzzy_card("What did Jake get Dirk for his birthday?", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("What is the worst thing that Terezi ever licked?", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("What is your OT3? (Draw 2, play 3.)", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("What makes your kokoro go doki doki?", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("What's in the box, Jack?", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("When a bucket is unavailable, trolls with use _.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("When Dave received _ from his Bro for his 9th birthday, be felt a little warm inside.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Whenever I see _ on MSPARP, I disconnect immediately.", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("where doing it man. where MAKING _ HAPEN!", "Alternia", 1));
-            localData.questions.Add(new mod_xyzzy_card("Your name is JOHN EGBERT and boy do you love _!", "Alternia", 1));
-            localData.answers.Add(new mod_xyzzy_card("Making 77 cents on the dollar (unless you're Latina).", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Inspirational Dove chocolate wrappers.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Hey, Susie. I know your job is _ but can you just grab me _? Thanks.", "Ladies Against Humanity", 2));
-            localData.answers.Add(new mod_xyzzy_card("Masturbating to Ty Pennington.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Pretending you'll wear that bridesmaid dress again.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Mansplaining.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Beyonce thinkpieces.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Gabby Giffords' physical therapy.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Female genital mutilation.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("When the tampon's too low and you feel it with every step.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A joke too funny for women to understand.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Meryl Streep selfies.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Hillary bitch-slapping Bill with a frozen tuna.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("The Bechdel Test.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Staph infections from dirty nail salons.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("This month in Cosmo: how to give your man _ at the expense of _.", "Ladies Against Humanity", 2));
-            localData.answers.Add(new mod_xyzzy_card("Stalking wedding photos on Facebook, weeping softly.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Emma Goldman burning the whole motherfucker down.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Douches that smell like rain.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Rosa Parks' back seat.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Engagement photos on train tracks.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Choking on the ashes of Gloria Steinem's bras.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("The cold, hard truth that no lesbian has ever scissored.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Doing your kegels at work.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Misandry.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Abortion Barbie.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Telling a street harasser You know what? I *will* blow you.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Peggy Olson's cutthroat ambitions.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A quickie with Rachel Maddow in the green room.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Forcefeeding Sheryl Sandberg the pages of Lean In, one by one.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Emma Watson, Emma Stone, EMMA THOMPSON BITCHES.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Are you there, God? It's me, _", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Dumpsters overflowing with whimisical save-the-date magnets.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("50 Shades of _.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("The torture chamber where Kathryn Bigelow keeps James Cameron.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A detailed vajazzling of Van Goh's Starry Night.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("It's not length, it's _.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("STOP MAKING ME PRETEND TO CARE ABOUT YOUR WEDDING PINTEREST DARLA.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("The Chub Rub.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Chin hairs you pretend you don't have.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Whatever, Peeta. You'll never understand my struggle with _.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("A strongly worded letter to Netflix demanding the addition of The Good Wife.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Doubling up on sports bras.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("When a dog smells your crotch and you know exactly why.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Men are from _, women are from _.", "Ladies Against Humanity", 2));
-            localData.answers.Add(new mod_xyzzy_card("Malala's gunshot wounds.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Lactating when a stranger's baby cries on the train.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Why does the Komen Foundation hate Planned Parenthood?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("A new cookbook by Sylvia Plath.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Crying in the fitting room during bikini season.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Math is hard. Let's go _!", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Eating the entire bag.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("The latest proposal in the Texas legislature is to take away _ from women.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Scalding hot wax right there on your labia.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("The G-Spot, the Y-spot, the other spot you made up to confuse your partner.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("If you don't mind my asking, how *do* lesbians have sex?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("The Golden Girls' never-ending supply of frozen cheesecake.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Forcefeeding Sheryl Sandberg the pages of Lean In, one by one.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Underboob swet like rancid milk.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("In her next romcom, Katherine Heigl plays a woman who falls in love with her boss's _.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Wondering whether your girl crush on Hermione constitutes pedophilia.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Taking a giant dump on the 18th green at the Augusta National Golf Club.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A brown smudge equally likely to be period blood or chocolate.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("The Pantone color of the year is inspired by _.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("A hand-crocheted Diva Cup case from Etsy.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("What is Olivia Pope's secret to removing red wine stains from white clothes?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Your gigantic crush on Jenna Lyons.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A one-way ticket to Steubenville.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A bodice-ripping 4-way with Alexander Skarsgard, Ian Somerhalder, and David Boreanaz.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Why exactly was Alanis so mad at Uncle Joey?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Finger banging Michelle Rodriguez.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Princess Aurora maniacally devouring the still-beating heart of Maleficent.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Why do men on the Internet send me pictures of _?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("A tear stained copy of Reviving Ophelia.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A misogynist dystopia set in a not-too-distant WAIT A MINUTE.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Dying your hair red like Angela Chase.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Daenerys Targaryen's fire-breathing vajayjay.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("What's my weapon of choice in the War on Women?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Resentfully clicking like on your boss's vacation photos.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Calmly informing your date that you understand the infield fly rule better than he does.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Tina Fey and Amy Poehler making out on a pile of Bitch magazines.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Only shaving up to the knee.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Meredith Grey's slut phase.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Shameful childhood memories of envying the wheelchair girl who got all the attention.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("What's Seth MacFarlane's problem?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Sort of wishing the baby on the plane would die.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Tenderly dominating Uncle Jesse from behind.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Stumbling on David Wright performing as Judy Garland in the East Village.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Urinating on yourself to prevent an assault.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("When a FOX News anchor causally references 'ebonics'.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Getting DPed by the Property Brothers on a custom granite countertop.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("I couldn't help but wonder: was it Mr. Big, or was it _?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Being compared to a Cathy Cartoon on Metafilter.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Kim Kardashian's placenta banh mi.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("What fell into my bra?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Asking Gilbert Gottfried to do the Iago voice during sex.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Watching Bethenny Frankel struggle for life in a churning sea of pre-mixed SkinnyGirl cocktails.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("An alternate version of the Washington Monument that looks kind of like a vagina.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("What's my preferred method of contraception?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Telling Pacey your innermost secrets in a canoe beneath the Capeside stars.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("The blue liquid from tampon commercials.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Sofia Coppola's new film focuses on a wealthy young white woman feeling alienated by _.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Patti Stanger's line of jewelry.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("#solidarityisforwhitewomen.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("_: the Tori Amos song that changed my life", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("A candlelight vigil for Nicole Brown Smith.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Something old, something new, something borrowed, and _.", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Sexual fantasies involving Mindy Lahiri and a sumptuous coffeecake.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Tweeting Cory Booker about that guy walking behind you.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("A gender neutral, owl-themed baby announcement.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("Why can't we have nice things?", "Ladies Against Humanity", 1));
-            localData.answers.Add(new mod_xyzzy_card("Being the only woman at the office-mandated sexual harassment training.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Asking Larry Summers increasingly difficult mathematical questions until Bar and Mat Mitzvahs are considered equally important.", "Ladies Against Humanity"));
-            localData.answers.Add(new mod_xyzzy_card("Cramming Vladimir Putin full of Activia until he poops out Russia's homophobia.", "Ladies Against Humanity"));
-            localData.questions.Add(new mod_xyzzy_card("In an attempt to reach a wider audience, the Royal Ontario Museum has opened an interactive exhibit on _.", "Canadian Conversion Kit", 1));
-            localData.questions.Add(new mod_xyzzy_card("What's the Canadian government using to inspire rural students to suceed?", "Canadian Conversion Kit", 1));
-            localData.questions.Add(new mod_xyzzy_card("in the next Bob and Doug McKenzie adventure, they have to find _ to uncover a sinister plot involving _ and _.", "Canadian Conversion Kit", 3));
-            localData.questions.Add(new mod_xyzzy_card("Air canada guidelines now prohibit _ on airplanes.", "Canadian Conversion Kit", 1));
-            localData.questions.Add(new mod_xyzzy_card("CTV presents _, the store of _.", "Canadian Conversion Kit", 2));
-            localData.questions.Add(new mod_xyzzy_card("In Vancouver it is now legal to _.", "Canadian Conversion Kit", 1));
-            localData.questions.Add(new mod_xyzzy_card("O Canada, we stand on guard for _.", "Canadian Conversion Kit", 1));
-            localData.questions.Add(new mod_xyzzy_card("If _ came in two-fours, Canada would be more _.", "Canadian Conversion Kit", 2));
-            localData.questions.Add(new mod_xyzzy_card("After unifying the GST and PST, the Government can now afford to provide _ for _.", "Canadian Conversion Kit", 2));
-            localData.answers.Add(new mod_xyzzy_card("Snotsicles", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Naked News.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Done Cherry's wardrobe.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Syrupy sex with a maple tree.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Terry Fox's prosthetic leg.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Canada: American's hat.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Homo milk.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Mr. Dressup.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("The Front de Libération du Québec.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Heritage minutes.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("The Royal Canadian Mounted Police", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Stephen Harper", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Burning down the White House.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Being Canadian", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("The Famous Five.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("A Molson muscle.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("An icy hand job from an Edmonton hooker.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Poutine", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Schmirler the Curler.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("The Official Languages Act. La Loi sure les langues officielles.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Newfies.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("The CBC.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Graham Greene playing the same First Nations character on every TV show.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Killing a moose with your bare hands.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("tim Hortons.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Quintland.", "Canadian Conversion Kit"));
-            localData.answers.Add(new mod_xyzzy_card("Karla Momolka.", "Canadian Conversion Kit"));
-            localData.questions.Add(new mod_xyzzy_card("When Verity snuck out for her nightly exhibitionistic jaunt, she didn't expect to come face to face with _.", "Nobilis Reed", 1));
-            localData.questions.Add(new mod_xyzzy_card("Programmable clothes that can turn into any imaginable garment are great, but didn't the designers consider _?", "Nobilis Reed", 1));
-            localData.questions.Add(new mod_xyzzy_card("Procurator Marcus Amandus set out to explore Lake Ontarius and discovered _.", "Nobilis Reed", 1));
-            localData.questions.Add(new mod_xyzzy_card("You can satiate any sexual proclivity in Metamor City, if you look hard enough. Even _.", "Nobilis Reed", 1));
-            localData.questions.Add(new mod_xyzzy_card("The new performers in the Artbodies strip club have raised a few eyebrows. Who'd have thought to combine _ with _?", "Nobilis Reed", 2));
-            localData.questions.Add(new mod_xyzzy_card("In the next episode of Monster Whisperer, Dale Clearwater helps a _ whose tentacle monster is plagued with _.", "Nobilis Reed", 2));
-            localData.questions.Add(new mod_xyzzy_card("The title of the new erotica anthology this month is: 'Like _.'", "Nobilis Reed", 1));
-            localData.questions.Add(new mod_xyzzy_card("Because of the 'accident' yesterday, the Scout Academy now forbids cadets from having any contact whatsoever with _.", "Nobilis Reed", 1));
-            localData.questions.Add(new mod_xyzzy_card("When confronted by an excited tentacle monster, it's best to just relax and think of _.", "Nobilis Reed", 1));
-            localData.questions.Add(new mod_xyzzy_card("A Man, A Woman, and a _.", "Nobilis Reed", 1));
-            localData.answers.Add(new mod_xyzzy_card("A depressed tentacle monster.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Pussy spiders.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("The erotic possibilities of duct tape.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("A starsip powered by orgasms.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("A vagina dentata.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("The periodic table of the awesoments.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("An erotic audio drama, complete with moans and groans.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("An addictive aerosol aphrodesiac.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Debugging nanobot code while hung over.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Never being able to touch your lover ever again.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Enormous breasts. I mean, seriously, 'how does she even walk' gigantic.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("The sneaking suspicion that having sex with a theriomorph is actually bestiality.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Majoring in mad science.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Balticon!", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("A call on the listener feedback line that turns out to be a wrong number.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Penis enlargement that actually works.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Dirty Mad Libs.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Pregnant sex.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("A killer corset", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Professor Pinkertoot's Bosom Wax", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Genderfuckery.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Zero gravity sex.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Badly translated Latin.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Detachable Boobs.", "Nobilis Reed"));
-            localData.answers.Add(new mod_xyzzy_card("Making up for 10 years of shitty parenting with a PlayStation.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Giving money and personal information to strangers on the Internet.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("A magical tablet containing a world of unlimited pornography.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("These low, low prices!", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Piece of shit Christmas cards with no money in them.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Moses gargling Jesus's balls while Shiva and the Buddha penetrate his divine hand holes.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("The Hawaiian goddess Kapo and her flying detachable vagina.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("The shittier, Jewish version of Christmas.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Swapping bodies with mom for a day.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Finding out that Santa isn't real.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Slicing a ham in icy silence.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("The Grinch's musty, cum-stained pelt.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Rudolph's bright red balls.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Jizzing into Santa's beard.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Breeding elves for their priceless semen.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("The royal afterbirth.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Congress's flaccid penises withering away beneath their suit pants.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Having a strong opinion about Obamacare.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("A simultaneous nightmare and wet dream starring Sigourney Weaver.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("Being blind and deaf and having no limbs.", "christmas2013"));
-            localData.answers.Add(new mod_xyzzy_card("People with cake in their mouths talking about how good cake is.", "christmas2013"));
-            localData.questions.Add(new mod_xyzzy_card("But wait, there's more! If you order _ in the next 15 minutes, we'll throw in _ absolutely free!", "christmas2013", 2));
-            localData.questions.Add(new mod_xyzzy_card("Because they are forbidden from masturbating, Mormons channel their repressed sexual energy into _.", "christmas2013", 1));
-            localData.questions.Add(new mod_xyzzy_card("Blessed are you, Lord our God, creator of the universe, who has granted us _.", "christmas2013", 1));
-            localData.questions.Add(new mod_xyzzy_card("I really hope my grandma doesn't ask me to explain _ again.", "christmas2013", 1));
-            localData.questions.Add(new mod_xyzzy_card("What's the one thing that makes an elf instantly ejaculate?", "christmas2013", 1));
-            localData.questions.Add(new mod_xyzzy_card("Here's what you can expect for the new year. Out:_. In: _.", "christmas2013", 2));
-            localData.questions.Add(new mod_xyzzy_card("Revealed: Why He Really Resigned! Pope Benedict's Secret Struggle with _!", "christmas2013", 1));
-            localData.questions.Add(new mod_xyzzy_card("Kids these days with their iPods and their Internet. In my day, all we needed to pass the time was _.", "christmas2013", 1));
-            localData.questions.Add(new mod_xyzzy_card("GREETINGS HUMANS I AM _ BOT EXECUTING PROGRAM", "christmas2013", 1));
             localData.answers.Add(new mod_xyzzy_card("Sucking the President's dick.", "90s"));
             localData.answers.Add(new mod_xyzzy_card("Sunny D! Alright!", "90s"));
             localData.answers.Add(new mod_xyzzy_card("A mulatoo, an albino, a mosquito, and my libido.", "90s"));
@@ -4048,8 +1950,5 @@ namespace Roboto.Modules
 
             #endregion
         }
-
-
-        
     }
 }

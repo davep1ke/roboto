@@ -18,5 +18,11 @@ namespace Roboto.Modules
             if (chatID == -1) { return false; }
             return true;
         }
+
+        public chat getChat()
+        {
+            return Roboto.Settings.getChat(chatID);
+
+        }
     }
 }

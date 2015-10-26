@@ -184,6 +184,11 @@ namespace Roboto.Modules
             
         }
 
+        public override bool replyReceived(ExpectedReply e, message m)
+        {
+            throw new NotImplementedException();
+        }
+
 
         public void addBirthday(mod_birthday_birthday birthday, chat c)
         {

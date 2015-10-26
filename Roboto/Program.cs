@@ -150,6 +150,10 @@ namespace Roboto
 
                                             //now decide what to do with this stuff.
                                             bool processed = false;
+
+                                            //check if this is an expected reply, and if so route it to the 
+                                            Settings.parseExpectedReplies(m);
+
                                             //TODO - do this in priority order :(
                                             foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
                                             {
@@ -184,7 +188,16 @@ namespace Roboto
                 {
                     if (plugin.backgroundHook)
                     {
-                        plugin.callBackgroundProcessing();
+                        try
+                        {
+                            plugin.callBackgroundProcessing();
+                        }
+                        catch (Exception e)
+                        {
+                            Console.Out.WriteLine("-----------------");
+                            Console.Out.WriteLine("Error During Plugin " + plugin.GetType().ToString() + " background processing");
+                            Console.Out.WriteLine(e.Message);
+                        }
                     }
                 }
                 

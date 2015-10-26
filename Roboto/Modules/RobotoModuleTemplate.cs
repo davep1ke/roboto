@@ -48,6 +48,13 @@ namespace Roboto.Modules
         /// <param name="userName"></param>
         public abstract bool chatEvent(message m, chat c = null);
         /// <summary>
+        /// A reply that was expected from a call to getExpectedReply
+        /// </summary>
+        /// <param name="e"></param>
+        /// <param name="m"></param>
+        /// <returns>A boolean indicating whether the plugin dealt with the reply or not. </returns>
+        public abstract bool replyReceived(ExpectedReply e, message m);
+        /// <summary>
         /// Called periodically, if Settings.RegisterBackgroundHook has been called during init
         /// </summary>
         protected abstract void backgroundProcessing();

@@ -81,9 +81,14 @@ namespace Roboto.Modules
             throw new NotImplementedException();
         }
 
+        public override bool replyReceived(ExpectedReply e, message m)
+        {
+            throw new NotImplementedException();
+        }
 
         public override void sampleData()
         {
+
         }
 
     }

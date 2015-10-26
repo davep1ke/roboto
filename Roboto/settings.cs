@@ -32,8 +32,11 @@ namespace Roboto
         public List<Modules.RobotoModuleDataTemplate> pluginData = new List<Modules.RobotoModuleDataTemplate>();
         public List<chat> chatData = new List<chat>();
 
-        //stuff
+        //Random generator
         static Random randGen = new Random();
+
+        //list of expected replies
+        private List<ExpectedReply> expectedReplies = new List<ExpectedReply>();
 
         /// <summary>
         /// Load all the plugins BEFORE loading the settings file. We need to be able to enumerate the extra types when loading the XML. 
@@ -137,6 +140,64 @@ namespace Roboto
         }
 
         /// <summary>
+        /// Does the user have any outstanding expected Replies?
+        /// </summary>
+        /// <param name="playerID"></param>
+        /// <returns></returns>
+        public bool userHasOutstandingMessages(int playerID)
+        {
+            foreach (ExpectedReply e in expectedReplies)
+            {
+                if (e.userID == playerID) { return true; }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Add a new expected reply to the stack. Should be called internally only - New messages should be sent via TelegramAPI.GetExpectedReply
+        /// </summary>
+        /// <param name="e"></param>
+        /// <returns></returns>
+        public int newExpectedReply(ExpectedReply e)
+        {
+            //check if we can send it? Get the messageID back
+            int messageID = -1;
+            if (!userHasOutstandingMessages(e.userID))
+            {
+                //send the message, grab the ID. 
+                messageID = e.sendMessage();
+
+            }
+
+            //either way, chuck it on the stack
+            expectedReplies.Add(e);
+            
+            return messageID;
+
+        }
+
+        /// <summary>
+        /// Clear the expected Replies for a given plugin
+        /// </summary>
+        /// <param name="chat_id"></param>
+        /// <param name="pluginType"></param>
+        public void clearExpectedReplies(int chat_id, Type pluginType)
+        {
+            //find replies for this chat, and add them to a temp list
+            List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
+            foreach (ExpectedReply reply in expectedReplies)
+            {
+                if (reply.chatID == chat_id && reply.pluginType == pluginType) { repliesToRemove.Add(reply); }
+            }
+            //now remove them
+            foreach (ExpectedReply reply in repliesToRemove)
+            {
+                expectedReplies.Remove(reply);
+            }
+        }
+
+
+        /// <summary>
         /// Get all the custom types used, for serialising / deserialising data to XML.
         /// </summary>
         /// <returns></returns>
@@ -151,6 +212,101 @@ namespace Roboto
             }
             
             return customTypes.ToArray();
+        }
+
+        /// <summary>
+        /// Get an array of expected replies for a given plugin
+        /// </summary>
+        /// <param name="chatID"></param>
+        /// <param name="userID"></param>
+        /// <param name="filter"></param>
+        /// <returns></returns>
+        public List<ExpectedReply> getExpectedReplies(Type pluginType, int chatID, int userID = -1, string filter = "")
+        {
+            List<ExpectedReply> responses = new List<ExpectedReply>();
+            foreach (ExpectedReply e in expectedReplies)
+            {
+                if (e.pluginType == pluginType
+                    && e.chatID == chatID
+                    && (userID == -1 || e.userID == userID)
+                    && (filter == "" || filter.Contains(e.messageData))
+                    )
+                {
+                    responses.Add(e);
+
+
+                }
+
+            }
+            return responses;
+        }
+
+        public bool parseExpectedReplies(message m)
+        {
+           
+            //are we expecteing this? 
+            bool processed = false;
+            Modules.RobotoModuleTemplate pluginToCall = null;
+            ExpectedReply er = null;
+            foreach (ExpectedReply e in expectedReplies)
+            {
+                //we are looking for direct messages from the user where c_id = m_id, OR reply messages where m_id = reply_id
+                //could trigger twice if we fucked something up - dont think this is an issue but checking processed flag for safety
+                if (!processed && e.isSent() && m.userID == e.userID)
+                {
+                    if (m.chatID == e.userID || m.replyMessageID == e.outboundMessageID)
+                    {
+                        processed = true;
+                        //find the plugin, send the expectedreply to it
+                        foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
+                        {
+                            if (plugin.GetType() == e.pluginType)
+                            {
+                                //stash these for calling outside of the "foreach" loop. This is so we can be sure it is called ONCE only, and so that we can remove
+                                //the expected reply before calling the method, so any post-processing works smoother.
+                                pluginToCall = plugin;
+                                er = e;
+                            }
+                        }
+                    }
+                }
+            }
+
+            
+
+            if (processed)
+            {
+                expectedReplies.Remove(er);
+                //now send it to the plugin (remove first, so any checks can be done)
+                bool pluginProcessed = pluginToCall.replyReceived(er, m);
+
+                if (!pluginProcessed)
+                {
+                    throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
+                        
+                }
+
+
+                //are there any more messages for the user? If so, find & send
+                ExpectedReply messageToSend = null;
+                foreach (ExpectedReply e in expectedReplies)
+                {
+                    if (e.userID == m.userID)
+                    {
+                        if (messageToSend == null || e.timeLogged < messageToSend.timeLogged)
+                        {
+                            messageToSend = e;
+                        }
+
+                    }
+                }
+
+                //send it
+                if (messageToSend != null) { messageToSend.sendMessage(); }
+                
+            }
+            return processed;   
+            
         }
 
         /// <summary>
@@ -260,6 +416,10 @@ namespace Roboto
             
         }
 
+        public void removeReply(ExpectedReply r)
+        {
+            expectedReplies.Remove(r);
+        }
 
         public Modules.RobotoModuleDataTemplate getPluginData(Type pluginDataType)
         {

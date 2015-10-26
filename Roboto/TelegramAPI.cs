@@ -38,7 +38,7 @@ namespace Roboto
             
             if (replyToMessageID != -1) { pairs["reply_to_message_id"] =replyToMessageID.ToString(); }
             if (markDown) { pairs["parse_mode"] = "Markdown"; }
-            if (clearKeyboard) { pairs["reply_markup"] = "\"hide_keyboard\":true}"; }
+            if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
 
             JObject response = sendPOST(postURL, pairs);
 
@@ -47,7 +47,16 @@ namespace Roboto
             return messageID;
         }
 
-
+        /// <summary>
+        /// Send a message, which we are expecting a reply to.
+        /// </summary>
+        /// <param name="chatID"></param>
+        /// <param name="text"></param>
+        /// <param name="replyToMessageID"></param>
+        /// <param name="selective"></param>
+        /// <param name="answerKeyboard"></param>
+        /// <returns></returns>
+        [Obsolete ("Should call GetExpectedReply which will track responses properly")]
         public static int GetReply(int chatID, string text, int replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
         {
 
@@ -81,11 +90,67 @@ namespace Roboto
                 return -1;
 
             }
-
-
-            //get the message ID
-            
         }
+
+        /// <summary>
+        /// Send a message, which we are expecting a reply to. Message can be sent publically or privately. Replies will be detected and sent via the plugin replyRecieved method. 
+        /// </summary>
+        /// <param name="chatID"></param>
+        /// <param name="text"></param>
+        /// <param name="replyToMessageID"></param>
+        /// <param name="selective"></param>
+        /// <param name="answerKeyboard"></param>
+        /// <returns></returns>
+        public static int GetExpectedReply(int chatID, int userID, string text, bool isPrivateMessage, Type pluginType, string messageData, int replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
+        {
+            ExpectedReply e = new ExpectedReply(chatID, userID, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard );
+       
+            //add the message to the stack. If it is sent, get the messageID back.
+            int messageID = Roboto.Settings.newExpectedReply(e);
+            return messageID;
+
+        }
+
+        /// <summary>
+        /// Send the message in the expected reply. Should only be called from the expectedReply Class.
+        /// </summary>
+        /// <param name="e"></param>
+        public static int postExpectedReplyToPlayer(ExpectedReply e)
+        { 
+
+            string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage";
+
+            var pairs = new NameValueCollection();
+            string chatID = e.isPrivateMessage ? e.userID.ToString() : e.chatID.ToString(); //send to chat or privately
+            pairs.Add("chat_id", chatID);
+            pairs.Add("text", e.text);
+
+            if (e.keyboard == "")
+            {
+                pairs.Add("reply_markup", "{\"force_reply\":true,\"selective\":" + e.selective.ToString().ToLower() + "}");
+            }
+            else
+            {
+                pairs.Add("reply_markup", "{" + e.keyboard + "}");
+            }
+
+
+            if (e.replyToMessageID != -1) { pairs.Add("reply_to_message_id", e.replyToMessageID.ToString()); }
+            //TODO - should URLEncode the text.
+            try
+            {
+                JObject response = sendPOST(postURL, pairs);
+                int messageID = response.SelectToken("result.message_id").Value<int>();
+                return messageID;
+            }
+            catch (WebException ex)
+            {
+                Console.WriteLine("Couldnt send message to " + chatID.ToString() + " because " + ex.ToString());
+                return -1;
+
+            }
+        }
+
 
         /// <summary>
         /// Sends a POST message, returns the reply object
@@ -94,20 +159,29 @@ namespace Roboto
         /// <returns></returns>
         public static JObject sendPOST(String postURL, NameValueCollection pairs)
         {
+            string finalString = postURL;
             Encoding enc = Encoding.GetEncoding(1252);
             WebClient client = new WebClient();
-            UriBuilder builder = new UriBuilder(postURL);
-            //This is fucking stupid. PQS doesnt actually return a NVC, it returns some internal class, which I need an empty one of :/
-            //This has the toString overridden so that it returns a URLEncoded querystring
-            var pairsCollection = HttpUtility.ParseQueryString("http:\\example.com");
+
+
             //now move the params across
+            bool first = true;
+
             foreach (string itemKey in pairs)
             {
-                pairsCollection[itemKey] = pairs[itemKey];
-            }
-            builder.Query = pairsCollection.ToString();
+                if (first)
+                {
+                    finalString += "?";
+                    first = false;
+                }
+                else
+                { finalString += "&"; }
+                finalString += Uri.EscapeDataString(itemKey) + "=" + Uri.EscapeDataString(pairs[itemKey]);
 
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(builder.Uri);
+            }
+            
+
+            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
             request.Method = "POST";
             request.ContentType = "application/json";
             Console.WriteLine("Sending Message:\n\r" + request.RequestUri.ToString());
