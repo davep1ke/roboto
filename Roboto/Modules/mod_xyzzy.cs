@@ -231,13 +231,8 @@ namespace Roboto.Modules
             {
                 //get current game data. 
                 mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
-
-
                 
-
-
-
-
+                
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == mod_xyzzy_data.statusTypes.Stopped)
                 {
                     //Start a new game!

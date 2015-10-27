@@ -65,7 +65,7 @@ namespace Roboto.Modules
             chatPriority = 5;
 
             backgroundHook = true;
-            backgroundMins = 1;
+            backgroundMins = 120;
 
         }
 

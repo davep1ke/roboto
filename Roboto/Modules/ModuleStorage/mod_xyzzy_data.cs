@@ -118,14 +118,14 @@ namespace Roboto.Modules
                     player.topUpCards(10, remainingAnswers);
                     if (player == tzar)
                     {
-                        TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text);
+                        TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, false,-1,true);
                     }
                     else
                     {
                         /*int questionMsg = TelegramAPI.GetReply(player.playerID,, -1, true, player.getAnswerKeyboard(localData));*/
                         string questionText = tzar.name + " asks: " + "\n\r" + question.text;
                         //we are expecting a reply to this:
-                        TelegramAPI.GetExpectedReply(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "question",-1 ,true, player.getAnswerKeyboard(localData));
+                        TelegramAPI.GetExpectedReply(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question",-1 ,true, player.getAnswerKeyboard(localData));
                     }
                 }
 
@@ -176,7 +176,7 @@ namespace Roboto.Modules
                     //just check if this needs more responses:
                     if (player.selectedCards.Count != question.nrAnswers)
                     {
-                        TelegramAPI.GetExpectedReply(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "question", -1, true, player.getAnswerKeyboard(localData));
+                        TelegramAPI.GetExpectedReply(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData));
                     }
                 }
             }

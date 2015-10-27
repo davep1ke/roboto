@@ -36,7 +36,7 @@ namespace Roboto
         static Random randGen = new Random();
 
         //list of expected replies
-        private List<ExpectedReply> expectedReplies = new List<ExpectedReply>();
+        public List<ExpectedReply> expectedReplies = new List<ExpectedReply>();
 
         /// <summary>
         /// Load all the plugins BEFORE loading the settings file. We need to be able to enumerate the extra types when loading the XML. 
