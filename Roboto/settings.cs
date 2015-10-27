@@ -187,7 +187,7 @@ namespace Roboto
             List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
             foreach (ExpectedReply reply in expectedReplies)
             {
-                if (reply.chatID == chat_id && reply.pluginType == pluginType) { repliesToRemove.Add(reply); }
+                if (reply.chatID == chat_id && reply.isOfType(pluginType)) { repliesToRemove.Add(reply); }
             }
             //now remove them
             foreach (ExpectedReply reply in repliesToRemove)
@@ -226,7 +226,7 @@ namespace Roboto
             List<ExpectedReply> responses = new List<ExpectedReply>();
             foreach (ExpectedReply e in expectedReplies)
             {
-                if (e.pluginType == pluginType
+                if (e.isOfType(pluginType)
                     && e.chatID == chatID
                     && (userID == -1 || e.userID == userID)
                     && (filter == "" || filter.Contains(e.messageData))
@@ -260,7 +260,7 @@ namespace Roboto
                         //find the plugin, send the expectedreply to it
                         foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
                         {
-                            if (plugin.GetType() == e.pluginType)
+                            if (e.isOfType(plugin.GetType()))
                             {
                                 //stash these for calling outside of the "foreach" loop. This is so we can be sure it is called ONCE only, and so that we can remove
                                 //the expected reply before calling the method, so any post-processing works smoother.

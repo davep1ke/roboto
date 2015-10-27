@@ -199,7 +199,7 @@ namespace Roboto.Modules
         {
             List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
 
-            List<ExpectedReply> expectedReplies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "question");
+            List<ExpectedReply> expectedReplies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question");
 
             foreach (ExpectedReply r in expectedReplies)
             {

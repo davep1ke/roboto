@@ -24,7 +24,7 @@ namespace Roboto
         /// Internal data that can be returned to the plugin after the response is recieved
         /// </summary>
         public string messageData;
-        public Type pluginType;
+        public String pluginType;
         public int outboundMessageID;
         
 
@@ -46,7 +46,7 @@ namespace Roboto
             this.text = text;
             this.isPrivateMessage = isPrivateMessage;
             this.messageData = messageData;
-            this.pluginType = pluginType;
+            this.pluginType = pluginType.ToString();
             this.replyToMessageID = replyToMessageID;
             this.selective = selective;
             this.keyboard = keyboard;
@@ -61,6 +61,23 @@ namespace Roboto
         {
             if (timeSentToUser != DateTime.MinValue) { return true; }
             return false;
+        }
+
+        /// <summary>
+        /// Check if this is of the right type. 
+        /// </summary>
+        /// <param name="t"></param>
+        /// <returns></returns>
+        public bool isOfType(Type t)
+        {
+            if (t.ToString() == pluginType)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
         }
 
         /// <summary>
