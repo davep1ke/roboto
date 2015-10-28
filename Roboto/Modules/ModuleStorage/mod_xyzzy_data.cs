@@ -278,7 +278,7 @@ namespace Roboto.Modules
             //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
             //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
             //TODO - add messageData types to an enum
-            TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "judging", -1, true, keyboard);
+            TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", -1, true, keyboard);
 
             //Send the general chat message
             TelegramAPI.SendMessage(chatID, chatMsg);
@@ -318,7 +318,8 @@ namespace Roboto.Modules
                 //give the winning player a point. 
                 winner.wins++;
                 string message = winner.name + " wins a point!\n\rQuestion: " + q.text + "\n\rAnswer:" + chosenAnswer + "\n\rThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
-                foreach (mod_xyzzy_player p in players)
+                List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
+                foreach (mod_xyzzy_player p in orderedPlayers)
                 {
                     message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
                 }

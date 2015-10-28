@@ -335,7 +335,10 @@ namespace Roboto.Modules
                     if (chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                     {
                         response += " with " + chatData.remainingQuestions.Count.ToString() + " questions remaining. Say /xyzzy_join to join. The following players are currently playing: \n\r";
-                        foreach (mod_xyzzy_player p in chatData.players)
+                        //order the list of players
+                        List<mod_xyzzy_player> orderedPlayers = chatData.players.OrderByDescending(e => e.wins).ToList();
+
+                        foreach (mod_xyzzy_player p in orderedPlayers)
                         {
                             response += p.name + " - " + p.wins.ToString() + " points. \n\r";
                         }
@@ -346,7 +349,7 @@ namespace Roboto.Modules
                                 response += "The current question is : " + "\n\r" +
                                     localData.getQuestionCard(chatData.currentQuestion).text + "\n\r" +
                                     "The following responses are outstanding :";
-                                foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), c.chatID, -1, "question"))
+                                foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), c.chatID, -1, "Question"))
                                 {
                                     if (r.chatID == c.chatID)
                                     {
@@ -467,7 +470,7 @@ namespace Roboto.Modules
 
                     //tell the player they can start when they want
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
-                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true,typeof(mod_xyzzy), "start", -1, true, keyboard);
+                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true,typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                     chatData.status = mod_xyzzy_data.statusTypes.Invites;
                 }
                 processed = true;

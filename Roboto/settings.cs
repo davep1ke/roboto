@@ -215,6 +215,46 @@ namespace Roboto
         }
 
         /// <summary>
+        /// Make sure any reply processing is being done
+        /// </summary>
+        public void expectedReplyHousekeeping()
+        {
+            //Build up a list of user IDs
+            //List<int> userIDs = new List<int>();
+            //foreach (ExpectedReply e in expectedReplies) { userIDs.Add(e.userID); }
+            //userIDs = (List<int>)userIDs.Distinct<int>();
+            List<int> userIDs = expectedReplies.Select(e => e.userID).Distinct().ToList<int>();
+            
+            foreach (int userID in userIDs)
+            {
+                List<ExpectedReply> userReplies = expectedReplies.Where(e => e.userID == userID).ToList();
+                
+                //for each user, check if a message has been sent, and track the oldest message
+                ExpectedReply oldest = null;
+                bool sent = false;
+                foreach (ExpectedReply e in userReplies)
+                {
+                    if (e.isSent()) { sent = true; }
+                    else
+                    {
+                        if (oldest == null || e.timeLogged < oldest.timeLogged )
+                        {
+                            oldest = e;
+                        }
+                    }
+                }
+
+                //send the message if neccessary
+                if (!sent && oldest != null)
+                {
+                    oldest.sendMessage();
+                }
+
+            }
+            
+        }
+
+        /// <summary>
         /// Get an array of expected replies for a given plugin
         /// </summary>
         /// <param name="chatID"></param>

@@ -171,6 +171,11 @@ namespace Roboto
 
                                        
                                     }
+
+                                    //housekeeping
+                                    //check that all players have been sent a message, if there is one in the stack. This is to double check that if e.g. a game is cancelled the player doesnt get stuck
+                                    Settings.expectedReplyHousekeeping();
+
                                 }
                             }
                         }
