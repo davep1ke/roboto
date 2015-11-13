@@ -295,6 +295,7 @@ namespace Roboto.Modules
                 {
                     List<string> players = new List<string>();
                     foreach (mod_xyzzy_player p in chatData.players) {players.Add(p.name);}
+                    players.Add("Cancel");
                     string keyboard = TelegramAPI.createKeyboard(players,2);
                     TelegramAPI.GetExpectedReply(m.chatID, m.userID,  "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", -1, true, keyboard);
                     processed = true;
@@ -522,7 +523,6 @@ namespace Roboto.Modules
                 {
                     chatData.players.Remove(p);
                     TelegramAPI.SendMessage(e.chatID, "Kicked " + p.name, false,-1 , true);
-
                 }
                 chatData.check();
                 

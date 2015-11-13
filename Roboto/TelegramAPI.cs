@@ -35,7 +35,7 @@ namespace Roboto
             pairs["chat_id"] = chatID.ToString();
             pairs["text"] =  text;
             
-            
+            if (text.Length > 2000 ) { text = text.Substring(0, 1990); }
             if (replyToMessageID != -1) { pairs["reply_to_message_id"] =replyToMessageID.ToString(); }
             if (markDown) { pairs["parse_mode"] = "Markdown"; }
             if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
