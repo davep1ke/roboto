@@ -66,6 +66,20 @@ namespace Roboto.Modules
 
             players.Add(player);
         }
+
+        public bool removePlayer(string playerName)
+        {
+            
+            List<mod_steam_player> matchedPlayers = players.Where(x => x.playerName == playerName).ToList();
+            //remove the first matching player
+            if (matchedPlayers.Count > 0)
+            {
+                players.Remove(matchedPlayers[0]);
+                return true;
+            }
+            
+            return false;
+        }
         //internal mod_quote_data() { }
     }
 
@@ -82,52 +96,96 @@ namespace Roboto.Modules
         public string playerName = "";
         public string playerID = "";
         public int chatID = -1;
+        public bool isPrivate = false;
         public List<mod_steam_chiev> chievs = new List<mod_steam_chiev>();
 
         internal mod_steam_player() { }
-        public mod_steam_player(int chatID, String playerID, string playerName)
+        public mod_steam_player(int chatID, String playerID, string playerName, bool isPrivate)
         {
             this.chatID = chatID;
             this.playerID = playerID;
             this.playerName = playerName;
+            this.isPrivate = isPrivate;
         }
 
         public void checkAchievements()
         {
-            //get a list of what the player has been playing
-            List<mod_steam_game> playerGames = mod_steam_steamapi.getRecentGames(playerID);
             List<string> announce = new List<string>();
-
-            foreach (mod_steam_game g in playerGames)
+            mod_steam_core_data localData = Roboto.Settings.getPluginData<mod_steam_core_data>();
+            //get a list of what the player has been playing
+            try
             {
-                //get the achievement list for each game
-                List<string> gainedAchievements = mod_steam_steamapi.getAchievements(playerID, g.gameID);
-
-                //make a list of any that we havent recorded yet
-                List<string> newAchievements = new List<string>();
-                foreach (string achievementCode in gainedAchievements)
+                List<mod_steam_game> playerGames = mod_steam_steamapi.getRecentGames(playerID);
+                
+                foreach (mod_steam_game g in playerGames)
                 {
-                    if (chievs.Where(x => x.chievName == achievementCode && x.appID == g.gameID).Count() == 0 )
-                    {
-                        newAchievements.Add(achievementCode);
+                    //get the local data object
+                    mod_steam_game gameData = localData.getGame(g.gameID);
+
+                    //get the achievement list for each game
+                    try
+                    { 
+                        List<string> gainedAchievements = mod_steam_steamapi.getAchievements(playerID, g.gameID);
+                    
+                        //make a list of any that we havent recorded yet
+                        List<string> newAchievements = new List<string>();
+                        foreach (string achievementCode in gainedAchievements)
+                        {
+                            if (chievs.Where(x => x.chievName == achievementCode && x.appID == g.gameID).Count() == 0)
+                            {
+                                newAchievements.Add(achievementCode);
+                            }
+                        }
+
+                        if (newAchievements.Count() > 0)
+                        {
+                            List<string> failedAchieves = new List<string>();
+                            //try get the cached friendly text for each achievement, and add them to our player's stash.
+                            foreach (string s in newAchievements)
+                            {
+                                chievs.Add(new mod_steam_chiev(s, g.gameID));
+                                mod_steam_achievement chiev = gameData.getAchievement(s);
+                                if (chiev == null)
+                                {
+                                    Console.WriteLine("Failed to get friendly data for " + s + " from cache, will refresh");
+                                    failedAchieves.Add(s);
+                                }
+                                else announce.Add(chiev.ToString() + " in " + g.displayName);
+                            }
+
+                            //if we failed, refresh the cache and try again. 
+                            if (failedAchieves.Count() > 0)
+                            {
+                                gameData.refreshAchievs();
+                            }
+                            //add any that failed originally.
+                            foreach (string s in failedAchieves)
+                            {
+                                mod_steam_achievement chiev = gameData.getAchievement(s);
+                                if (chiev == null)
+                                {
+                                    Console.WriteLine("Failed to get friendly data for " + s + " even after refresh. Will add default text instead");
+                                    announce.Add(s.Replace("_"," ") + " in " + g.displayName);
+                                }
+                                else announce.Add(chiev.ToString() + " in " + g.displayName);
+                            }
+
+
+                        }
                     }
-                }
-
-                if (newAchievements.Count() > 0)
-                {
-                    //refresh the master list
-
-
-                    //add them to our player's stash
-                    foreach (string s in newAchievements)
+                    catch (Exception e)
                     {
-                        chievs.Add(new mod_steam_chiev(s, g.gameID));
-                        //todo - get friendly name
-                        announce.Add(s + " in " + g.displayName);
+                        //probably failed to call the web service. 
+                        Console.WriteLine("Failed during update of player achievements for game" + e.ToString());
                     }
                 }
             }
-            //send a message (first 3 per game)
+            catch (Exception e)
+            {
+                //probably failed to call the web service. 
+                Console.WriteLine("Failed during update of player achievements " + e.ToString());
+            }
+            //send a message (first few per game)
             if (announce.Count() > 0)
             {
                 string message = playerName + " got the following achievements:" + "\n\r";
@@ -142,7 +200,7 @@ namespace Roboto.Modules
                 {
                     message += "And (" + (announce.Count - 5).ToString() + ") others";
                 }
-                TelegramAPI.SendMessage(this.chatID, message);
+                TelegramAPI.SendMessage(this.chatID, message,true,-1,true);
             }
 
         }
@@ -186,6 +244,25 @@ namespace Roboto.Modules
             this.gameID = gameID;
             this.displayName = displayName;
         }
+
+        public mod_steam_achievement getAchievement(string achievementCode)
+        {
+            List<mod_steam_achievement> matches = chievs.Where(x => x.achievement_code == achievementCode).ToList();
+
+            if (matches.Count() > 0)
+            {
+                return (matches[0]);
+            }
+            else
+            { return null; }
+        }
+
+        public void refreshAchievs()
+        {
+            //call the API and get our list of achievements
+            chievs = mod_steam_steamapi.getGameAchievements(gameID);
+
+        }
     }
 
 
@@ -209,6 +286,11 @@ namespace Roboto.Modules
             this.displayName = displayName;
             this.description = description;
         }
+
+        public override string ToString()
+        {
+            return "*" + displayName + "* - " + description;
+        }
     }
 
     public class mod_steam : RobotoModuleTemplate
@@ -224,7 +306,7 @@ namespace Roboto.Modules
             chatEvenIfAlreadyMatched = false;
             chatPriority = 5;
             this.backgroundHook = true;
-            this.backgroundMins = 10;
+            this.backgroundMins = 15;
             
         }
 
@@ -270,6 +352,9 @@ namespace Roboto.Modules
             bool processed = false;
             if (c != null)
             {
+                mod_steam_chat_data chatData = (mod_steam_chat_data)c.getPluginData(typeof(mod_steam_chat_data));
+
+
                 if (m.text_msg.StartsWith("/steam_addplayer"))
                 {
                     TelegramAPI.GetExpectedReply(c.chatID, m.userID
@@ -289,10 +374,20 @@ namespace Roboto.Modules
                 {
                     checkChat(c);
                     
-
                     processed = true;
                 }
-
+                else if (m.text_msg.StartsWith("/steam_remove"))
+                {
+                    List<string> playerKeyboard = new List<string>();
+                    foreach (mod_steam_player p in chatData.players)
+                    {
+                        playerKeyboard.Add(p.playerName);
+                    }
+                    playerKeyboard.Add("Cancel");
+                    string playerKeyboardText = TelegramAPI.createKeyboard(playerKeyboard, 2);
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Which player do you want to stop tracking?", false, typeof(mod_steam), "REMOVEPLAYER", m.message_id, true, playerKeyboardText);
+                    
+                }
             }
             return processed;
         }
@@ -309,7 +404,6 @@ namespace Roboto.Modules
             {
                 player.checkAchievements();
             }
-
         }
 
         protected override void backgroundProcessing()
@@ -317,10 +411,6 @@ namespace Roboto.Modules
             foreach (chat c in Roboto.Settings.chatData)
             {
                 checkChat(c);
-                
-                
-
-
             }
         }
 
@@ -338,30 +428,45 @@ namespace Roboto.Modules
             //Adding a player to the chat. We should have a player ID in our message. 
             if (e.messageData == "ADDPLAYER")
             {
-                
+
                 long playerID = -1;
-                bool success = false;
                 if (long.TryParse(m.text_msg, out playerID) && playerID >= -1)
                 {
                     //get the steam profile
                     mod_steam_player player = mod_steam_steamapi.getPlayerInfo(playerID, c.chatID);
-                    chatData.addPlayer(player);
-                    TelegramAPI.SendMessage(c.chatID, "Added " + player.playerName + ". Any steam achievements will be announced.",false,m.message_id);
 
-                    success = true;
+                    if (player.isPrivate)
+                    {
+                        TelegramAPI.SendMessage(c.chatID, "Couldn't add " + player.playerName + " as their profile is set to private", false, m.message_id);
+                    }
+                    else
+                    {
+                        chatData.addPlayer(player);
+                        TelegramAPI.SendMessage(c.chatID, "Added " + player.playerName + ". Any steam achievements will be announced.", false, m.message_id);
 
-
-
+                    }
 
                 }
-                
-                if (!success)
+                else if (m.text_msg.ToUpper() != "CANCEL")
                 {
-                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, m.text_msg + " is not a valid playerID. Enter a valid playerID", false, typeof(mod_steam), "ADDPLAYER", m.message_id, true);
+                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, m.text_msg + " is not a valid playerID. Enter a valid playerID or 'Cancel'", false, typeof(mod_steam), "ADDPLAYER", m.message_id, true);
                 }
                 processed = true;
             }
+            else if (e.messageData == "REMOVEPLAYER")
+            {
+                bool success = chatData.removePlayer(m.text_msg);
 
+                if (success)
+                {
+                    TelegramAPI.SendMessage(c.chatID, "Player " + m.text_msg + " removed.", false, m.message_id, true);
+                }
+                else
+                {
+                    TelegramAPI.SendMessage(c.chatID, "Sorry, something went wrong removing " + m.text_msg, false, m.message_id,true);
+                }
+                processed = true;
+            }
             return processed;
         }
     }

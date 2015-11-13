@@ -29,16 +29,23 @@ namespace Roboto.Modules
             NameValueCollection pairs = new NameValueCollection();
             pairs["steamids"] = playerID.ToString();
             JObject response = sendPOST(@"/ISteamUser/GetPlayerSummaries/v0002/", pairs);
+            
 
             if (response != null)
             {
                 //mangle this into a player object
                 string playerName = "";
-
+                bool isPrivate = false;
                 try
                 {
                     //get the message details
                     playerName = response.SelectToken("response.players[0].personaname").Value<string>();
+                    int communityvisibilitystate = response.SelectToken("response.players[0].communityvisibilitystate").Value<int>();
+                    if (communityvisibilitystate == 1)
+                    {
+                        Console.WriteLine(playerName + " is set to private");
+                        isPrivate = true;
+                    }
                 }
                 catch (Exception e)
                 {
@@ -46,7 +53,7 @@ namespace Roboto.Modules
 
                 }
                 
-                mod_steam_player player = new mod_steam_player(chatID, playerID.ToString(), playerName);
+                mod_steam_player player = new mod_steam_player(chatID, playerID.ToString(), playerName, isPrivate);
                 return player;
                 
             }
@@ -136,7 +143,50 @@ namespace Roboto.Modules
             return result;
         }
 
+        /// <summary>
+        /// Get the list of achievements for a game
+        /// </summary>
+        /// <param name="gameID"></param>
+        /// <returns></returns>
+        public static List<mod_steam_achievement> getGameAchievements(string gameID)
+        {
+            List<mod_steam_achievement> result = new List<mod_steam_achievement>();
 
+            NameValueCollection pairs = new NameValueCollection();
+            pairs["appid"] = gameID;
+
+            JObject response = sendPOST(@"/ISteamUserStats/GetSchemaForGame/v2/", pairs);
+
+            if (response != null)
+            {
+                foreach (JToken token in response.SelectTokens("game.availableGameStats.achievements[*]"))
+                {
+                    //mangle this into an achieve object
+                    try
+                    {
+                        string achievedescription = "";
+                        string achieveCode = "";
+                        string achieveDisplay = "";
+
+                        //get the message details
+                        JToken descToken = token.SelectToken("description");
+                        JToken codeToken = token.SelectToken("name");
+                        JToken dispToken = token.SelectToken("displayName");
+                        
+                        if (descToken != null) { achievedescription = descToken.Value<string>(); }
+                        if (codeToken != null) { achieveCode = codeToken.Value<string>(); }
+                        if (dispToken != null) { achieveDisplay = dispToken.Value<string>(); }
+
+                        result.Add(new mod_steam_achievement(achieveCode, achieveDisplay, achievedescription));
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine("Error parsing message " + e.ToString());
+                    }
+                }
+            }
+            return result;
+        }
 
 
 
@@ -180,7 +230,7 @@ namespace Roboto.Modules
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
             request.Method = "GET";
             request.ContentType = "application/json";
-            Console.WriteLine("Sending Message:\n\r" + request.RequestUri.ToString());
+            Console.WriteLine("Calling Steam API:\n\r" + request.RequestUri.ToString());
             try
             {
 
