@@ -74,7 +74,7 @@ namespace Roboto
                     "&limit=5";
 
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
-                Console.WriteLine("getUpdate, ID " + Settings.getUpdateID());
+                Console.Write(".");
                 request.Method = "GET";
                 request.ContentType = "application/json";
                 

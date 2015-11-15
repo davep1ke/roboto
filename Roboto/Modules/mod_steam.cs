@@ -315,6 +315,7 @@ namespace Roboto.Modules
             return
                 "steam_addplayer - Adds a player by steamID" + "\n\r" +
                 "steam_removeplayer - Removes a player" + "\n\r" +
+                "steam_stats - Display current status" + "\n\r" +
                 "steam_help - outputs help";
         }
 
@@ -376,6 +377,24 @@ namespace Roboto.Modules
                     
                     processed = true;
                 }
+                else if (m.text_msg.StartsWith ("/steam_stats"))
+                {
+                    string announce = "Currently watching achievements from the following players: " + "\n\r";
+                    foreach (mod_steam_player p in chatData.players)
+                    {
+                        announce += "*" + p.playerName + "* - " + p.chievs.Count().ToString() + " known achievements" + "\n\r";
+                    }
+                    int achievements = 0;
+                    foreach (mod_steam_game g in localData.games)
+                    {
+                        achievements += g.chievs.Count();
+                    }
+                    announce += "Tracking " + achievements.ToString() + " achievements across " + localData.games.Count().ToString() + " games";
+
+                    TelegramAPI.SendMessage(m.chatID, announce , true, m.message_id);
+                }
+
+
                 else if (m.text_msg.StartsWith("/steam_remove"))
                 {
                     List<string> playerKeyboard = new List<string>();

@@ -77,8 +77,9 @@ namespace Roboto.Modules
         public override string getMethodDescriptions()
         {
             return
-                "addquote - Adds a quote for the current chat" + "\n\r" +
-                "quote - Picks a randon quote from the chat's database";
+                "quote_add - Adds a quote for the current chat" + "\n\r" +
+                "quote - Picks a random quote from the chat's database" + "\n\r" +
+                "quote_config - Configure how often to add quotes into chat";
         }
 
         public override void initData()
@@ -160,31 +161,32 @@ namespace Roboto.Modules
 
         public override bool chatEvent(message m, chat c = null)
         {
+            mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
             bool processed = false;
             if (c != null)
             {
-                if (m.text_msg.StartsWith("/addquote"))
+                if (m.text_msg.StartsWith("/quote_add"))
                 {
-                    TelegramAPI.GetReply(m.chatID, "Who is the quote by", m.message_id, true);
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Who is the quote by", false, typeof(mod_quote), "WHO", m.message_id, true);
                     processed = true;
                 }
-                else if (m.isReply && m.replyOrigMessage == "Who is the quote by" && m.replyOrigUser == Roboto.Settings.botUserName)
+                else if (m.text_msg.StartsWith("/quote_config"))
                 {
-                    TelegramAPI.GetReply(m.chatID, "What was the quote from " + m.text_msg, m.message_id, true);
-                    processed = true;
-                }
-                else if (m.isReply && m.replyOrigMessage.StartsWith("What was the quote from ") && m.replyOrigUser == Roboto.Settings.botUserName)
-                {
-                    string quoteBy = m.replyOrigMessage.Replace("What was the quote from ", "");
-                    bool success = addQuote(quoteBy, m.text_msg,c);
-                    TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
-                    processed = true;
+                    List<string> options = new List<string>();
+                    options.Add("Set Duration");
+                    options.Add("Toggle automatic quotes");
+                    string keyboard = TelegramAPI.createKeyboard(options, 1);
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID,
+                        "Quotes are currently " + (chatData.autoQuoteEnabled == true? "enabled" : "disabled") 
+                        + " and set to announce every " + chatData.autoQuoteHours.ToString() + " hours"
+                        , false, typeof(mod_quote), "CONFIG", m.message_id, true, keyboard);
                 }
                 else if (m.text_msg.StartsWith("/quote"))
                 {
                     TelegramAPI.SendMessage(m.chatID, getQuote(c), true, m.message_id);
                     processed = true;
                 }
+
             }
             return processed;
         }
@@ -216,7 +218,57 @@ namespace Roboto.Modules
 
         public override bool replyReceived(ExpectedReply e, message m)
         {
-            throw new NotImplementedException();
+            chat c = Roboto.Settings.getChat(e.chatID);
+            mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
+
+            //Adding quotes
+            if (e.messageData == "WHO")
+            {
+                TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, false, typeof(mod_quote), "TEXT " + m.text_msg, m.message_id, true);
+                return true;
+            }
+
+            else if (e.messageData.StartsWith("TEXT"))
+            {
+                string quoteBy = e.messageData.TrimStart("TEXT ".ToCharArray());
+                bool success = addQuote(quoteBy, m.text_msg, c);
+                TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
+                return true;
+            }
+
+            //CONFIG
+            else if (e.messageData.StartsWith("CONFIG"))
+            {
+                if (m.text_msg == "Set Duration")
+                {
+                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "How long between updates?" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.message_id, true);
+                    return true;
+                }
+                else if (m.text_msg == "Toggle automatic quotes")
+                {
+                    chatData.autoQuoteEnabled = !chatData.autoQuoteEnabled;
+                    TelegramAPI.SendMessage(c.chatID, "Quotes are now " + (chatData.autoQuoteEnabled == true ? "enabled" : "disabled"), false, -1, true);
+                    return true;
+                }
+            }
+
+            //DURATION
+            else if (e.messageData.StartsWith("DURATION"))
+            {
+                int hours = -1;
+                if (int.TryParse(m.text_msg, out hours) && hours >= -1)
+                {
+                    chatData.autoQuoteHours = hours;
+                    TelegramAPI.SendMessage(c.chatID, "Quote schedule set to every " + hours.ToString() + " hours.", false, -1, true);
+                }
+                else if (m.text_msg != "Cancel")
+                {
+                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Not a number. How many hours between updates, or 'Cancel' to cancel" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.message_id, true);
+                }
+                return true;
+
+            }
+            return false;
         }
     }
 }

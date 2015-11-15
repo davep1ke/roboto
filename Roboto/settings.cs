@@ -342,7 +342,10 @@ namespace Roboto
                 }
 
                 //send it
-                if (messageToSend != null) { messageToSend.sendMessage(); }
+                if ( !userHasOutstandingMessages(m.userID) && messageToSend != null)
+                {
+                    messageToSend.sendMessage();
+                }
                 
             }
             return processed;   
