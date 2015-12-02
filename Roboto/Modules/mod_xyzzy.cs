@@ -49,12 +49,23 @@ namespace Roboto.Modules
             this.playerID = playerID;
         }
 
-        internal void topUpCards(int nrCards, List<string> availableAnswers)
+        internal void topUpCards(int nrCards, List<string> availableAnswers, int chatID)
         {
+
+            
+            
             while (cardsInHand.Count < nrCards)
             {
+                //have we reached the end of the pack?
+                if (availableAnswers.Count == 0)
+                {
+                    //get the chatData and top up the cards. 
+                    mod_xyzzy_data chatData = (mod_xyzzy_data)Roboto.Settings.getChat(chatID).getPluginData(typeof(mod_xyzzy_data));
+                    chatData.addAllAnswers();
+                    TelegramAPI.SendMessage(chatID, "All answers have been used up, pack has been refilled!");
+                }
+
                 //pick a card
-                //TODO - what if answers is empty? 
                 string cardUID = availableAnswers[settings.getRandom(availableAnswers.Count)];
                 cardsInHand.Add(cardUID);
 
@@ -457,18 +468,8 @@ namespace Roboto.Modules
                 {
 
                     chatData.addQuestions();
-
-                    List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
-                    foreach (mod_xyzzy_card a in localData.answers)
-                    {
-                        if (chatData.packEnabled(a.category)) { answers.Add(a); }
-                    }
-                    //TODO - shuffle the list
-                    foreach (mod_xyzzy_card answer in answers)
-                    {
-                        chatData.remainingAnswers.Add(answer.uniqueID);
-                    }
-
+                    chatData.addAllAnswers();
+                    
                     //tell the player they can start when they want
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
                     int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true,typeof(mod_xyzzy), "Invites", -1, true, keyboard);

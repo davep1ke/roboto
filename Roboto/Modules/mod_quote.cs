@@ -161,10 +161,11 @@ namespace Roboto.Modules
 
         public override bool chatEvent(message m, chat c = null)
         {
-            mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
             bool processed = false;
             if (c != null)
             {
+                mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
+
                 if (m.text_msg.StartsWith("/quote_add"))
                 {
                     TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Who is the quote by", false, typeof(mod_quote), "WHO", m.message_id, true);

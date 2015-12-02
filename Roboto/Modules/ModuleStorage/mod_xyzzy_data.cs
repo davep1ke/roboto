@@ -115,7 +115,7 @@ namespace Roboto.Modules
                 {
                     //throw away old cards and select new ones. 
                     player.selectedCards.Clear();
-                    player.topUpCards(10, remainingAnswers);
+                    player.topUpCards(10, remainingAnswers, chatID);
                     if (player == tzar)
                     {
                         TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, false,-1,true);
@@ -496,6 +496,21 @@ namespace Roboto.Modules
                 remainingQuestions.Add(questions[pos].uniqueID);
             }
 
+        }
+
+        public void addAllAnswers()
+        {
+            List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
+            
+            foreach (mod_xyzzy_card a in getLocalData().answers)
+            {
+                if (packEnabled(a.category)) { answers.Add(a); }
+            }
+            //TODO - shuffle the list
+            foreach (mod_xyzzy_card answer in answers)
+            {
+                remainingAnswers.Add(answer.uniqueID);
+            }
         }
     }
 }
