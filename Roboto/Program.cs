@@ -18,18 +18,83 @@ namespace Roboto
     {
         private static bool endLoop = false;
         public static settings Settings;
-        
+        public static logging log = new logging();
+        /// <summary>
+        /// This is the name of the instance that we are running - and the name of the XML file we save
+        /// </summary>
+        public static string context = null;
+        public static List<string> pluginFilter = new List<string>();
 
+        private enum argtype {def, context, plugin };
+        
 
         static void Main(string[] args)
         {
+            log.log("ROBOTO", logging.loglevel.critical, ConsoleColor.White, false, true);
+            log.log("Telegram Bot Startup", logging.loglevel.low);
+         
+            argtype mode = argtype.def;
+             
+            //parse arguments
+            foreach(string arg in args)
+            {
+                switch (mode)
+                {
+                    case argtype.def:
+                        switch (arg)
+                        {
+                            case "-context":
+                                mode = argtype.context;
+                                break;
+                            case "-plugin":
+                                mode = argtype.plugin;
+                                break;
+                        }
+                        break;
+
+                    case argtype.context:
+                        context = arg;
+                        mode = argtype.def;
+                        break;
+
+                    case argtype.plugin:
+                        pluginFilter.Add(arg);
+                        mode = argtype.def;
+                        break;
+
+
+                }
+            }
+
+            if (context != null)
+            {
+                log.setTitle(Roboto.context);
+                log.log( context + " context", logging.loglevel.high,ConsoleColor.White,false,true,false,true);
+            }
+
             Console.CancelKeyPress += new ConsoleCancelEventHandler(closeHandler);
             settings.loadPlugins();
+
+            log.log( "Loading Settings", logging.loglevel.high);
             Settings = settings.load();
             Settings.validate();
-            Roboto.Process();
+
+            if (!Settings.isFirstTimeInitialised)
+            {
+                log.log( "Starting main thread", logging.loglevel.high);
+                Roboto.Process();
+            }
+            else
+            {
+                log.log( @"New XML file created in %appdata%\Roboto\ . Enter your API key in there and restart.", logging.loglevel.critical, ConsoleColor.White, false, true);
+
+                Settings.save();
+            }
+
+            log.log( "Saving & exiting", logging.loglevel.high);
             Settings.save();
 
+            log.log( "Exiting", logging.loglevel.high, ConsoleColor.White, false, true, true);
         }
 
         /// <summary>
@@ -39,10 +104,10 @@ namespace Roboto
         /// <param name="args"></param>
         protected static void closeHandler(object sender, ConsoleCancelEventArgs args)
         {
-            Console.WriteLine("Sending Close Signal.");
+            log.log("Sending Close Signal.", logging.loglevel.high,ConsoleColor.White,false,true);
             if (Settings != null)
             {
-                Console.WriteLine("This could take up to " + Settings.waitDuration + " seconds to complete");
+                log.log( "This could take up to " + Settings.waitDuration + " seconds to complete");
             }
             endLoop = true;
             args.Cancel = true; //prevent actual close. Wait for loop to exit.
@@ -74,7 +139,7 @@ namespace Roboto
                     "&limit=5";
 
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
-                Console.Write(".");
+                log.log(".", logging.loglevel.low,ConsoleColor.White, true );
                 request.Method = "GET";
                 request.ContentType = "application/json";
                 
@@ -186,9 +251,7 @@ namespace Roboto
                     Console.Out.WriteLine("-----------------");
                     Console.Out.WriteLine(e.Message);
                 }
-
-                //TODO - process background actions
-
+                
                 foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
                 {
                     if (plugin.backgroundHook)

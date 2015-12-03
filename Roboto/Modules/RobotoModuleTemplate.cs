@@ -69,7 +69,18 @@ namespace Roboto.Modules
                 backgroundProcessing();
                 setLastUpdate(DateTime.Now);
             }
+        }
 
+        /// <summary>
+        /// Logging wrapper
+        /// </summary>
+        /// <param name="text"></param>
+        /// <param name="level"></param>
+        /// <param name="colour"></param>
+        /// <param name="noLineBreak"></param>
+        public void log (string text, logging.loglevel level = logging.loglevel.normal, ConsoleColor colour = ConsoleColor.White, bool noLineBreak = false)
+        {
+            Roboto.log.log( text, level, colour, noLineBreak, false);
         }
 
         //Helper Methods

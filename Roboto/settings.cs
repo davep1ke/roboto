@@ -15,7 +15,7 @@ namespace Roboto
     public class settings
     {
         private static string foldername = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Roboto\";
-        private static string filename = foldername + "settings.xml";
+        private static string filename = foldername;
 
         //module list. Static, as dont want to serialise the plugins, just the data.
         public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>(); 
@@ -38,6 +38,9 @@ namespace Roboto
         //list of expected replies
         public List<ExpectedReply> expectedReplies = new List<ExpectedReply>();
 
+        //is this the first time the settings file has been initialised?
+        public bool isFirstTimeInitialised = false;
+
         /// <summary>
         /// Load all the plugins BEFORE loading the settings file. We need to be able to enumerate the extra types when loading the XML. 
         /// </summary>
@@ -48,9 +51,18 @@ namespace Roboto
 
             foreach (Type type in currAssembly.GetTypes())
             {
-                if (type.IsClass && !type.IsAbstract && type.IsSubclassOf(typeof(Modules.RobotoModuleTemplate)))
+                
+                if (type.IsClass && !type.IsAbstract
+                    //is this a subclass of the module template
+                    && type.IsSubclassOf(typeof(Modules.RobotoModuleTemplate))
+                    //is our plugin filter disabled?
+                    && (Roboto.pluginFilter.Count == 0
+                    //or is this plugin listed?
+                    || Roboto.pluginFilter.Contains(type.Name))
+                    )
                 {
-                    Console.WriteLine("Registering plugin " + type.Name);
+                   
+                    Roboto.log.log( "Registering plugin " + type.Name, logging.loglevel.low);
 
                     if (pluginExists(type))
                     {
@@ -60,11 +72,11 @@ namespace Roboto
                     else
                     {
                         Modules.RobotoModuleTemplate plugin = (Modules.RobotoModuleTemplate)Activator.CreateInstance(type);
-                        Console.WriteLine("Added " + plugin.GetType().ToString());
+                        Roboto.log.log( "Added " + plugin.GetType().ToString(), logging.loglevel.low);
                         plugins.Add(plugin);
                         plugin.init();
                     }
-
+                    
                 }
             }
         }
@@ -109,7 +121,18 @@ namespace Roboto
         /// <returns></returns>
         public static settings load()
         {
+            //set the filename based on the current context (instance)
+            if (Roboto.context == null)
+            {
+                filename += "settings.xml";
+  
 
+            }
+            else { filename += Roboto.context + ".xml"; }
+
+            Roboto.log.log( "Loading from " + filename, logging.loglevel.high);
+
+            //load the file
             try
             {
 
@@ -127,7 +150,7 @@ namespace Roboto
                 {
                     //create a new one
                     settings sets = new settings();
-
+                    sets.isFirstTimeInitialised = true;
                     return sets;
                 }
                 else
@@ -357,10 +380,9 @@ namespace Roboto
         /// </summary>
         public void save()
         {
-
-
-            XmlSerializer serializer = new XmlSerializer(typeof(settings), getPluginDataTypes() );
-
+            //as we are saving (and presumably exiting) we dont need to worry that this is a first time file anymore
+            isFirstTimeInitialised = false;
+            
             //create folder if doesnt exist:
             DirectoryInfo di = new DirectoryInfo(foldername);
             if (!di.Exists)
@@ -368,6 +390,8 @@ namespace Roboto
                 di.Create();
             }
 
+            //write out XML
+            XmlSerializer serializer = new XmlSerializer(typeof(settings), getPluginDataTypes());
             TextWriter textWriter = new StreamWriter(filename);
             serializer.Serialize(textWriter, this);
             textWriter.Close();
