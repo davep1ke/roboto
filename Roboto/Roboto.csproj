@@ -78,14 +78,17 @@
   <PropertyGroup>
     <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
   </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug - Context = debug|x86'">
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug - CAHLive|x86'">
     <DebugSymbols>true</DebugSymbols>
-    <OutputPath>bin\x86\Debug - Context = debug\</OutputPath>
+    <OutputPath>bin\x86\Debug - CAHLive\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <DebugType>full</DebugType>
     <PlatformTarget>x86</PlatformTarget>
     <ErrorReport>prompt</ErrorReport>
     <CodeAnalysisRuleSet>MinimumRecommendedRules.ruleset</CodeAnalysisRuleSet>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug - RobotoLive|x86' ">
+    <OutputPath>bin\x86\Debug - Live\</OutputPath>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="Newtonsoft.Json">

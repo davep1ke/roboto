@@ -242,7 +242,7 @@ namespace Roboto.Modules
 
         }
 
-        internal void beginJudging()
+        internal void beginJudging(bool judgesMessageOnly = false)
         {
 
             status = statusTypes.Judging;
@@ -281,8 +281,10 @@ namespace Roboto.Modules
             TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", -1, true, keyboard);
 
             //Send the general chat message
-            TelegramAPI.SendMessage(chatID, chatMsg);
-
+            if (!judgesMessageOnly)
+            {
+                TelegramAPI.SendMessage(chatID, chatMsg);
+            }
         }
 
         /// <summary>
@@ -332,8 +334,8 @@ namespace Roboto.Modules
             else
             {
                 //answer not found?
-                //TODO - needs to be another expected reply
                 TelegramAPI.SendMessage(tzar.playerID, "Couldnt find your answer, try again?");
+                beginJudging(true);
                 return false;
             }
             return true;
@@ -386,6 +388,35 @@ namespace Roboto.Modules
                         beginJudging();
                     }
                     break;
+                case statusTypes.Judging:
+                    //check if there is an appropriate expected reply
+                    List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
+                    bool reask = false;
+                    if (replies.Count > 1)
+                    {
+                        Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+                        reask = true;
+                        log("Cleared multiple expected replies during judging from game " + chatID.ToString(), logging.loglevel.high);
+
+                    }
+                    if (replies.Count == 0)
+                    {
+                        reask = true;
+                        log("No expected replies during judging from game " + chatID.ToString(), logging.loglevel.high);
+                    }
+                    if (replies.Count == 1 && (replies[0].messageData != "Judging" || replies[0].userID != players[lastPlayerAsked].playerID))
+                    {
+                        Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+                        reask = true;
+                        log("Removed invalid expected reply during judging from game " + chatID.ToString(), logging.loglevel.high);
+                    }
+                    if (reask)
+                    {
+                        beginJudging(true);
+                        log("Redid judging for  " + chatID.ToString(), logging.loglevel.critical);
+                    }
+                    break;
+
             }
 
         }
