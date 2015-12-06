@@ -127,7 +127,14 @@ namespace Roboto
 
             if (e.keyboard == "")
             {
-                pairs.Add("reply_markup", "{\"force_reply\":true,\"selective\":" + e.selective.ToString().ToLower() + "}");
+                bool forceReply = !e.isPrivateMessage;
+
+                //pairs.Add("reply_markup", "{\"force_reply\":true,\"selective\":" + e.selective.ToString().ToLower() + "}");
+                pairs.Add("reply_markup", "{\"force_reply\":"
+                    //force reply if we are NOT in a PM
+                    + forceReply.ToString().ToLower()
+                    //mark selective if passed in
+                    +",\"selective\":" + e.selective.ToString().ToLower() + "}");
             }
             else
             {

@@ -16,7 +16,7 @@ namespace Roboto.Modules
     public class mod_xyzzy_data : RobotoModuleChatDataTemplate
     {
         public List<String> packFilter = new List<string> { "Base" };
-        public enum statusTypes { Stopped, SetGameLength, setPackFilter, Invites, Question, Judging }
+        public enum statusTypes { Stopped, SetGameLength, setPackFilter, cardCastImport, Invites, Question, Judging }
         public statusTypes status = statusTypes.Stopped;
         public List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
         public int enteredQuestionCount = -1;
@@ -423,10 +423,21 @@ namespace Roboto.Modules
 
         /// <summary>
         /// Ask the organiser which packs they want to play with. Option to continue, or to select all packs. 
+        /// By default, assume that the message contains the packname. Can be overwridden by the overload. 
         /// </summary>
         /// <param name="m"></param>
         internal void setPackFilter(message m)
         {
+            setPackFilter(m, m.text_msg);
+        }
+
+        /// <summary>
+        /// Ask the organiser which packs they want to play with. Option to continue, or to select all packs. 
+        /// </summary>
+        /// <param name="m"></param>
+        /// <param name="packName"></param>
+        internal void setPackFilter (message m, string packName )
+        { 
             mod_xyzzy_coredata localData = getLocalData();
 
             //did they actually give us an answer? 
@@ -439,20 +450,20 @@ namespace Roboto.Modules
             {
                 packFilter.Clear();
             }
-            else if (!localData.getPackFilterList().Contains(m.text_msg))
+            else if (!localData.getPackFilterList().Contains(packName))
             {
                 TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", false, m.message_id);
             }
             else
             {
                 //toggle the pack
-                if (packFilter.Contains(m.text_msg))
+                if (packFilter.Contains(packName))
                 {
-                    packFilter.Remove(m.text_msg);
+                    packFilter.Remove(packName);
                 }
                 else
                 {
-                    packFilter.Add(m.text_msg);
+                    packFilter.Add(packName);
                 }
             }
 
@@ -462,19 +473,20 @@ namespace Roboto.Modules
         {
             mod_xyzzy_coredata localData = getLocalData();
             String response = "The following packs are available, and their current status is as follows:" + "\n\r" + getPackFilterStatus() +
-             "You can toggle the messages using the keyboard below, or click Continue to start the game";
+             "You can toggle the packs using the keyboard below, or click 'Continue' to start the game. You can import packs from CardCast" +
+             "by clicking 'Import CardCast Pack'";
 
 
             //Now build up keybaord
-            List<String> keyboardResponse = new List<string> { "Continue", "All", "None" };
+            List<String> keyboardResponse = new List<string> { "Continue", "Import CardCast Pack", "All", "None" };
             foreach (string packName in localData.getPackFilterList())
             {
                 keyboardResponse.Add(packName);
             }
 
             //now send the new list. 
-            string keyboard = TelegramAPI.createKeyboard(keyboardResponse, 3);//todo columns
-            TelegramAPI.GetExpectedReply(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter", -1, true, keyboard);
+            string keyboard = TelegramAPI.createKeyboard(keyboardResponse, 2);//todo columns
+            TelegramAPI.GetExpectedReply(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter", -1, false, keyboard);
         }
 
 

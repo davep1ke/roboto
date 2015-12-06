@@ -230,7 +230,7 @@ namespace Roboto.Modules
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
             request.Method = "GET";
             request.ContentType = "application/json";
-            Console.WriteLine("Calling Steam API:\n\r" + request.RequestUri.ToString());
+            Roboto.log.log("Calling Steam API:\n\r" + request.RequestUri.ToString(), logging.loglevel.low);
             try
             {
 
@@ -246,20 +246,21 @@ namespace Roboto.Modules
                     //success
                     //TODO - for Steam this is a "success" object that should return "true". Not the first item.
                     string path = jo.First.Path;
-                    
+
                     //if (path != "ok" || result != "True")
                     //{
                     //    Console.WriteLine("Error recieved sending message!");
                     //throw new WebException("Failure code from web service");
 
                     //}
-                    Console.WriteLine("Message Success");
+                    Roboto.log.log("Message Success", logging.loglevel.low);
                     return jo;
 
                 }
             }
             catch (Exception e)
             {
+                Roboto.log.log("Steam API Call failed " + e.ToString(), logging.loglevel.critical);
                 throw new WebException("Error during method call", e);
             }
 

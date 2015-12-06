@@ -346,7 +346,10 @@ namespace Roboto.Modules
                     string response = "The current status of the game is " + chatData.status.ToString();
                     if (chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                     {
-                        response += " with " + chatData.remainingQuestions.Count.ToString() + " questions remaining. Say /xyzzy_join to join. The following players are currently playing: \n\r";
+                        response += " with " 
+                            + chatData.remainingQuestions.Count.ToString() + " questions remaining"
+//                            + chatData.remainingAnswers.Count.ToString() + " answers in the pack. "
+                            + ". Say /xyzzy_join to join. The following players are currently playing: \n\r";
                         //order the list of players
                         List<mod_xyzzy_player> orderedPlayers = chatData.players.OrderByDescending(e => e.wins).ToList();
 
@@ -455,34 +458,75 @@ namespace Roboto.Modules
             //Set up the game filter, once we get a reply from the user. 
             else if (chatData.status == mod_xyzzy_data.statusTypes.setPackFilter && e.messageData == "setPackFilter")
             {
-                if (m.text_msg != "Continue")
+                //import a cardcast pack
+                if (m.text_msg == "Import CardCast Pack")
+                {
+                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
+                        + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
+                    chatData.status = mod_xyzzy_data.statusTypes.cardCastImport;
+                }
+                //enable/disable an existing pack
+                else if (m.text_msg != "Continue")
                 {
                     chatData.setPackFilter(m);
                     chatData.sendPackFilterMessage(m);
                 }
+                //no packs selected, retry
                 else if (chatData.packFilter.Count == 0)
                 {
                     chatData.sendPackFilterMessage(m);
                 }
+                //This is presumably a continue now...
                 else
                 {
-
                     chatData.addQuestions();
                     chatData.addAllAnswers();
-                    
+
                     //tell the player they can start when they want
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
-                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true,typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                     chatData.status = mod_xyzzy_data.statusTypes.Invites;
                 }
                 processed = true;
             }
 
+            //Cardcast importing
+            else if (chatData.status == mod_xyzzy_data.statusTypes.cardCastImport && e.messageData == "cardCastImport")
+            {
+                if (m.text_msg == "Cancel")
+                {
+                    //return to plugins
+                    chatData.sendPackFilterMessage(m);
+                    chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
+                }
+                else
+                {
+                    string packName;
+                    string importMessage;
+                    bool success = importCardCastPack(m.text_msg, out packName, out importMessage);
+                    if (success == true)
+                    {
+                        //reply to user
+                        TelegramAPI.SendMessage(m.userID, importMessage);
+                        //enable the filter
+                        chatData.setPackFilter(m, packName);
+                        //return to plugin selection
+                        chatData.sendPackFilterMessage(m);
+                        chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
+                    }
+                    else
+                    {
+                        int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID,
+                        "Couldn't add the pack. " + importMessage + ". To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
+                    }
+                }
+                processed = true;
+            }
 
             //start the game proper
             else if (chatData.status == mod_xyzzy_data.statusTypes.Invites && e.messageData == "Invites" && m.text_msg == "start")
             {
-                if (chatData.players.Count > 0) //TODO - should be min 2
+                if (chatData.players.Count > 1)
                 {
                     chatData.askQuestion();
                 }
@@ -513,7 +557,7 @@ namespace Roboto.Modules
             else if (chatData.status == mod_xyzzy_data.statusTypes.Judging && e.messageData == "Judging")
             {
                 bool success = chatData.judgesResponse(m.text_msg);
-               
+
                 processed = true;
             }
 
@@ -523,16 +567,77 @@ namespace Roboto.Modules
                 if (p != null)
                 {
                     chatData.players.Remove(p);
-                    TelegramAPI.SendMessage(e.chatID, "Kicked " + p.name, false,-1 , true);
+                    TelegramAPI.SendMessage(e.chatID, "Kicked " + p.name, false, -1, true);
                 }
                 chatData.check();
-                
+
                 processed = true;
             }
 
             return processed;
         }
 
+        /// <summary>
+        /// Import a cardcast pack into the xyzzy localdata
+        /// </summary>
+        /// <param name="packFilter"></param>
+        /// <returns>String containing details of the pack and cards added. String will be empty if import failed.</returns>
+        private bool importCardCastPack(string packFilter, out string packName, out string response)
+        {
+            response = "";
+            bool success = false;
+            string packCode = packFilter;
+            string packDesc;
+            packName = "";
+            int nr_qs = 0;
+            int nr_as = 0;
+            List<Helpers.cardcast_question_card> questions = new List<Helpers.cardcast_question_card>();
+            List<Helpers.cardcast_answer_card> answers = new List<Helpers.cardcast_answer_card>();
+            try
+            {
+                //Call the cardcast API. We should get an array of cards back (but in the wrong format)
+                success = Helpers.cardCast.getPackCards(ref packCode, out packName, out packDesc, ref questions, ref answers);
+                
+                if (!success)
+                {
+                    response = "Failed to import pack from cardcast. Check that the code is valid";
+                }
+                else
+                {
+                    //lets just check if the pack already exists? 
+                    if (localData.getPackFilterList().Contains(packName))
+                    {
+                        response = "Failed to import pack " + packName + " (" + packCode + ") as it already exists";
+                        log("Failed to import pack " + packName + " (" + packCode + ") as it already exists", logging.loglevel.normal);
+                        success = false;
+                    }
+                    else
+                    {
+                        response += "Imported " + packName + " - " + packDesc;
+                        foreach (Helpers.cardcast_question_card q in questions)
+                        {
+                            mod_xyzzy_card x_question = new mod_xyzzy_card(q.question, packName, q.nrAnswers);
+                            localData.questions.Add(x_question);
+                            nr_qs++;
+                        }
+                        foreach (Helpers.cardcast_answer_card a in answers)
+                        {
+                            mod_xyzzy_card x_answer = new mod_xyzzy_card(a.answer, packName);
+                            localData.answers.Add(x_answer);
+                            nr_as++;
+                        }
+                        response += "\n\r" + "Added " + nr_qs.ToString() + " questions and " + nr_as.ToString() + " answers.";
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                log("Failed to import pack " + e.ToString(), logging.loglevel.critical);
+                success = false;
+            }
+            return success;
+
+        }
 
         public override void sampleData()
         {
@@ -1824,7 +1929,7 @@ namespace Roboto.Modules
             localData.questions.Add(new mod_xyzzy_card("And today's soup is Cream of _.", "CAHe5", 1));
             localData.questions.Add(new mod_xyzzy_card("Now in bookstores: ”The Audacity of _,” by Barack Obama.", "CAHe5", 1));
             localData.questions.Add(new mod_xyzzy_card("WHOOO! God damn I love _!", "CAHe5", 1));
-            localData.questions.Add(new mod_xyzzy_card("Do you lack energy? Does it sometimes feel like the whole world is _? Zoloft.&reg;", "CAHe5", 1));
+            localData.questions.Add(new mod_xyzzy_card("Do you lack energy? Does it sometimes feel like the whole world is _? Zoloft (r)", "CAHe5", 1));
             localData.questions.Add(new mod_xyzzy_card("Hi, this is Jim from accounting. We noticed a $1,200 charge labeled ”_.” Can you explain?", "CAHe5", 1));
             localData.questions.Add(new mod_xyzzy_card("Well if _ is good enough for _, it's good enough for me.", "CAHe5", 2));
             localData.questions.Add(new mod_xyzzy_card("Yo' mama so fat she _!", "CAHe5", 1));
