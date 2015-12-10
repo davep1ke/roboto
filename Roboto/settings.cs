@@ -375,6 +375,40 @@ namespace Roboto
             
         }
 
+
+        /// <summary>
+        /// Handle a failed outbound message that a plugin expects a reply for. 
+        /// </summary>
+        /// <param name="er"></param>
+        public void parseFailedReply(ExpectedReply er)
+        {
+
+            expectedReplies.Remove(er);
+            Modules.RobotoModuleTemplate pluginToCall = null;
+
+            foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
+            {
+                if (er.pluginType == plugin.GetType().ToString())
+                {
+                    //stash these for calling outside of the "foreach" loop. This is so we can be sure it is called ONCE only, and so that we can remove
+                    //the expected reply before calling the method, so any post-processing works smoother.
+                    pluginToCall = plugin;
+                }
+            }
+            //now send it to the plugin (remove first, so any checks can be done)
+            bool pluginProcessed = pluginToCall.replyReceived(er, null, true);
+
+            if (!pluginProcessed)
+            {
+                throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
+
+            }
+            
+        }
+
+
+
+
         /// <summary>
         /// Save all data to XML
         /// </summary>

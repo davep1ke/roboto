@@ -430,11 +430,23 @@ namespace Roboto.Modules
             throw new NotImplementedException();
         }
 
-        public override bool replyReceived(ExpectedReply e, message m)
+        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
             bool processed = false;
             chat c = Roboto.Settings.getChat(e.chatID);
             mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
+
+            //did one of our outbound messages fail?
+            if (messageFailed)
+            {
+                if (e.messageData == "SetGameLength")
+                {
+                    TelegramAPI.SendMessage(e.chatID, "I need to be able to send you a direct message. Open up a chat with " + Roboto.Settings.botUserName + " and try again");
+                    chatData.status = mod_xyzzy_data.statusTypes.Stopped;
+                }
+                processed = true;
+            }
+
 
             //Set up the game, once we get a reply from the user. 
             if (chatData.status == mod_xyzzy_data.statusTypes.SetGameLength && e.messageData == "SetGameLength")
@@ -532,7 +544,8 @@ namespace Roboto.Modules
                 }
                 else
                 {
-                    TelegramAPI.SendMessage(m.chatID, "Not enough players");
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. To start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                 }
                 processed = true;
             }

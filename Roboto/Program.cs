@@ -81,6 +81,8 @@ namespace Roboto
 
             if (!Settings.isFirstTimeInitialised)
             {
+                log.log("I am " + Settings.botUserName, logging.loglevel.critical, ConsoleColor.White, false, true);
+
                 log.log( "Starting main thread", logging.loglevel.high);
                 Roboto.Process();
             }

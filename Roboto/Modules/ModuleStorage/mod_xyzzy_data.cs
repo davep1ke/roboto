@@ -213,8 +213,9 @@ namespace Roboto.Modules
         {
             status = statusTypes.Stopped;
             String message = "Game over! You can continue this game with the same players with /xyzzy_extend \n\rScores are: ";
-            foreach (mod_xyzzy_player p in players)
+            foreach (mod_xyzzy_player p in players.OrderByDescending(x => x.wins))
             {
+                
                 message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
             }
 

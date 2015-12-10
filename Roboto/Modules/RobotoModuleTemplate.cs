@@ -53,7 +53,7 @@ namespace Roboto.Modules
         /// <param name="e"></param>
         /// <param name="m"></param>
         /// <returns>A boolean indicating whether the plugin dealt with the reply or not. </returns>
-        public abstract bool replyReceived(ExpectedReply e, message m);
+        public abstract bool replyReceived(ExpectedReply e, message m, bool messageFailed = false);
         /// <summary>
         /// Called periodically, if Settings.RegisterBackgroundHook has been called during init
         /// </summary>

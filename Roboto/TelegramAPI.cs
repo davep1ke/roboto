@@ -152,7 +152,12 @@ namespace Roboto
             }
             catch (WebException ex)
             {
-                Console.WriteLine("Couldnt send message to " + chatID.ToString() + " because " + ex.ToString());
+                Roboto.log.log("Couldnt send message to " + chatID.ToString() + " because " + ex.ToString(), logging.loglevel.high);
+                
+                //Mark as failed and return the failure to the calling method
+                Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
+                Roboto.Settings.parseFailedReply(e);
+                
                 return -1;
 
             }

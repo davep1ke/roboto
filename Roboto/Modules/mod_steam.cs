@@ -438,7 +438,7 @@ namespace Roboto.Modules
           
         }
 
-        public override bool replyReceived(ExpectedReply e, message m)
+        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         { 
             bool processed = false;
             chat c = Roboto.Settings.getChat(e.chatID);

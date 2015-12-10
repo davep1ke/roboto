@@ -217,7 +217,7 @@ namespace Roboto.Modules
           
         }
 
-        public override bool replyReceived(ExpectedReply e, message m)
+        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
             chat c = Roboto.Settings.getChat(e.chatID);
             mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
