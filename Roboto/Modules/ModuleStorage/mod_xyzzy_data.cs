@@ -298,6 +298,10 @@ namespace Roboto.Modules
             mod_xyzzy_card q = localData.getQuestionCard(currentQuestion);
             mod_xyzzy_player tzar = players[lastPlayerAsked];
             mod_xyzzy_player winner = null;
+
+            //sometimes responses get mangled - think this is the telegram desktop client being clever. Replace the char. 
+            chosenAnswer = chosenAnswer.Replace("»", ">>");
+
             //find the response that matches
             foreach (mod_xyzzy_player p in players)
             {
