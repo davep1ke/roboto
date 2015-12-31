@@ -319,6 +319,36 @@ namespace Roboto.Modules
                 "steam_help - outputs help";
         }
 
+        public override string getStats()
+        {
+            int playersTracked = 0;
+            int achieves = 0;
+            int playerAchieves = 0;
+
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_steam_chat_data cd = c.getPluginData<mod_steam_chat_data>();
+                playersTracked += cd.players.Count;
+                foreach (mod_steam_player p in cd.players)
+                {
+                    playerAchieves += p.chievs.Count;
+                }
+            }
+
+            
+            foreach (mod_steam_game g in localData.games)
+            {
+                achieves += g.chievs.Count;
+            }
+
+            string result = "Tracking " + playersTracked.ToString() + " players" + "\n\r" +
+                playerAchieves.ToString() + " player achievements known" + "\n\r" +
+                localData.games.Count.ToString() + " games and " + achieves.ToString() + " achievements cached";
+            
+            return result;
+
+        }
+
         public override void initData()
         {
             try

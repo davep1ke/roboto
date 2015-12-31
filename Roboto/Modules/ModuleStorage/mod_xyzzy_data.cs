@@ -314,7 +314,8 @@ namespace Roboto.Modules
                     answer += card.text;
                 }
 
-                if (answer == chosenAnswer)
+                //Keyboard seems to trim the answers at about 110 chars, so ignore anything after that point. 
+                if (answer.Substring(0,110) == chosenAnswer.Substring(0,110))
                 {
                     winner = p;
                 }

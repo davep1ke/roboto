@@ -29,7 +29,9 @@ namespace Roboto.Modules
                 "help - Returns this list of commands" + "\n\r" +
                 "start - Starts listening to the chat" + "\n\r" +
                 "stop - Stops listening to the chat, until a START is entered." + "\n\r" +
-                "save - Saves any outstanding in memory stuff to disk."
+                "save - Saves any outstanding in memory stuff to disk." + "\n\r" +
+                "stats - Returns an overview of the currently loaded plugins.";
+
                 ;
         }
 
@@ -54,7 +56,10 @@ namespace Roboto.Modules
             //no specific data, as the enabled flag is on the core chat object.
         }
 
-       
+        public override string getStats()
+        {
+            return "";
+        }
 
         public override bool chatEvent(message m, chat c = null)
         {
@@ -70,9 +75,27 @@ namespace Roboto.Modules
                 Roboto.Settings.save();
                 TelegramAPI.SendMessage(m.chatID, "Saved settings");
             }
+            else if (m.text_msg.StartsWith("/stats"))
+            {
+                TimeSpan uptime = DateTime.Now.Subtract(Roboto.startTime);
+
+                String statstxt = "I is *" + Roboto.Settings.botUserName + "*" + "\n\r"+
+                    "Uptime: " +  uptime.Days.ToString() + " days, " + uptime.Hours.ToString() + " hours and " + uptime.Minutes.ToString() + " minutes." + "\n\r" + 
+                    "I currently know about " + Roboto.Settings.chatData.Count().ToString() + " chats." + "\n\r" +
+                    "The following plugins are currently loaded:" + "\n\r";
+
+                foreach (RobotoModuleTemplate plugin in settings.plugins )
+                {
+                    statstxt += "*" + plugin.GetType().ToString() + "*" + "\n\r";
+                    statstxt += plugin.getStats() + "\n\r";
+                }
+
+                TelegramAPI.SendMessage(m.chatID, statstxt,true);
+            }
+
             //TODO - start, stop listening to chat. 
 
-            
+
             return processed;
         }
 

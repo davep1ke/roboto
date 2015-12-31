@@ -64,7 +64,11 @@ namespace Roboto.Modules
             
         }
 
-       
+        public override string getStats()
+        {
+            return "";
+        }
+
 
         public override bool chatEvent(message m, chat c = null)
         {

@@ -202,42 +202,7 @@ namespace Roboto.Modules
             {
                 int i = 1;
             }
-
-            /* All of this kind of stuff should come in through replyRecieved now
-            if (c == null && m.isReply)
-            {
-                //any non-chat messages should only be in reply to messages that we have logged. Find the chatID of the message, and get the chat object
-                foreach (mod_xyzzy_expectedReply testReply in localData.expectedReplies)
-                {
-                    if (testReply.messageID == m.replyMessageID)
-                    {
-                        //get the chat & reply objects.
-                        expectedInReplyTo = testReply;
-                        c = Roboto.Settings.getChat(testReply.chatID);
-                    }
-                }
-            }
-
-          if (c == null)
-            {
-                //except for this stupid thing, where if you reply to a message in a private chat, it doesnt give the original ID. So guess if it is or not. 
-                //TODO - will fuck up playuing in multiple games. 
-                if (expectedInReplyTo == null)
-                {
-                    foreach (mod_xyzzy_expectedReply testReply in localData.expectedReplies)
-                    {
-                        if (testReply.playerID == m.userID)
-                        {
-                            //get the chat & reply objects.
-                            expectedInReplyTo = testReply;
-                            c = Roboto.Settings.getChat(testReply.chatID);
-                        }
-                    }
-                }
-            }
-            */
-
-
+            
             if (c != null) //Setup needs to be done in a chat! Other replies will now have a chat object passed in here too!
             {
                 //get current game data. 
@@ -428,6 +393,28 @@ namespace Roboto.Modules
         {
             //TODO - time people out and stuff.
             throw new NotImplementedException();
+        }
+
+        public override string getStats()
+        {
+            int activePlayers = 0;
+            int activeGames = 0;
+
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_xyzzy_data cd = c.getPluginData<mod_xyzzy_data>();
+                if (cd.status != mod_xyzzy_data.statusTypes.Stopped)
+                {
+                    activeGames++;
+                    activePlayers += cd.players.Count;
+                }
+                
+            }
+            
+            string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games";
+
+            return result;
+
         }
 
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)

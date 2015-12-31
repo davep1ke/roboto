@@ -16,6 +16,7 @@ namespace Roboto
 {
     public class Roboto
     {
+        public static DateTime startTime = DateTime.Now;
         private static bool endLoop = false;
         public static settings Settings;
         public static logging log = new logging();

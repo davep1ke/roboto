@@ -32,6 +32,11 @@ namespace Roboto.Modules
         /// <returns></returns>
         public abstract string getMethodDescriptions();
         /// <summary>
+        /// Return some text indicating the current level of use of the plugin
+        /// </summary>
+        /// <returns></returns>
+        public abstract string getStats();
+        /// <summary>
         /// Initialise chat specific data
         /// </summary>
         public abstract void initChatData(chat c);
