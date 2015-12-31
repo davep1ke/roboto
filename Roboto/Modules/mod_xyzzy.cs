@@ -38,18 +38,18 @@ namespace Roboto.Modules
     public class mod_xyzzy_player
     {
         public string name;
-        public int playerID;
+        public long playerID;
         public int wins = 0;
         public List<String> cardsInHand = new List<string>();
         public List<String> selectedCards = new List<string>();
         internal mod_xyzzy_player() { }
-        public mod_xyzzy_player(string name, int playerID)
+        public mod_xyzzy_player(string name, long playerID)
         {
             this.name = name;
             this.playerID = playerID;
         }
 
-        internal void topUpCards(int nrCards, List<string> availableAnswers, int chatID)
+        internal void topUpCards(int nrCards, List<string> availableAnswers, long chatID)
         {
 
             
@@ -273,7 +273,7 @@ namespace Roboto.Modules
                 else if (m.text_msg.StartsWith("/xyzzy_join"))
                 {
                     //TODO - try send a test message. If it fails, tell the user to open a 1:1 chat.
-                    int i = -1;
+                    long i = -1;
                     try
                     {
                         i = TelegramAPI.SendMessage(m.userID, "You joined the xyzzy game in " + m.chatName);
@@ -473,7 +473,7 @@ namespace Roboto.Modules
                 //import a cardcast pack
                 if (m.text_msg == "Import CardCast Pack")
                 {
-                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
                         + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
                     chatData.status = mod_xyzzy_data.statusTypes.cardCastImport;
                 }
@@ -496,7 +496,7 @@ namespace Roboto.Modules
 
                     //tell the player they can start when they want
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
-                    int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                     chatData.status = mod_xyzzy_data.statusTypes.Invites;
                 }
                 processed = true;
@@ -528,7 +528,7 @@ namespace Roboto.Modules
                     }
                     else
                     {
-                        int expectedMessageID = TelegramAPI.GetExpectedReply(chatData.chatID, m.userID,
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID,
                         "Couldn't add the pack. " + importMessage + ". To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
                     }
                 }

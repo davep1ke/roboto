@@ -38,7 +38,7 @@ namespace Roboto.Modules
             lastPlayerAsked = -1;
         }
 
-        public mod_xyzzy_player getPlayer(int playerID)
+        public mod_xyzzy_player getPlayer(long playerID)
         {
             foreach (mod_xyzzy_player existing in players)
             {
@@ -76,7 +76,7 @@ namespace Roboto.Modules
             return false;
         }
 
-        internal bool removePlayer(int playerID)
+        internal bool removePlayer(long playerID)
         {
             mod_xyzzy_player existing = getPlayer(playerID);
             //keep track of the judge!
@@ -141,7 +141,7 @@ namespace Roboto.Modules
             }
         }
 
-        public bool logAnswer(int playerID, string answer)
+        public bool logAnswer(long playerID, string answer)
         {
             mod_xyzzy_coredata localData = getLocalData();
             mod_xyzzy_player player = getPlayer(playerID);

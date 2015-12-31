@@ -95,12 +95,12 @@ namespace Roboto.Modules
         public string currentlyPlaying = "";
         public string playerName = "";
         public string playerID = "";
-        public int chatID = -1;
+        public long chatID = -1;
         public bool isPrivate = false;
         public List<mod_steam_chiev> chievs = new List<mod_steam_chiev>();
 
         internal mod_steam_player() { }
-        public mod_steam_player(int chatID, String playerID, string playerName, bool isPrivate)
+        public mod_steam_player(long chatID, String playerID, string playerName, bool isPrivate)
         {
             this.chatID = chatID;
             this.playerID = playerID;

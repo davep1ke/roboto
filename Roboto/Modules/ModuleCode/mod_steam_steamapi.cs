@@ -24,7 +24,7 @@ namespace Roboto.Modules
         }
 
 
-        public static mod_steam_player getPlayerInfo(long playerID, int chatID)
+        public static mod_steam_player getPlayerInfo(long playerID, long chatID)
         {
             NameValueCollection pairs = new NameValueCollection();
             pairs["steamids"] = playerID.ToString();

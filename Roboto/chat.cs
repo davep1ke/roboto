@@ -10,14 +10,14 @@ namespace Roboto
     /// </summary>
     public class chat
     {
-        public int chatID;
+        public long chatID;
         public bool enabled = false; //assume chats are disabled until we get a /start
 
         public List<Modules.RobotoModuleChatDataTemplate> chatData = new List<Modules.RobotoModuleChatDataTemplate>();
 
         internal chat() { }
 
-        public chat(int chatID)
+        public chat(long chatID)
         {
             this.chatID = chatID;
             initPlugins();

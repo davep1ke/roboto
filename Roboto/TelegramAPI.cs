@@ -26,7 +26,7 @@ namespace Roboto
         /// <param name="markDown"></param>
         /// <param name="replyToMessageID"></param>
         /// <returns></returns>
-        public static int SendMessage(int chatID, string text, bool markDown = false, int replyToMessageID = -1, bool clearKeyboard = false)
+        public static long SendMessage(long chatID, string text, bool markDown = false, long replyToMessageID = -1, bool clearKeyboard = false)
         {
 
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage";
@@ -57,7 +57,7 @@ namespace Roboto
         /// <param name="answerKeyboard"></param>
         /// <returns></returns>
         [Obsolete ("Should call GetExpectedReply which will track responses properly")]
-        public static int GetReply(int chatID, string text, int replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
+        public static long GetReply(long chatID, string text, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
         {
 
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage";
@@ -101,12 +101,12 @@ namespace Roboto
         /// <param name="selective"></param>
         /// <param name="answerKeyboard"></param>
         /// <returns></returns>
-        public static int GetExpectedReply(int chatID, int userID, string text, bool isPrivateMessage, Type pluginType, string messageData, int replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
+        public static long GetExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
         {
             ExpectedReply e = new ExpectedReply(chatID, userID, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard );
        
             //add the message to the stack. If it is sent, get the messageID back.
-            int messageID = Roboto.Settings.newExpectedReply(e);
+            long messageID = Roboto.Settings.newExpectedReply(e);
             return messageID;
 
         }

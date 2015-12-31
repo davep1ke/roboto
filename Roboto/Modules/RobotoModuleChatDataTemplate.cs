@@ -7,7 +7,7 @@ namespace Roboto.Modules
 {
     public abstract class RobotoModuleChatDataTemplate
     {
-        public int chatID = -1;
+        public long chatID = -1;
         internal RobotoModuleChatDataTemplate() {} //for serialisation
         protected RobotoModuleChatDataTemplate(int chatID)
         {

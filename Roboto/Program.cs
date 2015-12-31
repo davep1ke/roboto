@@ -189,7 +189,7 @@ namespace Roboto
 
                                         //is this for a group chat?
                                         
-                                        int chatID = update_TK.SelectToken("chat.id").Value<int>();
+                                        long chatID = update_TK.SelectToken("chat.id").Value<long>();
                                         chat chatData = null;
                                         if (chatID < 0)
                                         {

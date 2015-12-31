@@ -167,7 +167,7 @@ namespace Roboto
         /// </summary>
         /// <param name="playerID"></param>
         /// <returns></returns>
-        public bool userHasOutstandingMessages(int playerID)
+        public bool userHasOutstandingMessages(long playerID)
         {
             foreach (ExpectedReply e in expectedReplies)
             {
@@ -181,10 +181,10 @@ namespace Roboto
         /// </summary>
         /// <param name="e"></param>
         /// <returns></returns>
-        public int newExpectedReply(ExpectedReply e)
+        public long newExpectedReply(ExpectedReply e)
         {
             //check if we can send it? Get the messageID back
-            int messageID = -1;
+            long messageID = -1;
             if (!userHasOutstandingMessages(e.userID))
             {
                 //send the message, grab the ID. 
@@ -204,7 +204,7 @@ namespace Roboto
         /// </summary>
         /// <param name="chat_id"></param>
         /// <param name="pluginType"></param>
-        public void clearExpectedReplies(int chat_id, Type pluginType)
+        public void clearExpectedReplies(long chat_id, Type pluginType)
         {
             //find replies for this chat, and add them to a temp list
             List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
@@ -246,9 +246,9 @@ namespace Roboto
             //List<int> userIDs = new List<int>();
             //foreach (ExpectedReply e in expectedReplies) { userIDs.Add(e.userID); }
             //userIDs = (List<int>)userIDs.Distinct<int>();
-            List<int> userIDs = expectedReplies.Select(e => e.userID).Distinct().ToList<int>();
+            List<long> userIDs = expectedReplies.Select(e => e.userID).Distinct().ToList<long>();
             
-            foreach (int userID in userIDs)
+            foreach (long userID in userIDs)
             {
                 List<ExpectedReply> userReplies = expectedReplies.Where(e => e.userID == userID).ToList();
                 
@@ -284,7 +284,7 @@ namespace Roboto
         /// <param name="userID"></param>
         /// <param name="filter"></param>
         /// <returns></returns>
-        public List<ExpectedReply> getExpectedReplies(Type pluginType, int chatID, int userID = -1, string filter = "")
+        public List<ExpectedReply> getExpectedReplies(Type pluginType, long chatID, int userID = -1, string filter = "")
         {
             List<ExpectedReply> responses = new List<ExpectedReply>();
             foreach (ExpectedReply e in expectedReplies)
@@ -541,7 +541,7 @@ namespace Roboto
         /// </summary>
         /// <param name="chat_id"></param>
         /// <returns></returns>
-        public chat getChat(int chat_id)
+        public chat getChat(long chat_id)
         {
             foreach (chat c in chatData)
             {
@@ -557,7 +557,7 @@ namespace Roboto
         /// Add data about a chat to the store. 
         /// </summary>
         /// <param name="chat_id"></param>
-        public chat addChat(int chat_id)
+        public chat addChat(long chat_id)
         {
             if (getChat(chat_id) == null)
             {

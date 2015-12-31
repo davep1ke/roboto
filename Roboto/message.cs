@@ -14,32 +14,32 @@ namespace Roboto
     /// </summary>
     public class message
     {
-        public int message_id;
-        public int chatID;
+        public long message_id;
+        public long chatID;
         public String text_msg;
         public String userFirstName;
         public String userSurname;
         public String userFullName;
         public String chatName;
-        public int userID = -1;
+        public long userID = -1;
 
         //is this in reply to another text that we sent? 
         public bool isReply = false;
         public String replyOrigMessage = "";
         public String replyOrigUser = "";
-        public int replyMessageID = -1;
+        public long replyMessageID = -1;
 
         public message(JToken update_TK)
         {
             try
             {
                 //get the message details
-                message_id = update_TK.SelectToken(".message_id").Value<int>();
-                chatID = update_TK.SelectToken(".chat.id").Value<int>();
+                message_id = update_TK.SelectToken(".message_id").Value<long>();
+                chatID = update_TK.SelectToken(".chat.id").Value<long>();
                 chatName = getNullableString(update_TK.SelectToken(".chat.title"));
                 text_msg =  update_TK.SelectToken(".text").Value<String>();
                 //text_msg = (String)JsonConvert.DeserializeObject(text_msg);
-                userID = update_TK.SelectToken(".from.id").Value<int>();
+                userID = update_TK.SelectToken(".from.id").Value<long>();
 
                 userFirstName = getNullableString(update_TK.SelectToken(".from.first_name"));
                 userSurname = getNullableString(update_TK.SelectToken(".from.last_name"));
@@ -53,7 +53,7 @@ namespace Roboto
                     isReply = true;
                     replyOrigMessage = replyMsg_TK.SelectToken(".text").Value<String>();
                     replyOrigUser = replyMsg_TK.SelectToken(".from.username").Value<String>();
-                    replyMessageID = replyMsg_TK.SelectToken(".message_id").Value<int>();
+                    replyMessageID = replyMsg_TK.SelectToken(".message_id").Value<long>();
                 }
             }
             catch (Exception e)

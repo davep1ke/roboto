@@ -11,13 +11,13 @@ namespace Roboto
         /// <summary>
         /// The chat that the reply relates to (not the chat it was posted to, neccessarily). 
         /// </summary>
-        public int chatID = -1;
-        public int userID = -1;
+        public long chatID = -1;
+        public long userID = -1;
         public bool isPrivateMessage = false;
         public DateTime timeLogged = DateTime.Now;
         public DateTime timeSentToUser = DateTime.MinValue;
         public string text;
-        public int replyToMessageID;
+        public long replyToMessageID;
         public bool selective;
         public string keyboard;
         /// <summary>
@@ -39,7 +39,7 @@ namespace Roboto
         /// <param name="isPrivateMessage"></param>
         /// <param name="pluginType"></param>
         /// <param name="messageData"></param>
-        public ExpectedReply(int chatID, int userID, string text, bool isPrivateMessage, Type pluginType, string messageData, int replyToMessageID, bool selective, string keyboard)
+        public ExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID, bool selective, string keyboard)
         {
             this.chatID = chatID;
             this.userID = userID;
