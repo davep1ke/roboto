@@ -17,10 +17,21 @@ namespace Roboto
         private bool followOnLine = false;
         private Char bannerChar = "*".ToCharArray()[0];
 
-        public void log (string text, loglevel level = loglevel.normal, ConsoleColor colour = ConsoleColor.White, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="text"></param>
+        /// <param name="level"></param>
+        /// <param name="colour"></param>
+        /// <param name="noLineBreak"></param>
+        /// <param name="banner"></param>
+        /// <param name="pause"></param>
+        /// <param name="skipheader"></param>
+        /// <param name="skipLevel">Levels of the stack to skip when getting the calling class</param>
+        public void log(string text, loglevel level = loglevel.normal, ConsoleColor colour = ConsoleColor.White, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 1)
         {
 
-            StackFrame frame = new StackFrame(1);
+            StackFrame frame = new StackFrame(skipLevel);
             var method = frame.GetMethod();
             string classtype = method.DeclaringType.ToString();
             string methodName = method.Name;

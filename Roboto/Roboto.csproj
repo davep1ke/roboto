@@ -119,7 +119,7 @@
     <Compile Include="Modules\RobotoModuleChatDataTemplate.cs" />
     <Compile Include="Modules\mod_quote.cs" />
     <Compile Include="objects.cs" />
-    <Compile Include="Program.cs" />
+    <Compile Include="Roboto.cs" />
     <Compile Include="TelegramAPI.cs" />
     <Compile Include="settings.cs" />
   </ItemGroup>

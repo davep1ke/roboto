@@ -81,6 +81,17 @@ namespace Roboto
             }
         }
 
+        /// <summary>
+        /// Perform any housekeeping / startup checks
+        /// </summary>
+        public void startupChecks()
+        {
+            foreach(Modules.RobotoModuleTemplate plugin in plugins )
+            {
+                plugin.startupChecks();
+            }
+        }
+
 
         /// <summary>
         /// Basic checks on the data. 

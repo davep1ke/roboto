@@ -463,11 +463,6 @@ namespace Roboto.Modules
             }
         }
 
-        public override void sampleData()
-        {
-          
-        }
-
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         { 
             bool processed = false;

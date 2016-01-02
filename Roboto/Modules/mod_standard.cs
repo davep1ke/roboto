@@ -44,23 +44,7 @@ namespace Roboto.Modules
             }
             return methods;
         }
-
-        public override void initData()
-        {
-           //no data!
-
-        }
-
-        public override void initChatData(chat c)
-        {
-            //no specific data, as the enabled flag is on the core chat object.
-        }
-
-        public override string getStats()
-        {
-            return "";
-        }
-
+        
         public override bool chatEvent(message m, chat c = null)
         {
             bool processed = false;
@@ -79,7 +63,7 @@ namespace Roboto.Modules
             {
                 TimeSpan uptime = DateTime.Now.Subtract(Roboto.startTime);
 
-                String statstxt = "I is *" + Roboto.Settings.botUserName + "*" + "\n\r"+
+                String statstxt = "I is *@" + Roboto.Settings.botUserName + "*" + "\n\r"+
                     "Uptime: " +  uptime.Days.ToString() + " days, " + uptime.Hours.ToString() + " hours and " + uptime.Minutes.ToString() + " minutes." + "\n\r" + 
                     "I currently know about " + Roboto.Settings.chatData.Count().ToString() + " chats." + "\n\r" +
                     "The following plugins are currently loaded:" + "\n\r";
@@ -98,21 +82,6 @@ namespace Roboto.Modules
 
             return processed;
         }
-
-        protected override void backgroundProcessing()
-        {
-            throw new NotImplementedException();
-        }
-
-        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
-        {
-            throw new NotImplementedException();
-        }
-
-        public override void sampleData()
-        {
-
-        }
-
+        
     }
 }

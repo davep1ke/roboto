@@ -25,6 +25,23 @@ namespace Roboto.Helpers
         public int nrAnswers;
     }
 
+    public class cardcast_pack
+    {
+        public Guid packID = Guid.NewGuid();
+        public string name;
+        public string packCode;
+        public string description;
+        public DateTime lastSynced = DateTime.MinValue;
+
+        internal cardcast_pack() { }
+        public cardcast_pack(string name, string packCode, string description)
+        {
+            this.name = name;
+            this.packCode = packCode;
+            this.description = description;
+        }        
+    }
+
     /// <summary>
     /// Helpder methods for working with cardcast
     /// </summary>
@@ -45,13 +62,12 @@ namespace Roboto.Helpers
         /// <param name="packCode"></param>
         /// <param name="questions"></param>
         /// <param name="answers"></param>
-        public static bool getPackCards(ref string packCode, out string packName, out string packDescription, ref List<cardcast_question_card> questions, ref List<cardcast_answer_card> answers)
+        public static bool getPackCards(ref string packCode, out cardcast_pack packData, ref List<cardcast_question_card> questions, ref List<cardcast_answer_card> answers)
         {
-            packName = "";
-            packDescription = "";
+            packData = new cardcast_pack();
 
             //some basic checks on packCode. 
-            packCode = packCode.ToUpper();
+            packData.packCode = packCode.ToUpper();
             Regex r = new Regex("^[A-Z0-9]*$");
             if (!r.IsMatch(packCode))
             {
@@ -74,8 +90,8 @@ namespace Roboto.Helpers
                     try
                     {
                         //get the message details
-                        packName = packInfoResponse.SelectToken("name").Value<string>();
-                        packDescription = packInfoResponse.SelectToken("description").Value<string>();
+                        packData.name = packInfoResponse.SelectToken("name").Value<string>();
+                        packData.description = packInfoResponse.SelectToken("description").Value<string>();
                     }
                     catch (Exception e)
                     {
@@ -130,8 +146,7 @@ namespace Roboto.Helpers
                             c.answer = text;
                             answers.Add(c);
                         }
-
-
+                        
                     }
                     catch (Exception e)
                     {

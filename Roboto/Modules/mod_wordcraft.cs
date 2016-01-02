@@ -58,18 +58,8 @@ namespace Roboto.Modules
             }
 
         }
-
-        public override void initChatData(chat c)
-        {
-            
-        }
-
-        public override string getStats()
-        {
-            return "";
-        }
-
-
+        
+      
         public override bool chatEvent(message m, chat c = null)
         {
             bool processed = false;
@@ -106,12 +96,7 @@ namespace Roboto.Modules
             return processed;
         }
 
-        protected override void backgroundProcessing()
-        {
-            throw new NotImplementedException();
-        }
-
-
+        
         public override void sampleData()
         {
             
@@ -183,10 +168,6 @@ namespace Roboto.Modules
             return result;
 
         }
-
-        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
-        {
-            throw new NotImplementedException();
-        }
+        
     }
 }

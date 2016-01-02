@@ -177,23 +177,7 @@ namespace Roboto.Modules
             }
         }
 
-
-        public override void sampleData()
-        {
-            
-        }
-
-        public override string getStats()
-        {
-            return "";
-        }
-
-        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
-        {
-            throw new NotImplementedException();
-        }
-
-
+        
         public void addBirthday(mod_birthday_birthday birthday, chat c)
         {
             mod_birthday_data localData = c.getPluginData<mod_birthday_data>();

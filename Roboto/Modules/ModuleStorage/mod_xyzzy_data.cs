@@ -28,7 +28,9 @@ namespace Roboto.Modules
         public List<String> remainingAnswers = new List<string>();
         //internal mod_xyzzy_data() { }
 
-
+        /// <summary>
+        /// Completely stop the game and clear any player data
+        /// </summary>
         public void reset()
         {
             status = statusTypes.Stopped;
@@ -93,6 +95,9 @@ namespace Roboto.Modules
             {
                 if (players[i] == judge) { lastPlayerAsked = i; }
             }
+
+            //check everything OK
+            check();
 
             return false;
         }
@@ -236,7 +241,16 @@ namespace Roboto.Modules
                 if (p != players[lastPlayerAsked])
                 {
                     //if so, have we got one? 
-                    if (p.selectedCards.Count < getLocalData().getQuestionCard(currentQuestion).nrAnswers) { return false; }
+                    mod_xyzzy_card question = getLocalData().getQuestionCard(currentQuestion);
+                    if (question != null)
+                    {
+                        if (p.selectedCards.Count < question.nrAnswers) { return false; }
+                    }
+                    else
+                    {
+                        log("Current question card not found!", logging.loglevel.critical);
+                        askQuestion();
+                    }
                 }
             }
             return true;
@@ -250,7 +264,9 @@ namespace Roboto.Modules
             mod_xyzzy_coredata localData = getLocalData();
 
             mod_xyzzy_card q = localData.getQuestionCard(currentQuestion);
-            mod_xyzzy_player tzar = players[lastPlayerAsked];
+            mod_xyzzy_player tzar = players[lastPlayerAsked]; // new mod_xyzzy_player();//
+
+
             //get all the responses for the keyboard, and the chat message
             List<string> responses = new List<string>();
             string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
@@ -315,8 +331,9 @@ namespace Roboto.Modules
                 }
 
                 //Keyboard seems to trim the answers at about 110 chars, so ignore anything after that point. 
-                if (answer.Substring(0,110) == chosenAnswer.Substring(0,110))
-                {
+                if (answer.Substring(0, Math.Min(answer.Length, 100)) == chosenAnswer.Substring(0, Math.Min(chosenAnswer.Length, 100)))
+                //if (answer == chosenAnswer)
+                    {
                     winner = p;
                 }
             }
@@ -349,15 +366,20 @@ namespace Roboto.Modules
 
 
         /// <summary>
-        /// Check consistenct of game state
+        /// Check consistency of game state
         /// </summary>
         internal void check()
         {
             mod_xyzzy_coredata localData = getLocalData();
             List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
+            log("Status check for " + chatID + ".");
 
             //is the tzar valid?
-            if (lastPlayerAsked >= players.Count) { lastPlayerAsked = 0; }
+            if (lastPlayerAsked >= players.Count)
+            {
+                lastPlayerAsked = 0;
+                log("Reset tzar as ID invalid.");
+            }
 
             //responses from non-existent players
             foreach (ExpectedReply reply in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID ))
@@ -373,13 +395,20 @@ namespace Roboto.Modules
             foreach (ExpectedReply r in repliesToRemove)
             {
                 Roboto.Settings.removeReply(r);
+                log(" Removed expected reply " + r.userID + "\\" + r.pluginType.ToString() + "\\" + r.messageData + ".");
             }
+
+            //todo - Remove non-existant cards anywhere (e.g. if a sync has recently happened)
+
 
             //do we have any duplicate cards? rebuild the list
             int count_q = remainingQuestions.Count;
             int count_a = remainingAnswers.Count;
             remainingQuestions = remainingQuestions.Distinct().ToList();
             remainingAnswers = remainingAnswers.Distinct().ToList();
+
+            //duplicate strings in packfilter?
+            packFilter = packFilter.Distinct().ToList();
 
             //current status
             //TODO - pad this out more
@@ -398,19 +427,23 @@ namespace Roboto.Modules
                     //check if there is an appropriate expected reply
                     List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
                     bool reask = false;
-                    if (replies.Count > 1)
+                    if (players.Count() == 0 )
+                    {
+                        reset();
+                    }
+                    else if (replies.Count > 1)
                     {
                         Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
                         reask = true;
                         log("Cleared multiple expected replies during judging from game " + chatID.ToString(), logging.loglevel.high);
 
                     }
-                    if (replies.Count == 0)
+                    else if (replies.Count == 0)
                     {
                         reask = true;
                         log("No expected replies during judging from game " + chatID.ToString(), logging.loglevel.high);
                     }
-                    if (replies.Count == 1 && (replies[0].messageData != "Judging" || replies[0].userID != players[lastPlayerAsked].playerID))
+                    else if (replies.Count == 1 && (replies[0].messageData != "Judging" || replies[0].userID != players[lastPlayerAsked].playerID))
                     {
                         Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
                         reask = true;
@@ -419,12 +452,72 @@ namespace Roboto.Modules
                     if (reask)
                     {
                         beginJudging(true);
-                        log("Redid judging for  " + chatID.ToString(), logging.loglevel.critical);
+                        log("Redid judging", logging.loglevel.critical);
                     }
                     break;
-
+                case statusTypes.Stopped:
+                    reset();
+                    break;
             }
 
+        }
+
+        public void replaceCard(mod_xyzzy_card old, mod_xyzzy_card newcard, string cardType)
+        {
+            String actions = "Replacing " + cardType + "card " + old.text + " with " + newcard.text + " in " + getChat().chatID + "." ;
+            if (cardType == "Q")
+            {
+
+                bool removed = remainingQuestions.Remove(old.uniqueID);
+                if (removed)
+                {
+                    remainingQuestions.Add(newcard.uniqueID);
+                    actions += " Replaced in remainingQs list.";
+                }
+
+                if (currentQuestion == old.uniqueID)
+                {
+                    currentQuestion = newcard.uniqueID;
+                    actions += " Replaced current Question.";
+                }
+            }
+            else
+            {
+
+                bool removed = remainingAnswers.Remove(old.uniqueID);
+                if (removed)
+                {
+                    remainingAnswers.Add(newcard.uniqueID);
+                    actions += " Replaced card in remainingAnswers.";
+                }
+
+                foreach (mod_xyzzy_player p in players)
+                {
+                    removed = p.cardsInHand.Remove(old.uniqueID);
+                    if (removed)
+                    {
+                        actions += " Replaced card in " + p.name + "'s hand";
+                        p.cardsInHand.Add(newcard.uniqueID);
+                    }
+
+                    removed = p.selectedCards.Remove(old.uniqueID);
+                    if (removed)
+                    {
+                        actions += " Replaced selectedcard by " + p.name;
+                        p.selectedCards.Add(newcard.uniqueID);
+                    }
+                }
+
+            }
+            log(actions, logging.loglevel.normal);
+        }
+
+        /// <summary>
+        /// Reset the player scores
+        /// </summary>
+        public void resetScores()
+        {
+            foreach (mod_xyzzy_player p in players) { p.wins = 0; }
         }
 
         /// <summary>
@@ -450,13 +543,19 @@ namespace Roboto.Modules
             if (m.text_msg == "All")
             {
                 packFilter.Clear();
-                packFilter.AddRange(localData.getPackFilterList());
+
+                foreach(Helpers.cardcast_pack pack in localData.getPackFilterList())
+                {
+                    packFilter.Add(pack.name);
+                }
+
+                //packFilter.AddRange(localData.getPackFilterList());
             }
             else if (m.text_msg == "None")
             {
                 packFilter.Clear();
             }
-            else if (!localData.getPackFilterList().Contains(packName))
+            else if (localData.getPackFilterList().Where(x => x.name == packName).Count() == 0 )//      .Contains(packName))
             {
                 TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", false, m.message_id);
             }
@@ -485,9 +584,9 @@ namespace Roboto.Modules
 
             //Now build up keybaord
             List<String> keyboardResponse = new List<string> { "Continue", "Import CardCast Pack", "All", "None" };
-            foreach (string packName in localData.getPackFilterList())
+            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList())
             {
-                keyboardResponse.Add(packName);
+                keyboardResponse.Add(pack.name);
             }
 
             //now send the new list. 
@@ -511,10 +610,10 @@ namespace Roboto.Modules
             //Now build up a message to the user
             string response = "";
             mod_xyzzy_coredata localData = getLocalData();
-            foreach (string packName in localData.getPackFilterList())
+            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList())
             {
                 //is it currently enabled
-                if (packEnabled(packName))
+                if (packEnabled(pack.name))
                 {
                     response += "ON  ";
                 }
@@ -522,7 +621,7 @@ namespace Roboto.Modules
                 {
                     response += "OFF ";
                 }
-                response += packName + "\n\r";
+                response += pack.name + "\n\r";
             }
             return response;
 

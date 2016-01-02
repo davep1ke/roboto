@@ -34,7 +34,7 @@ namespace Roboto.Modules
         /// <param name="noLineBreak"></param>
         public void log(string text, logging.loglevel level = logging.loglevel.normal, ConsoleColor colour = ConsoleColor.White, bool noLineBreak = false)
         {
-            Roboto.log.log(text, level, colour, noLineBreak, false);
+            Roboto.log.log(text, level, colour, noLineBreak, false, false, false, 2);
         }
     }
 }
