@@ -316,6 +316,7 @@ namespace Roboto.Modules
                 }
                 else if (m.text_msg.StartsWith("/xyzzy_status"))
                 {
+                    //TODO - move this into ChatData
                     string response = "The current status of the game is " + chatData.status.ToString();
                     if (chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                     {

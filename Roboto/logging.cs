@@ -83,6 +83,7 @@ namespace Roboto
                 {
                     outputString += " - " 
                         + classtype.ToString().PadRight(25)
+                        + " "
                         + methodName.PadRight(20)
                         +  " - ";
                     

@@ -39,12 +39,24 @@ namespace Roboto
             if (replyToMessageID != -1) { pairs["reply_to_message_id"] =replyToMessageID.ToString(); }
             if (markDown) { pairs["parse_mode"] = "Markdown"; }
             if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
+            try
+            {
+                JObject response = sendPOST(postURL, pairs);
+                //get the message ID
+                int messageID = response.SelectToken("result.message_id").Value<int>();
+                return messageID;
+            }
+            catch (WebException e)
+            {
+                //log it and carry on
+                Roboto.log.log("Couldnt send message " + text + "to " + chatID + "! ", logging.loglevel.critical);
 
-            JObject response = sendPOST(postURL, pairs);
+            }
 
-            //get the message ID
-            int messageID = response.SelectToken("result.message_id").Value<int>();
-            return messageID;
+
+            
+            return -1;
+            
         }
 
         /// <summary>

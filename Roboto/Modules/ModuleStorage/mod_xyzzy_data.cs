@@ -165,7 +165,13 @@ namespace Roboto.Modules
 
             if (answerCard == null)
             {
-                TelegramAPI.SendMessage(playerID, "Not a valid answer! Reply to the original message again, using the keyboard");
+                
+                //couldnt find answer, reask
+                string questionText = players[lastPlayerAsked].name + " asks: " + "\n\r" + question.text;
+                //we are expecting a reply to this:
+                TelegramAPI.GetExpectedReply(chatID, player.playerID, "Not a valid answer! Try again. " + questionText, true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData));
+
+                //TelegramAPI.SendMessage(playerID, "Not a valid answer! Reply to the original message again, using the keyboard");
                 return false;
             }
             else
@@ -271,6 +277,8 @@ namespace Roboto.Modules
             List<string> responses = new List<string>();
             string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
                 "Question: " + q.text + "\n\r" + "\n\r";
+            string missingRepliestxt = "The following replies were missing: " ;
+            bool missingReplies = false;
             foreach (mod_xyzzy_player p in players)
             {
                 if (p != tzar)
@@ -283,7 +291,15 @@ namespace Roboto.Modules
                         if (answer != "") { answer += " >> "; }
                         answer += card.text;
                     }
-                    responses.Add(answer);
+                    if (answer != "")
+                    {
+                        responses.Add(answer);
+                    }
+                    else
+                    {
+                        missingReplies = true;
+                        missingRepliestxt += "\n\r" + " - " + p.name;              
+                    }
 
                 }
             }
@@ -291,6 +307,8 @@ namespace Roboto.Modules
 
             foreach (string answer in responses) { chatMsg += "  - " + answer + "\n\r"; }
             
+            if (missingReplies) { chatMsg += missingRepliestxt; }
+
             string keyboard = TelegramAPI.createKeyboard(responses, 1);
             //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
             //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
@@ -371,6 +389,7 @@ namespace Roboto.Modules
         internal void check()
         {
             mod_xyzzy_coredata localData = getLocalData();
+            List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
             List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
             log("Status check for " + chatID + ".");
 
@@ -422,10 +441,16 @@ namespace Roboto.Modules
                     {
                         beginJudging();
                     }
+                    else if (replies.Count() == 0)
+                    {
+                        //something went wrong, we are missing someone's expectedReply...
+                        log("ExpectedReply missing - skipping to judging", logging.loglevel.high);
+                        beginJudging();
+                    }
                     break;
                 case statusTypes.Judging:
                     //check if there is an appropriate expected reply
-                    List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
+                    
                     bool reask = false;
                     if (players.Count() == 0 )
                     {
