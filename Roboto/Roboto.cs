@@ -252,8 +252,20 @@ namespace Roboto
                 }
                 catch (Exception e)
                 {
-                    Console.Out.WriteLine("-----------------");
-                    Console.Out.WriteLine(e.Message);
+                    try
+                    {
+                        log.log("Exception caught at main loop. " + e.ToString(), logging.loglevel.critical, ConsoleColor.White, false, false, false, false, 2);
+                    }
+
+                    catch (Exception ex)
+                    {
+                        Console.Out.WriteLine("-----------------");
+                        Console.Out.WriteLine("Error During LOGGING! Original Error was");
+                        Console.Out.WriteLine(e.Message);
+                        Console.Out.WriteLine("Logging Error was");
+                        Console.Out.WriteLine(ex.Message);
+
+                    }
                 }
                 
                 foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)

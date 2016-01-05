@@ -107,10 +107,24 @@ namespace Roboto.Modules
             mod_xyzzy_coredata localData = getLocalData();
             Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy)  ); //shouldnt be needed, but handy if we are forcing a question in debug.
 
-            if (remainingQuestions.Count > 0)
+            //check that the question card still exists. 
+            mod_xyzzy_card question = null;
+            while (question == null && remainingQuestions.Count > 0)
+            {
+                question = localData.getQuestionCard(remainingQuestions[0]);
+                if (question == null)
+                {
+                    log("Tried to ask q " + remainingQuestions[0] + " but has been removed from the cache.", logging.loglevel.high);
+                    remainingQuestions.RemoveAt(0);
+                }
+            }
+
+
+
+            if (remainingQuestions.Count > 0 && question != null)
             {
 
-                mod_xyzzy_card question = localData.getQuestionCard(remainingQuestions[0]);
+                
                 int playerPos = lastPlayerAsked + 1;
                 if (playerPos >= players.Count) { playerPos = 0; }
                 mod_xyzzy_player tzar = players[playerPos];
@@ -266,59 +280,72 @@ namespace Roboto.Modules
         internal void beginJudging(bool judgesMessageOnly = false)
         {
 
-            status = statusTypes.Judging;
-            mod_xyzzy_coredata localData = getLocalData();
-
-            mod_xyzzy_card q = localData.getQuestionCard(currentQuestion);
-            mod_xyzzy_player tzar = players[lastPlayerAsked]; // new mod_xyzzy_player();//
-
-
-            //get all the responses for the keyboard, and the chat message
-            List<string> responses = new List<string>();
-            string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
-                "Question: " + q.text + "\n\r" + "\n\r";
-            string missingRepliestxt = "The following replies were missing: " ;
-            bool missingReplies = false;
-            foreach (mod_xyzzy_player p in players)
+            if (players.Count == 0)
             {
-                if (p != tzar)
-                {
-                    //handle multiple answers for a question 
-                    string answer = "";
-                    foreach (string cardUID in p.selectedCards)
-                    {
-                        mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                        if (answer != "") { answer += " >> "; }
-                        answer += card.text;
-                    }
-                    if (answer != "")
-                    {
-                        responses.Add(answer);
-                    }
-                    else
-                    {
-                        missingReplies = true;
-                        missingRepliestxt += "\n\r" + " - " + p.name;              
-                    }
-
-                }
+                log("Abandoning game during judging phase - no players!", logging.loglevel.high);
+                reset();
             }
-            responses.Sort(); //sort so that player order isnt same each time.
-
-            foreach (string answer in responses) { chatMsg += "  - " + answer + "\n\r"; }
-            
-            if (missingReplies) { chatMsg += missingRepliestxt; }
-
-            string keyboard = TelegramAPI.createKeyboard(responses, 1);
-            //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
-            //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
-            //TODO - add messageData types to an enum
-            TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", -1, true, keyboard);
-
-            //Send the general chat message
-            if (!judgesMessageOnly)
+            else
             {
-                TelegramAPI.SendMessage(chatID, chatMsg);
+                if (lastPlayerAsked > players.Count)
+                {
+                    log("Judge ID invalid during judging, resetting to first player.", logging.loglevel.high);
+                    lastPlayerAsked = 0;
+                }
+                status = statusTypes.Judging;
+                mod_xyzzy_coredata localData = getLocalData();
+
+                mod_xyzzy_card q = localData.getQuestionCard(currentQuestion);
+                mod_xyzzy_player tzar = players[lastPlayerAsked]; // = new mod_xyzzy_player();//
+
+
+                //get all the responses for the keyboard, and the chat message
+                List<string> responses = new List<string>();
+                string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
+                    "Question: " + q.text + "\n\r" + "\n\r";
+                string missingRepliestxt = "The following replies were missing: ";
+                bool missingReplies = false;
+                foreach (mod_xyzzy_player p in players)
+                {
+                    if (p != tzar)
+                    {
+                        //handle multiple answers for a question 
+                        string answer = "";
+                        foreach (string cardUID in p.selectedCards)
+                        {
+                            mod_xyzzy_card card = localData.getAnswerCard(cardUID);
+                            if (answer != "") { answer += " >> "; }
+                            answer += card.text;
+                        }
+                        if (answer != "")
+                        {
+                            responses.Add(answer);
+                        }
+                        else
+                        {
+                            missingReplies = true;
+                            missingRepliestxt += "\n\r" + " - " + p.name;
+                        }
+
+                    }
+                }
+                responses.Sort(); //sort so that player order isnt same each time.
+
+                foreach (string answer in responses) { chatMsg += "  - " + answer + "\n\r"; }
+
+                if (missingReplies) { chatMsg += missingRepliestxt; }
+
+                string keyboard = TelegramAPI.createKeyboard(responses, 1);
+                //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
+                //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
+                //TODO - add messageData types to an enum
+                TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", -1, true, keyboard);
+
+                //Send the general chat message
+                if (!judgesMessageOnly)
+                {
+                    TelegramAPI.SendMessage(chatID, chatMsg);
+                }
             }
         }
 

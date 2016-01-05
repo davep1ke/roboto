@@ -89,6 +89,7 @@ namespace Roboto.Modules
         {
             List<string> answers = new List<string>();
 
+            List<string> invalidCards = new List<string>();
             foreach (string cardID in cardsInHand)
             {
                 mod_xyzzy_card c = localData.getAnswerCard(cardID);
@@ -99,9 +100,13 @@ namespace Roboto.Modules
                 }
                 else
                 {
-                    Roboto.log.log("Answer card not found!", logging.loglevel.critical);
+                    Roboto.log.log("Answer card " + cardID + " not found! Removing from " + name + "'s hand", logging.loglevel.critical);
+                    invalidCards.Add(cardID);
                 }
             }
+            //remove any invalid cards
+            foreach(string cardID in invalidCards) { cardsInHand.Remove(cardID); }
+
             return (TelegramAPI.createKeyboard(answers,1));
          }
 
@@ -251,6 +256,7 @@ namespace Roboto.Modules
                     try
                     {
                         i = TelegramAPI.SendMessage(m.userID, "You joined the xyzzy game in " + m.chatName);
+                        if (i == -1) { throw new Exception("Couldn't send join confirmation message"); }
                     }
                     catch
                     {
@@ -637,6 +643,7 @@ namespace Roboto.Modules
         /// </summary>
         public override void startupChecks()
         {
+            //TODO - how does this differ from INIT ???
             log("Startup Checks");
             //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
             foreach (mod_xyzzy_card q in localData.questions) { q.category = pack_replacements(q.category); }

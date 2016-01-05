@@ -105,7 +105,7 @@ namespace Roboto.Modules
         {
             foreach (Helpers.cardcast_pack p in packs)
             {
-                if (p.packCode != null && p.packCode != "" && p.lastSynced < DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0)))
+                if (p.packCode != null && p.packCode != "" && p.lastSynced < DateTime.Now.Subtract(new TimeSpan(5, 0, 0, 0)))
                 {
                     log("Syncing " + p.name);
                     Helpers.cardcast_pack outpack;
@@ -144,6 +144,7 @@ namespace Roboto.Modules
             int nr_rep = 0;
             List<Helpers.cardcast_question_card> import_questions = new List<Helpers.cardcast_question_card>();
             List<Helpers.cardcast_answer_card> import_answers = new List<Helpers.cardcast_answer_card>();
+            List<mod_xyzzy_data> brokenChats = new List<mod_xyzzy_data>();
 
             try
             {
@@ -184,7 +185,22 @@ namespace Roboto.Modules
                             }
                         }
                         //now remove them from the localdata
-                        foreach (mod_xyzzy_card q in remove_cards) { questions.Remove(q); }
+                        foreach (mod_xyzzy_card q in remove_cards)
+                        {
+                            questions.Remove(q);
+                            //remove any cached questions
+                            foreach(chat c in Roboto.Settings.chatData)
+                            {
+                                mod_xyzzy_data chatData = (mod_xyzzy_data) c.getPluginData(typeof(mod_xyzzy_data));
+                                chatData.remainingQuestions.RemoveAll(x => x == q.uniqueID);
+                                //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
+                                if (chatData.currentQuestion == q.uniqueID)
+                                {
+                                    log("The current question " + chatData.currentQuestion + " for chat " + c.chatID + " has been removed!");
+                                    if (!brokenChats.Contains(chatData)) { brokenChats.Add(chatData); }
+                                }
+                            }
+                        }
                         //or from the import list 
                         foreach (mod_xyzzy_card q in exist_cards)
                         {
@@ -260,7 +276,7 @@ namespace Roboto.Modules
                     }
                     else
                     {
-                        response += "Importing " + pack.packCode + " - " + pack.name + " - " + pack.description;
+                        response += "Importing fresh pack " + pack.packCode + " - " + pack.name + " - " + pack.description;
                         foreach (Helpers.cardcast_question_card q in import_questions)
                         {
                             mod_xyzzy_card x_question = new mod_xyzzy_card(q.question, pack.name, q.nrAnswers);
@@ -274,6 +290,8 @@ namespace Roboto.Modules
                             nr_as++;
                         }
                         response += "\n\r" + "Added " + nr_qs.ToString() + " questions and " + nr_as.ToString() + " answers.";
+                        packs.Add(pack);
+                        response += "\n\r" + "Added " + pack.name + " to filter list.";
                     }
                 }
 
@@ -283,6 +301,12 @@ namespace Roboto.Modules
                 log("Failed to import pack " + e.ToString(), logging.loglevel.critical);
                 success = false;
             }
+
+            foreach (mod_xyzzy_data c in brokenChats)
+            {
+                c.askQuestion();
+            }
+
 
             log(response, logging.loglevel.normal);
 

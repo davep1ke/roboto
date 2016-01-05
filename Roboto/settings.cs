@@ -411,6 +411,7 @@ namespace Roboto
 
             if (!pluginProcessed)
             {
+                Roboto.log.log("Plugin " + pluginToCall.GetType().ToString() + " didnt process the message it expected a reply to!", logging.loglevel.high);
                 throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
 
             }
