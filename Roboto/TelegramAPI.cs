@@ -208,7 +208,7 @@ namespace Roboto
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
             request.Method = "POST";
             request.ContentType = "application/json";
-            Console.WriteLine("Sending Message:\n\r" + request.RequestUri.ToString());
+            Roboto.log.log("Sending Message:\n\r" + request.RequestUri.ToString(), logging.loglevel.low) ;
             try
             {
 

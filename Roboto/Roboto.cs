@@ -1,5 +1,6 @@
 ﻿
 using System.Text;
+using System.Text.RegularExpressions;
 using System;
 using System.Threading;
 //using System.Web;
@@ -82,22 +83,21 @@ namespace Roboto
 
             if (!Settings.isFirstTimeInitialised)
             {
+                log.initialise();
                 log.log("I am " + Settings.botUserName, logging.loglevel.critical, ConsoleColor.White, false, true);
                 Settings.startupChecks();
-
                 log.log( "Starting main thread", logging.loglevel.high);
                 Roboto.Process();
             }
             else
             {
                 log.log( @"New XML file created in %appdata%\Roboto\ . Enter your API key in there and restart.", logging.loglevel.critical, ConsoleColor.White, false, true);
-
                 Settings.save();
             }
 
             log.log( "Saving & exiting", logging.loglevel.high);
             Settings.save();
-
+            log.finalise();
             log.log( "Exiting", logging.loglevel.high, ConsoleColor.White, false, true, true);
         }
 
@@ -132,7 +132,7 @@ namespace Roboto
                 //store the time to prevent hammering the service when its down
                 if (lastUpdate > DateTime.Now.Subtract(TimeSpan.FromSeconds(10)))
                 {
-                    Console.WriteLine("Too quick, sleeping");
+                    log.log("Too quick, sleeping", logging.loglevel.warn );
                     Thread.Sleep(10000);
                 }
                 lastUpdate = DateTime.Now;
@@ -143,7 +143,7 @@ namespace Roboto
                     "&limit=5";
 
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
-                log.log(".", logging.loglevel.low,ConsoleColor.White, true );
+                log.log(".", logging.loglevel.low, ConsoleColor.White, true );
                 request.Method = "GET";
                 request.ContentType = "application/json";
                 
@@ -168,6 +168,7 @@ namespace Roboto
                                 if (path != "ok" || result != "True")
                                 {
                                     endLoop = true;
+                                    log.log("Failure code from web service", logging.loglevel.high);
                                     throw new WebException("Failure code from web service");
 
                                 }
@@ -176,9 +177,9 @@ namespace Roboto
                                     //open the response and parse it using JSON. Probably only one result, but should be more? 
                                     foreach (JToken token in jo.SelectTokens("result.[*]"))//jo.Children()) //) records[*].data.importedPath"
                                     {
-                                        Console.WriteLine(token.ToString());
+                                        string logText = Regex.Replace(token.ToString(), @"(\s|\n|\r|\r\n)+", " ");
+                                        log.log(logText, logging.loglevel.verbose);
                                         
-
                                         //Find out what kind of message this is.
 
                                         //TOP LEVEL TOKENS
@@ -235,16 +236,12 @@ namespace Roboto
 
                                         }
                                         //dont know what other update types we want to monitor? 
-
-
-
-                                       
+                                        //TODO - leave / kicked / chat deleted
                                     }
 
                                     //housekeeping
                                     //check that all players have been sent a message, if there is one in the stack. This is to double check that if e.g. a game is cancelled the player doesnt get stuck
                                     Settings.expectedReplyHousekeeping();
-
                                 }
                             }
                         }

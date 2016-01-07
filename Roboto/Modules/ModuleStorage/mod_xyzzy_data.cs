@@ -83,23 +83,30 @@ namespace Roboto.Modules
             mod_xyzzy_player existing = getPlayer(playerID);
             //keep track of the judge!
             mod_xyzzy_player judge = getPlayer(lastPlayerAsked);
-            //TODO - what if this is the judge that we are removing?
+            log("Removing " + playerID + ". Current judge is " + existing.playerID + " at pos " + lastPlayerAsked, logging.loglevel.verbose);
+
             if (existing != null)
             {
                 players.Remove(existing);
+
+                //reset the judge ID
+                for (int i = 0; i < players.Count; i++)
+                {
+                    if (players[i] == judge)
+                    {
+                        lastPlayerAsked = i;
+                        log("lastplayer ID reset to  " + i, logging.loglevel.verbose);
+                    }
+                }
                 return true;
             }
-
-            //reset the judge ID
-            for (int i = 0; i < players.Count; i++)
+            else
             {
-                if (players[i] == judge) { lastPlayerAsked = i; }
-            }
-
-            //check everything OK
-            check();
-
-            return false;
+                //check everything OK
+                log("Couldnt find player to remove, checking consistency", logging.loglevel.warn);
+                check();
+                return false;
+             }
         }
 
         internal void askQuestion()
@@ -179,7 +186,7 @@ namespace Roboto.Modules
 
             if (answerCard == null)
             {
-                
+                log("Couldn't match card against " + answer + " - probably an invalid response");
                 //couldnt find answer, reask
                 string questionText = players[lastPlayerAsked].name + " asks: " + "\n\r" + question.text;
                 //we are expecting a reply to this:
@@ -194,6 +201,7 @@ namespace Roboto.Modules
                 bool success = player.SelectAnswerCard(answerCard.uniqueID);
                 if (!success)
                 {
+                    log("Card " + answerCard.uniqueID + " from " + player.name + " couldnt be selected for some reason!", logging.loglevel.high);
                     throw new ArgumentOutOfRangeException ("Card couldnt be selected for some reason!");
                 }
                 else
@@ -207,10 +215,26 @@ namespace Roboto.Modules
             }
 
             //are we ready to start judging? 
-            if (outstandingResponses().Count == 0)
+            int outstanding = outstandingResponses().Count;
+            if (outstanding == 0)
             {
+                log("All answers recieved, judging", logging.loglevel.verbose);
                 beginJudging();
             }
+            else
+            {
+                string logtxt = "Still waiting for answers. Status is:";
+                foreach(mod_xyzzy_player p in players )
+                {
+                    logtxt += p.name + " " + p.playerID + " - " + p.selectedCards.Count() + " / " + question.nrAnswers + ". Expected:";
+                    foreach (ExpectedReply e in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, p.playerID))
+                    {
+                        logtxt += e.messageData + " sent= " + e.isSent().ToString();
+                    }
+                }
+                log(logtxt, logging.loglevel.verbose);
+            }
+
 
             return true;
         }

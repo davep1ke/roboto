@@ -208,11 +208,12 @@ namespace Roboto.Modules
                             cardcast_question_card match = import_questions.Where(y => cleanseText(y.question) == cleanseText(q.text)).ToList()[0];
                             if (q.text != match.question)
                             {
+                                log("Question text updated from " + q.text + " to " + match.question);
                                 q.text = match.question;
+                                q.nrAnswers = match.nrAnswers;
                                 nr_rep++;
                             }
                             int removed = import_questions.RemoveAll(x => x.question == q.text);
-                            log("Removed " + removed + " copies of question " + q.text);
                         }
                         //add the rest to the localData
                         foreach (Helpers.cardcast_question_card q in import_questions)
@@ -252,6 +253,7 @@ namespace Roboto.Modules
                                 cardcast_answer_card matcha = amatches[0];
                                 if (a.text != matcha.answer)
                                 {
+                                    log("Answer text updated from " + a.text + " to " + matcha.answer);
                                     a.text = matcha.answer;
                                     nr_rep++;
                                 }

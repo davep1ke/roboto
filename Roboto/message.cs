@@ -54,7 +54,9 @@ namespace Roboto
                     replyOrigMessage = replyMsg_TK.SelectToken(".text").Value<String>();
                     replyOrigUser = replyMsg_TK.SelectToken(".from.username").Value<String>();
                     replyMessageID = replyMsg_TK.SelectToken(".message_id").Value<long>();
+                    
                 }
+                Roboto.log.log("Message:" + userFullName.PadRight(17, " "[0] ) + " -> " + text_msg, logging.loglevel.low);
             }
             catch (Exception e)
             {

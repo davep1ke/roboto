@@ -14,8 +14,9 @@ namespace Roboto
 
     public class settings
     {
-        private static string foldername = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Roboto\";
+        public static string foldername = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Roboto\";
         private static string filename = foldername;
+        public bool enableFileLogging = true;
 
         //module list. Static, as dont want to serialise the plugins, just the data.
         public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>(); 
@@ -295,7 +296,7 @@ namespace Roboto
         /// <param name="userID"></param>
         /// <param name="filter"></param>
         /// <returns></returns>
-        public List<ExpectedReply> getExpectedReplies(Type pluginType, long chatID, int userID = -1, string filter = "")
+        public List<ExpectedReply> getExpectedReplies(Type pluginType, long chatID, long userID = -1, string filter = "")
         {
             List<ExpectedReply> responses = new List<ExpectedReply>();
             foreach (ExpectedReply e in expectedReplies)

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -9,11 +10,13 @@ using System.Threading.Tasks;
 namespace Roboto
 {
     /// <summary>
-    /// Class for logging data to the console window in a standard format. 
+    /// Class for logging data in a standard format. 
     /// </summary>
     public class logging
     {
         public enum loglevel { verbose, low, normal, warn, high, critical }
+        private TextWriter textWriter = null;
+        private bool initialised = false;
         private bool followOnLine = false;
         private Char bannerChar = "*".ToCharArray()[0];
 
@@ -66,7 +69,7 @@ namespace Roboto
             
             if (noLineBreak)
             {
-                Console.Write(text);
+                write(text);
                 followOnLine = true;
             }
             else
@@ -74,7 +77,7 @@ namespace Roboto
                 //clear any trailing lines from write's instead of writelines
                 if (followOnLine)
                 {
-                    Console.WriteLine();
+                    writeLine("");
                     followOnLine = false;
                 }
                 //add our time and module stamps
@@ -82,35 +85,77 @@ namespace Roboto
                 if (banner == false || skipheader == true)
                 {
                     outputString += " - " 
-                        + classtype.ToString().PadRight(25)
-                        + " "
-                        + methodName.PadRight(20)
+                        + (classtype.ToString()  + ":" + methodName).PadRight(45)
                         +  " - ";
-                    
                 }
                 else
                 {
-                    outputString += "".PadRight(40);
+                    outputString += "".PadRight(50);
                 }
 
                 //add the main text
                 outputString +=  text;
 
                 //add a row of *** for a banner
-                if (banner) { Console.WriteLine("".PadLeft(Console.WindowWidth-1, bannerChar)); }
+                if (banner) { writeLine("".PadLeft(Console.WindowWidth-1, bannerChar)); }
                 //write the main line
-                Console.WriteLine(outputString);
+                writeLine(outputString);
                 //another row of ***
-                if (banner) { Console.WriteLine("".PadLeft(Console.WindowWidth-1, bannerChar)); }
+                if (banner) { writeLine("".PadLeft(Console.WindowWidth-1, bannerChar)); }
                 //pause if needed
                 if (pause)
                 {
-                    Console.WriteLine("Press any key to continue");
+                    writeLine("Press any key to continue");
                     Console.ReadKey();
                 }
 
             }
             Console.ResetColor();
+        }
+
+        internal void finalise()
+        {
+            log("Closing logfile", loglevel.high );
+            textWriter.Flush();
+            textWriter.Close();
+            initialised = false;
+        }
+
+        private void writeLine(string s)
+        {
+            Console.WriteLine(s);
+            if (initialised && textWriter != null)
+            {
+                textWriter.WriteLine(s);
+            }
+        }
+
+        private void write(string s)
+        {
+            Console.Write(s);
+            if (Roboto.Settings.enableFileLogging && textWriter != null)
+            {
+                textWriter.Write(s);
+            }
+        }
+
+        public void initialise()
+        {
+            if (Roboto.Settings.enableFileLogging)
+            {
+                //Setup our logging
+                string logfile = settings.foldername + Roboto.Settings.botUserName + ".log";
+                textWriter = new StreamWriter(logfile, true);
+                for (int i = 0; i < 10; i++) { textWriter.WriteLine(); }
+                initialised = true;
+                log("Enabled logging to file " + logfile, loglevel.high);
+
+            }
+            else
+            {
+                log("File logging is disabled. Enable in the xml configuration file." );
+            }
+            
         }
 
         public void setTitle(string title)
