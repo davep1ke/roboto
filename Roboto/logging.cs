@@ -46,6 +46,7 @@ namespace Roboto
                 switch(level)
                 {
                     case loglevel.verbose:
+                        colour = ConsoleColor.Gray;
                         break;
                     case loglevel.low:
                         colour = ConsoleColor.DarkGreen;

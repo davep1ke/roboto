@@ -83,16 +83,29 @@ namespace Roboto.Modules
             mod_xyzzy_player existing = getPlayer(playerID);
             //keep track of the judge!
             mod_xyzzy_player judge = getPlayer(lastPlayerAsked);
-            log("Removing " + playerID + ". Current judge is " + existing.playerID + " at pos " + lastPlayerAsked, logging.loglevel.verbose);
 
-            if (existing != null)
+            if (players.Count == 0)
+            {
+                log("No players in game", logging.loglevel.high);
+                return false;
+            }
+            else if (judge == null )
+            {
+                log("Couldn't find judge! ID was" + lastPlayerAsked + ", resetting to 0", logging.loglevel.high);
+                lastPlayerAsked = 0;
+            }
+            else
+            {
+                log("Removing " + playerID + ". Current judge is " + judge.playerID + " at pos " + lastPlayerAsked, logging.loglevel.verbose);
+            }
+            if (existing != null )
             {
                 players.Remove(existing);
 
                 //reset the judge ID
                 for (int i = 0; i < players.Count; i++)
                 {
-                    if (players[i] == judge)
+                    if ( judge != null && players[i] == judge )
                     {
                         lastPlayerAsked = i;
                         log("lastplayer ID reset to  " + i, logging.loglevel.verbose);
@@ -226,10 +239,10 @@ namespace Roboto.Modules
                 string logtxt = "Still waiting for answers. Status is:";
                 foreach(mod_xyzzy_player p in players )
                 {
-                    logtxt += p.name + " " + p.playerID + " - " + p.selectedCards.Count() + " / " + question.nrAnswers + ". Expected:";
+                    logtxt += "\n\r" + p.name + " " + p.playerID + " - " + p.selectedCards.Count() + " / " + question.nrAnswers ;
                     foreach (ExpectedReply e in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, p.playerID))
                     {
-                        logtxt += e.messageData + " sent= " + e.isSent().ToString();
+                        logtxt += " ExpectedReply: " + e.messageData + " sent= " + e.isSent().ToString();
                     }
                 }
                 log(logtxt, logging.loglevel.verbose);
@@ -371,6 +384,80 @@ namespace Roboto.Modules
                     TelegramAPI.SendMessage(chatID, chatMsg);
                 }
             }
+        }
+
+        /// <summary>
+        /// Gets the status of the currnet game
+        /// </summary>
+        public void getStatus()
+        {
+            
+            string response = "The current status of the game is " + status.ToString() + ". " ;
+            if (status == mod_xyzzy_data.statusTypes.Stopped)
+            {
+                response += "Type /xyzzy_start to begin setting up a new game.";
+
+            }
+            else
+            {
+                if (status == statusTypes.Judging || status == statusTypes.Question)
+                {
+                    response += " with "
+                        + remainingQuestions.Count.ToString() + " questions remaining"
+                        //                            + chatData.remainingAnswers.Count.ToString() + " answers in the pack. "
+                        + ". Say /xyzzy_join to join. The following players are currently playing: \n\r";
+                    //order the list of players
+                    List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
+
+                    foreach (mod_xyzzy_player p in orderedPlayers)
+                    {
+                        response += p.name + " - " + p.wins.ToString() + " points. \n\r";
+                    }
+                }
+
+                switch (status)
+                {
+                    case mod_xyzzy_data.statusTypes.Question:
+                        response += "The current question is : " + "\n\r" +
+                            getLocalData().getQuestionCard(currentQuestion).text + "\n\r" +
+                            "The following responses are outstanding :";
+                        bool unsentMessages = false;
+                        foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question"))
+                        {
+                            if (r.chatID == chatID)
+                            {
+                                mod_xyzzy_player p = getPlayer(r.userID);
+                                if (p != null)
+                                {
+                                    response += " " + p.name;
+                                    if (!r.isSent())
+                                    {
+                                        response += "(*)";
+                                        unsentMessages = true;
+                                    }
+                                }
+                            }
+                        }
+                        if (unsentMessages) { response += "\n\r" + "(*) These messages have not yet been sent, as I am waiting for a reply to another question!"; }
+
+                        break;
+
+                    case mod_xyzzy_data.statusTypes.Judging:
+                        response += "Waiting for " + players[lastPlayerAsked].name + " to judge";
+                        break;
+                    case statusTypes.cardCastImport:
+                    case statusTypes.Invites:
+                    case statusTypes.SetGameLength:
+                    case statusTypes.setPackFilter:
+                        response += "\n\r" + players[0].name + " is currently setting the game up - type /xyzzy_join to join in!";
+
+                        break;
+                }
+            }
+
+            TelegramAPI.SendMessage(chatID, response, false, -1 , true);
+            check();
+
         }
 
         /// <summary>

@@ -212,17 +212,11 @@ namespace Roboto.Modules
             //Various bits of setup before starting to process the message
             bool processed = false;
             
-            if (m.text_msg == "bip")
-            {
-                int i = 1;
-            }
-
             if (c != null) //Setup needs to be done in a chat! Other replies will now have a chat object passed in here too!
             {
                 //get current game data. 
                 mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
-
-
+                
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == mod_xyzzy_data.statusTypes.Stopped)
                 {
                     //Start a new game!
@@ -244,12 +238,18 @@ namespace Roboto.Modules
 
                     //int nrQuestionID = TelegramAPI.GetReply(m.userID, "How many questions do you want the round to last for (-1 for infinite)", -1, true);
                     //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, "")); //this will last until the game is started. 
-
+                    
+                }
+                //Start but there is an existing game
+                else if (m.text_msg.StartsWith("/xyzzy_start"))
+                {
+                    chatData.getStatus();
+                    processed = true;
                 }
 
 
                 //player joining
-                else if (m.text_msg.StartsWith("/xyzzy_join"))
+                else if (m.text_msg.StartsWith("/xyzzy_join") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                 {
                     //TODO - try send a test message. If it fails, tell the user to open a 1:1 chat.
                     long i = -1;
@@ -273,6 +273,13 @@ namespace Roboto.Modules
                     }
                     processed = true;
                 }
+                //Start but there is an existing game
+                else if (m.text_msg.StartsWith("/xyzzy_join"))
+                {
+                    chatData.getStatus();
+                    processed = true;
+                }
+
                 //player leaving
                 else if (m.text_msg.StartsWith("/xyzzy_leave"))
                 {
@@ -299,6 +306,13 @@ namespace Roboto.Modules
                     TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game.");
                     processed = true;
                 }
+                //Abandon, but no game in progress
+                else if (m.text_msg.StartsWith("/xyzzy_abandon"))
+                {
+                    chatData.getStatus();
+                    processed = true;
+                }
+
                 //extend a game
                 else if (m.text_msg.StartsWith("/xyzzy_extend"))
                 {
@@ -322,58 +336,7 @@ namespace Roboto.Modules
                 }
                 else if (m.text_msg.StartsWith("/xyzzy_status"))
                 {
-                    //TODO - move this into ChatData
-                    string response = "The current status of the game is " + chatData.status.ToString();
-                    if (chatData.status != mod_xyzzy_data.statusTypes.Stopped)
-                    {
-                        response += " with "
-                            + chatData.remainingQuestions.Count.ToString() + " questions remaining"
-                            //                            + chatData.remainingAnswers.Count.ToString() + " answers in the pack. "
-                            + ". Say /xyzzy_join to join. The following players are currently playing: \n\r";
-                        //order the list of players
-                        List<mod_xyzzy_player> orderedPlayers = chatData.players.OrderByDescending(e => e.wins).ToList();
-
-                        foreach (mod_xyzzy_player p in orderedPlayers)
-                        {
-                            response += p.name + " - " + p.wins.ToString() + " points. \n\r";
-                        }
-
-                        
-                        switch (chatData.status)
-                        {
-                            case mod_xyzzy_data.statusTypes.Question:
-                                response += "The current question is : " + "\n\r" +
-                                    localData.getQuestionCard(chatData.currentQuestion).text + "\n\r" +
-                                    "The following responses are outstanding :";
-                                bool unsentMessages = false;
-                                foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), c.chatID, -1, "Question"))
-                                {
-                                    if (r.chatID == c.chatID)
-                                    {
-                                        mod_xyzzy_player p = chatData.getPlayer(r.userID);
-                                        if (p != null)
-                                        {
-                                            response += " " + p.name;
-                                            if (!r.isSent())
-                                            {
-                                                response += "(*)";
-                                                unsentMessages = true;
-                                            }
-                                        }
-                                    }
-                                }
-                                if (unsentMessages) { response += "\n\r" + "(*) These messages have not yet been sent, as I am waiting for a reply to another question!"; }
-
-                                break;
-
-                            case mod_xyzzy_data.statusTypes.Judging:
-                                response += "Waiting for " + chatData.players[chatData.lastPlayerAsked].name + " to judge";
-                                break;
-                        }
-                    }
-
-                    TelegramAPI.SendMessage(m.chatID, response, false, m.message_id, true);
-                    chatData.check();
+                    chatData.getStatus();
                     processed = true;
                 }
                 else if (m.text_msg.StartsWith("/xyzzy_filter"))
@@ -391,6 +354,14 @@ namespace Roboto.Modules
                     processed = true;
                 }
             }
+            //has someone tried to do something unexpected in a private chat?
+            else if (m.chatID == m.userID && m.text_msg.StartsWith("/xyzzy_"))
+            {
+                TelegramAPI.SendMessage(m.chatID, "To start a game, add me to a group chat, and type /xyzzy_start");
+                processed = true;
+            }
+
+
             return processed;
         }
 

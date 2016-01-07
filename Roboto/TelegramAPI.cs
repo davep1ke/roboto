@@ -49,11 +49,8 @@ namespace Roboto
             catch (WebException e)
             {
                 //log it and carry on
-                Roboto.log.log("Couldnt send message " + text + "to " + chatID + "! ", logging.loglevel.critical);
-
+                Roboto.log.log("Couldnt send message " + text + "to " + chatID + "! " + e.ToString(), logging.loglevel.critical);
             }
-
-
             
             return -1;
             
