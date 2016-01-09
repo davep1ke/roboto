@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -40,6 +41,7 @@ namespace Roboto
             string methodName = method.Name;
 
             
+
             //guess colour
             if (colour == ConsoleColor.White)
             {
@@ -62,6 +64,10 @@ namespace Roboto
                         break;
                     case loglevel.critical:
                         colour = ConsoleColor.Red;
+                        if (initialised)
+                        {
+                            Roboto.Settings.stats.logStat(new statItem("Critical Errors", typeof(logging)));
+                        }
                         break;
                 }
             }
@@ -82,10 +88,10 @@ namespace Roboto
                     followOnLine = false;
                 }
                 //add our time and module stamps
-                string outputString = DateTime.Now.ToString("dd-MM-yyyy  h:mm:ss") ;
-                if (banner == false || skipheader == true)
+                string outputString = "";
+                if (banner == false && skipheader == false)
                 {
-                    outputString += " - " 
+                    outputString += DateTime.Now.ToString("dd-MM-yyyy  h:mm:ss") + " - " 
                         + (classtype.ToString()  + ":" + methodName).PadRight(45)
                         +  " - ";
                 }
@@ -156,7 +162,10 @@ namespace Roboto
             {
                 log("File logging is disabled. Enable in the xml configuration file." );
             }
-            
+
+            //Set up any stats
+            Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
+
         }
 
         public void setTitle(string title)

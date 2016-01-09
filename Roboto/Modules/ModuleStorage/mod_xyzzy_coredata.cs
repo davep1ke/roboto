@@ -264,7 +264,6 @@ namespace Roboto.Modules
                             }
 
                             int removed = import_answers.RemoveAll(x => x.answer == a.text);
-                            log("Removed " + removed + " copies of answer " + a.text);
                         }
                         //add the rest to the localData
                         foreach (Helpers.cardcast_answer_card a in import_answers)

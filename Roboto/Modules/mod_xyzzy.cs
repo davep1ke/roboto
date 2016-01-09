@@ -38,14 +38,16 @@ namespace Roboto.Modules
     public class mod_xyzzy_player
     {
         public string name;
+        public string handle = "";
         public long playerID;
         public int wins = 0;
         public List<String> cardsInHand = new List<string>();
         public List<String> selectedCards = new List<string>();
         internal mod_xyzzy_player() { }
-        public mod_xyzzy_player(string name, long playerID)
+        public mod_xyzzy_player(string name, string handle, long playerID)
         {
             this.name = name;
+            this.handle = handle;
             this.playerID = playerID;
         }
 
@@ -155,6 +157,8 @@ namespace Roboto.Modules
             //backgroundHook = true;
             //backgroundMins = 1;
 
+
+
         }
 
         public override string getMethodDescriptions()
@@ -184,6 +188,10 @@ namespace Roboto.Modules
                 sampleData();
                 Roboto.Settings.registerData(localData);
             }
+
+            Roboto.Settings.stats.registerStatType("New Games Started", this.GetType(), System.Drawing.Color.Aqua);
+            Roboto.Settings.stats.registerStatType("Games Ended", this.GetType(), System.Drawing.Color.Orange);
+            Roboto.Settings.stats.registerStatType("Hands Played", this.GetType(), System.Drawing.Color.Olive);
 
             Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
 
@@ -219,12 +227,13 @@ namespace Roboto.Modules
                 
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == mod_xyzzy_data.statusTypes.Stopped)
                 {
+                    Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                     //Start a new game!
                     chatData.reset();
                     Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
                     chatData.status = mod_xyzzy_data.statusTypes.SetGameLength;
                     //add the player that started the game
-                    chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
+                    chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
 
                     //send out invites
                     TelegramAPI.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
@@ -267,7 +276,7 @@ namespace Roboto.Modules
 
                     if (i != -1)
                     {
-                        bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userID));
+                        bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
                         if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
                         else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
                     }
@@ -301,6 +310,7 @@ namespace Roboto.Modules
                 //abandon game
                 else if (m.text_msg.StartsWith("/xyzzy_abandon") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
                 {
+                    Roboto.Settings.stats.logStat(new statItem("Games Ended", this.GetType()));
                     chatData.status = mod_xyzzy_data.statusTypes.Stopped;
                     Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
                     TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game.");
@@ -321,6 +331,7 @@ namespace Roboto.Modules
                     TelegramAPI.SendMessage(c.chatID, "Added additional cards to the game!");
                     if (chatData.status == mod_xyzzy_data.statusTypes.Stopped)
                     {
+                        Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                         chatData.askQuestion();
                     }
 

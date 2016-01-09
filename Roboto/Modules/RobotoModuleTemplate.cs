@@ -121,7 +121,11 @@ namespace Roboto.Modules
         public DateTime getLastUpdate()
         {
             RobotoModuleDataTemplate data = getPluginData();
-
+            if (data == null )
+            {
+                Roboto.log.log("Error - background processing requires a LocalData object to be defined!", logging.loglevel.critical);
+                return DateTime.MinValue;
+            }
             return data.lastBackgroundUpdate;
 
         }

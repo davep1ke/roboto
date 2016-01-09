@@ -8,10 +8,16 @@ using System.Xml.Serialization;
 
 namespace Roboto.Modules
 {
+    [XmlType("mod_standard_data")]
+    [Serializable]
+    public class mod_standard_data : RobotoModuleDataTemplate
+    {
 
+    }
 
     public class mod_standard : RobotoModuleTemplate
     {
+        private mod_standard_data localData;
 
         public override void init()
         {
@@ -21,6 +27,28 @@ namespace Roboto.Modules
             chatEvenIfAlreadyMatched = false;
             chatPriority = 1;
 
+            pluginDataType = typeof(mod_standard_data);
+
+            backgroundHook = true;
+            backgroundMins = 30;
+            
+
+        }
+
+        public override void initData()
+        {
+            try
+            {
+                //TODO - should move away from needing this local object. 
+                localData = Roboto.Settings.getPluginData<mod_standard_data>();
+            }
+            catch (InvalidDataException)
+            {
+                //Data doesnt exist, create, populate with sample data and register for saving
+                localData = new mod_standard_data();
+                sampleData();
+                Roboto.Settings.registerData(localData);
+            }
         }
 
         public override string getMethodDescriptions()
@@ -44,7 +72,16 @@ namespace Roboto.Modules
             }
             return methods;
         }
-        
+
+        /// <summary>
+        /// Background processing for Roboto
+        /// </summary>
+        protected override void backgroundProcessing()
+        {
+            Roboto.Settings.stats.houseKeeping();
+
+        }
+
         public override bool chatEvent(message m, chat c = null)
         {
             bool processed = false;
@@ -63,25 +100,47 @@ namespace Roboto.Modules
             {
                 TimeSpan uptime = DateTime.Now.Subtract(Roboto.startTime);
 
-                String statstxt = "I is *@" + Roboto.Settings.botUserName + "*" + "\n\r"+
-                    "Uptime: " +  uptime.Days.ToString() + " days, " + uptime.Hours.ToString() + " hours and " + uptime.Minutes.ToString() + " minutes." + "\n\r" + 
+                String statstxt = "I is *@" + Roboto.Settings.botUserName + "*" + "\n\r" +
+                    "Uptime: " + uptime.Days.ToString() + " days, " + uptime.Hours.ToString() + " hours and " + uptime.Minutes.ToString() + " minutes." + "\n\r" +
                     "I currently know about " + Roboto.Settings.chatData.Count().ToString() + " chats." + "\n\r" +
                     "The following plugins are currently loaded:" + "\n\r";
 
-                foreach (RobotoModuleTemplate plugin in settings.plugins )
+                foreach (RobotoModuleTemplate plugin in settings.plugins)
                 {
                     statstxt += "*" + plugin.GetType().ToString() + "*" + "\n\r";
                     statstxt += plugin.getStats() + "\n\r";
                 }
 
-                TelegramAPI.SendMessage(m.chatID, statstxt,true);
+                TelegramAPI.SendMessage(m.chatID, statstxt, true);
             }
+            else if (m.text_msg.StartsWith("/statgraph"))
+            {
+                string[] argsList = m.text_msg.Split(" ".ToCharArray(), 2);
+                Stream image;
+                //Work out args and get our image
+                if (argsList.Length > 1)
+                {
+                    string args = argsList[1];
+                    image = Roboto.Settings.stats.generateImage(argsList[1].Split("|"[0]).ToList());
+                }
+                else
+                {
+                    image = Roboto.Settings.stats.generateImage(new List<string>());
+                }
+                
+                //Sending image...
+                TelegramAPI.SendPhoto(m.chatID, "Stats", image, "StatsGraph.jpg", "application/octet-stream", m.message_id , false);
 
-            //TODO - start, stop listening to chat. 
+
+                //TODO - or get a keyboard
+            }
+                //TODO - start, stop listening to chat. 
 
 
-            return processed;
+                return processed;
         }
+
+               
         
     }
 }

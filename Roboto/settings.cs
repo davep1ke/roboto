@@ -19,9 +19,11 @@ namespace Roboto
         public bool enableFileLogging = true;
 
         //module list. Static, as dont want to serialise the plugins, just the data.
-        public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>(); 
-        
-        public List<replacement> replacements = new List<replacement>();
+        public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>();
+        //stats database
+        public stats stats = new stats();
+
+        //public List<replacement> replacements = new List<replacement>();
 
         public string telegramAPIURL;
         public string telegramAPIKey;
@@ -91,6 +93,7 @@ namespace Roboto
             {
                 plugin.startupChecks();
             }
+            stats.startup();
         }
 
 

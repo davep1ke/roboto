@@ -5,7 +5,7 @@ using System.Text;
 
 namespace Roboto
 {
-    public class replacement 
+    /*public class replacement 
     {
         public string source;
         public string replace;
@@ -19,7 +19,7 @@ namespace Roboto
         //null constructor for serialization
         protected replacement() { }
 
-    }
+    }*/
 
 
     public class grabbedFile

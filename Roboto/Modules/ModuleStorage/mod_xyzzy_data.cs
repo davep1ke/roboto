@@ -82,41 +82,59 @@ namespace Roboto.Modules
         {
             mod_xyzzy_player existing = getPlayer(playerID);
             //keep track of the judge!
-            mod_xyzzy_player judge = getPlayer(lastPlayerAsked);
+            mod_xyzzy_player judge = players[lastPlayerAsked];
 
             if (players.Count == 0)
             {
                 log("No players in game", logging.loglevel.high);
                 return false;
             }
+            else if (existing == null)
+            {
+                //check everything OK
+                log("Couldnt find player to remove, checking consistency", logging.loglevel.warn);
+                check();
+                return false;
+            }  
             else if (judge == null )
             {
                 log("Couldn't find judge! ID was" + lastPlayerAsked + ", resetting to 0", logging.loglevel.high);
                 lastPlayerAsked = 0;
+                judge = players[0];
+                //this should really be unneccessary - but had some issues so check anyway
+                if (judge == null) { log("Soemthing went really wrong and couldnt set player0 to judge", logging.loglevel.critical); }
             }
             else
             {
                 log("Removing " + playerID + ". Current judge is " + judge.playerID + " at pos " + lastPlayerAsked, logging.loglevel.verbose);
             }
-            if (existing != null )
+
+            if (existing != null)
             {
                 players.Remove(existing);
 
-                //reset the judge ID
-                for (int i = 0; i < players.Count; i++)
+                //reset the judge ID. Judge should really be populated by this point
+                if (judge != null)
                 {
-                    if ( judge != null && players[i] == judge )
+                    for (int i = 0; i < players.Count; i++)
                     {
-                        lastPlayerAsked = i;
-                        log("lastplayer ID reset to  " + i, logging.loglevel.verbose);
+                        if ( players[i] == judge )
+                        {
+                            lastPlayerAsked = i;
+                            log("lastplayer ID reset to  " + i, logging.loglevel.verbose);
+                        }
                     }
+                }
+                else
+                {
+                    log("Soemthing went really wrong and couldnt find judge to reset", logging.loglevel.critical);
                 }
                 return true;
             }
             else
             {
                 //check everything OK
-                log("Couldnt find player to remove, checking consistency", logging.loglevel.warn);
+                log("Couldnt remove - something wierd happened", logging.loglevel.high);
                 check();
                 return false;
              }
@@ -124,6 +142,7 @@ namespace Roboto.Modules
 
         internal void askQuestion()
         {
+            Roboto.Settings.stats.logStat(new statItem("Hands Played", typeof(mod_xyzzy)));
             mod_xyzzy_coredata localData = getLocalData();
             Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy)  ); //shouldnt be needed, but handy if we are forcing a question in debug.
 
@@ -273,6 +292,7 @@ namespace Roboto.Modules
 
         private void wrapUp()
         {
+            Roboto.Settings.stats.logStat(new statItem("Games Ended", typeof(mod_xyzzy)));
             status = statusTypes.Stopped;
             String message = "Game over! You can continue this game with the same players with /xyzzy_extend \n\rScores are: ";
             foreach (mod_xyzzy_player p in players.OrderByDescending(x => x.wins))
@@ -430,6 +450,7 @@ namespace Roboto.Modules
                                 if (p != null)
                                 {
                                     response += " " + p.name;
+                                    if (p.handle != "") { response += "(@" + p.handle + ")"; }
                                     if (!r.isSent())
                                     {
                                         response += "(*)";

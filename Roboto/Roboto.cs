@@ -26,9 +26,10 @@ namespace Roboto
         /// </summary>
         public static string context = null;
         public static List<string> pluginFilter = new List<string>();
+        
 
         private enum argtype {def, context, plugin };
-        
+        private static bool debugTrigger = false; //trigger to allow quick debug
 
         static void Main(string[] args)
         {
@@ -50,6 +51,9 @@ namespace Roboto
                                 break;
                             case "-plugin":
                                 mode = argtype.plugin;
+                                break;
+                            case "-debugtrigger":
+                                debugTrigger = true;
                                 break;
                         }
                         break;
@@ -80,12 +84,23 @@ namespace Roboto
             log.log( "Loading Settings", logging.loglevel.high);
             Settings = settings.load();
             Settings.validate();
+            log.initialise();
+            log.log("I am " + Settings.botUserName, logging.loglevel.critical, ConsoleColor.White, false, true);
+            Settings.startupChecks();
+
+            if (debugTrigger)
+            {
+                while (true)
+                {
+                    Stream image = Settings.stats.generateImage(new List<string>() { "Roboto.TelegramAPI>Incoming Msgs", "Roboto.Roboto>Startup" });
+                    //TelegramAPI.SendMessage(120498152, "Sending image...");
+                    TelegramAPI.SendPhoto(120498152,"Stats", image, "StatsGraph.jpg", "application/octet-stream", - 1,false );
+                    Thread.Sleep(15000);
+                }
+            }
 
             if (!Settings.isFirstTimeInitialised)
             {
-                log.initialise();
-                log.log("I am " + Settings.botUserName, logging.loglevel.critical, ConsoleColor.White, false, true);
-                Settings.startupChecks();
                 log.log( "Starting main thread", logging.loglevel.high);
                 Roboto.Process();
             }
