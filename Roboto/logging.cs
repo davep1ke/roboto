@@ -61,6 +61,10 @@ namespace Roboto
                         break;
                     case loglevel.high:
                         colour = ConsoleColor.Yellow;
+                        if (initialised)
+                        {
+                            Roboto.Settings.stats.logStat(new statItem("High Errors", typeof(logging)));
+                        }
                         break;
                     case loglevel.critical:
                         colour = ConsoleColor.Red;
@@ -148,6 +152,10 @@ namespace Roboto
 
         public void initialise()
         {
+            //Set up any stats
+            Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
+            Roboto.Settings.stats.registerStatType("High Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
+
             if (Roboto.Settings.enableFileLogging)
             {
                 //Setup our logging
@@ -163,8 +171,7 @@ namespace Roboto
                 log("File logging is disabled. Enable in the xml configuration file." );
             }
 
-            //Set up any stats
-            Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
+            
 
         }
 

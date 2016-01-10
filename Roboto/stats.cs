@@ -56,7 +56,7 @@ namespace Roboto
             }
             else
             {
-                Roboto.log.log("More than one match for timeslice!", logging.loglevel.high);
+                Roboto.log.log("More than one match for timeslice!", logging.loglevel.warn);
                 return matches[0];
             }
         }
@@ -75,11 +75,13 @@ namespace Roboto
         public Series getSeries(DateTime startTime)
         {
             TimeSpan startTSAgo = TimeSpan.FromTicks( stats.granularity.Ticks * stats.graphYAxisCount);
-            Series s = new Series(this.moduleType + ">" + this.name);
+            string title = this.moduleType.StartsWith("Roboto.") ? this.moduleType.Substring(7) : this.moduleType;
+            Series s = new Series(title + ">" + this.name);
             s.Color = c;
-
+            
             if (mode == stats.displaymode.line)
             {
+                s.BorderWidth = 2;
                 s.ChartType = SeriesChartType.Line;
             }
             for (int i = 0; i < stats.graphYAxisCount; i++)
@@ -88,7 +90,7 @@ namespace Roboto
                 statSlice slice = getSlice(point);
                 if (slice != null)
                 {
-                    DataPoint p = new DataPoint(point.Subtract(startTime).TotalMinutes, slice.count);
+                    DataPoint p = new DataPoint(point.Subtract(startTime).TotalHours, slice.count);
                     s.Points.Add(p);
                 }
 
@@ -141,8 +143,8 @@ namespace Roboto
     public class stats
     {
         //constants
-        public static TimeSpan granularity = new TimeSpan(0, 5, 0); //15 mins
-        public static int graphYAxisCount = 100;
+        public static TimeSpan granularity = new TimeSpan(0, 15, 0); //15 mins
+        public static int graphYAxisCount = 192;
         public enum displaymode { line, bar };
 
         //data
@@ -166,13 +168,14 @@ namespace Roboto
             statType existing = getStatType(name, moduleType.ToString());
             if (existing != null)
             {
-                Roboto.log.log("StatType " + name + " from " + moduleType.ToString() + " already exists.", logging.loglevel.normal);
+                Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + ":  already exists.", logging.loglevel.normal);
                 existing.updateDisplaySettings(c, mode);
             }
             else
             {
                 statType newST = new statType(name, moduleType.ToString(), c, mode);
                 statsList.Add(newST);
+                Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + " added.", logging.loglevel.warn);
             }
 
         }
@@ -243,6 +246,7 @@ namespace Roboto
         {
             DateTime graphStartTime = DateTime.Now;
             
+
             //set up a windows form graph thing
             try
             {
@@ -250,12 +254,18 @@ namespace Roboto
                 {
                     ch.Width = 1200;
                     ch.Height = 600;
+                    ch.TextAntiAliasingQuality = TextAntiAliasingQuality.High;
 
+                    Title t = new Title(Roboto.Settings.botUserName + " Statistics", Docking.Top, new System.Drawing.Font("Verdana", 13, System.Drawing.FontStyle.Bold), Color.Black);
+                    ch.Titles.Add(t);
+                    
                     ChartArea cha = new ChartArea("cha");
-
-                    cha.AxisX.Title = "Mins Ago";
-                    cha.AxisX.MajorGrid.Interval = 60;
-                    cha.AxisY.Title = "Value";
+                    
+                    cha.AxisX.Title = "Hours Ago";
+                    cha.AxisX.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
+                    cha.AxisX.MajorGrid.Interval = 6;
+                    cha.AxisY.Title = "Value / " + granularity.TotalMinutes.ToString() + " mins"  ;
+                    cha.AxisY.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
 
                     Legend l = new Legend("Legend");
                     l.DockedToChartArea = "cha";
@@ -265,9 +275,7 @@ namespace Roboto
                     ch.ChartAreas.Add(cha);
                     ch.Legends.Add(l);
                     
-                    Title t = new Title(Roboto.Settings.botUserName + " Statistics", Docking.Top, new System.Drawing.Font("Verdana", 13, System.Drawing.FontStyle.Bold), System.Drawing.Color.DarkGray);
-                    ch.Titles.Add(t);
-                    ch.TextAntiAliasingQuality = TextAntiAliasingQuality.High;
+                    
 
                    //if nothing passed in, assume all stats
                     if (series.Count == 0) { series.Add(".*"); }
