@@ -200,7 +200,7 @@ namespace Roboto.Modules
                 
                 if (localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.quotes.Count > 0)
                 {
-                    TelegramAPI.SendMessage(c.chatID, getQuote(c));
+                    TelegramAPI.SendMessage(c.chatID, getQuote(c), true);
                     int maxMins = localData.autoQuoteHours * 60;
                     //go back 1/8, then add rand 1/4 on
                     int randomMins = settings.getRandom((localData.autoQuoteHours * 60) /4);

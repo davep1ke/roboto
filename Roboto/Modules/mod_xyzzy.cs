@@ -51,6 +51,15 @@ namespace Roboto.Modules
             this.playerID = playerID;
         }
 
+        public override string ToString()
+        {
+
+            string response = " " + name;
+            if (handle != "") { response += " (@" + handle + ")"; }
+
+            return response;
+        }
+
         internal void topUpCards(int nrCards, List<string> availableAnswers, long chatID)
         {
 
@@ -293,8 +302,8 @@ namespace Roboto.Modules
                 else if (m.text_msg.StartsWith("/xyzzy_leave"))
                 {
                     bool removed = chatData.removePlayer(m.userID);
-                    if (removed) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has left the game"); }
-                    else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " isnt part of the game, and can't be removed!"); }
+                    //if (removed) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has left the game"); }
+                    //else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " isnt part of the game, and can't be removed!"); }
                     processed = true;
                 }
                 //player kicked
@@ -329,7 +338,7 @@ namespace Roboto.Modules
                     chatData.addQuestions();
 
                     TelegramAPI.SendMessage(c.chatID, "Added additional cards to the game!");
-                    if (chatData.status == mod_xyzzy_data.statusTypes.Stopped)
+                    if (chatData.status == mod_xyzzy_data.statusTypes.Stopped && chatData.players.Count > 1 )
                     {
                         Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                         chatData.askQuestion();
@@ -464,7 +473,7 @@ namespace Roboto.Modules
                 }
                 else
                 {
-                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, m.text_msg + " is not a valid number. How many questions do you want the round to last for? -1 for infinite", true, typeof(mod_xyzzy), "SetGameLength");
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, m.text_msg + " is not a valid number. How many questions do you want the round to last for? -1 for infinite", true, typeof(mod_xyzzy), "SetGameLength");
                 }
                 processed = true;
             }
@@ -576,13 +585,13 @@ namespace Roboto.Modules
                 processed = true;
             }
 
+            //kicking a player
             else if (e.messageData == "kick")
             {
                 mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
                 if (p != null)
                 {
-                    chatData.players.Remove(p);
-                    TelegramAPI.SendMessage(e.chatID, "Kicked " + p.name, false, -1, true);
+                    chatData.removePlayer(p.playerID);
                 }
                 chatData.check();
 

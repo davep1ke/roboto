@@ -95,13 +95,14 @@ namespace Roboto
                 string outputString = "";
                 if (banner == false && skipheader == false)
                 {
-                    outputString += DateTime.Now.ToString("dd-MM-yyyy  h:mm:ss") + " - " 
+                    outputString += DateTime.Now.ToString("dd-MM-yyyy  HH:mm:ss") + " - " 
+                        + level.ToString().Substring(0,2).ToUpper() + " - "
                         + (classtype.ToString()  + ":" + methodName).PadRight(45)
                         +  " - ";
                 }
                 else
                 {
-                    outputString += "".PadRight(50);
+                    outputString += "".PadRight(53);
                 }
 
                 //add the main text
@@ -154,7 +155,8 @@ namespace Roboto
         {
             //Set up any stats
             Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
-            Roboto.Settings.stats.registerStatType("High Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
+            Roboto.Settings.stats.registerStatType("High Errors", typeof(logging), Color.Orange, stats.displaymode.bar);
+            
 
             if (Roboto.Settings.enableFileLogging)
             {

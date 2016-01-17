@@ -147,6 +147,7 @@ namespace Roboto
                 //store the time to prevent hammering the service when its down
                 if (lastUpdate > DateTime.Now.Subtract(TimeSpan.FromSeconds(10)))
                 {
+                    Roboto.Settings.stats.logStat(new statItem("Hammering Prevention", typeof(Roboto)));
                     log.log("Too quick, sleeping", logging.loglevel.warn );
                     Thread.Sleep(10000);
                 }
@@ -238,17 +239,21 @@ namespace Roboto
 
                                             //check if this is an expected reply, and if so route it to the 
                                             Settings.parseExpectedReplies(m);
-
-                                            //TODO - do this in priority order :(
+                                            
+                                            
+                                            //TODO - call plugins in some kind of priority order
                                             foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
                                             {
-                                                if (plugin.chatHook && (!processed  || plugin.chatEvenIfAlreadyMatched))
+                                                //Skip this message if the chat is muted. 
+                                                if (plugin.chatHook && (chatData == null || (chatData.muted == false || plugin.chatIfMuted)))
                                                 {
-                                                    plugin.chatEvent(m, chatData);
-
+                                                    if ((!processed || plugin.chatEvenIfAlreadyMatched))
+                                                    {
+                                                        processed = plugin.chatEvent(m, chatData);
+                                                    }
                                                 }
                                             }
-
+                                            
                                         }
                                         //dont know what other update types we want to monitor? 
                                         //TODO - leave / kicked / chat deleted

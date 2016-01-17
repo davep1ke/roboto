@@ -80,6 +80,8 @@ namespace Roboto.Modules
 
         internal bool removePlayer(long playerID)
         {
+            log("Removing " + playerID.ToString() + ". Currently " + players.Count + " players. Judge ID is pos " + lastPlayerAsked);
+
             mod_xyzzy_player existing = getPlayer(playerID);
             //keep track of the judge!
             mod_xyzzy_player judge = players[lastPlayerAsked];
@@ -87,38 +89,80 @@ namespace Roboto.Modules
             if (players.Count == 0)
             {
                 log("No players in game", logging.loglevel.high);
+                TelegramAPI.SendMessage(chatID, "No players in the game to kick");
                 return false;
             }
             else if (existing == null)
             {
                 //check everything OK
                 log("Couldnt find player to remove, checking consistency", logging.loglevel.warn);
+                TelegramAPI.SendMessage(chatID, "Couldn't find player to kick");
                 check();
                 return false;
-            }  
+            }
+            else if (players.Count <= 2 && existing != null)
+            {
+                //removing last player
+                TelegramAPI.SendMessage(chatID, "Not enough players to continue, ending game.");
+                wrapUp();
+                players.Remove(existing);
+                return true;
+            }
             else if (judge == null )
             {
                 log("Couldn't find judge! ID was" + lastPlayerAsked + ", resetting to 0", logging.loglevel.high);
                 lastPlayerAsked = 0;
                 judge = players[0];
                 //this should really be unneccessary - but had some issues so check anyway
-                if (judge == null) { log("Soemthing went really wrong and couldnt set player0 to judge", logging.loglevel.critical); }
+                if (judge == null)
+                {
+                    log("Soemthing went really wrong and couldnt set player0 to judge", logging.loglevel.critical);
+                    return false;
+                }
             }
+
             else
             {
                 log("Removing " + playerID + ". Current judge is " + judge.playerID + " at pos " + lastPlayerAsked, logging.loglevel.verbose);
             }
 
+            //logging
+            string logtxt = "Current State: Existing ";
+            if (existing == null) { logtxt += " is null "; } else { logtxt += existing.ToString() + " / " +existing.playerID; }
+            logtxt += ". Judge ";
+            if (judge == null) { logtxt += " is null "; } else { logtxt += judge.ToString() + " / " + judge.playerID; }
+            log(logtxt, logging.loglevel.verbose);
+            
+            
             if (existing != null)
             {
                 players.Remove(existing);
+                TelegramAPI.SendMessage(chatID, "Removed " + existing.ToString());
 
                 //reset the judge ID. Judge should really be populated by this point
-                if (judge != null)
+                if (judge != null && existing == judge)
                 {
+                    //did we just remove the judge? sort out the judge ID and send a message confirming what happened
+                    if (lastPlayerAsked >= players.Count)
+                    {
+                        lastPlayerAsked = 0;
+                    }
+                    judge = players[lastPlayerAsked];
+                    if (judge != null)
+                    {
+                        judge.selectedCards.Clear();
+                        TelegramAPI.SendMessage(chatID, "Judge " + existing.ToString() + " has left, judge is now " + judge.ToString());
+                    }
+                    else
+                    {
+                        log("Something went wrong removing the judge", logging.loglevel.high);
+                    }
+                }
+                else if  (judge != null)
+                { 
                     for (int i = 0; i < players.Count; i++)
                     {
-                        if ( players[i] == judge )
+                        if (players[i] == judge)
                         {
                             lastPlayerAsked = i;
                             log("lastplayer ID reset to  " + i, logging.loglevel.verbose);
@@ -129,6 +173,8 @@ namespace Roboto.Modules
                 {
                     log("Soemthing went really wrong and couldnt find judge to reset", logging.loglevel.critical);
                 }
+                //cant hurt at this stage...
+                check();
                 return true;
             }
             else
@@ -294,15 +340,15 @@ namespace Roboto.Modules
         {
             Roboto.Settings.stats.logStat(new statItem("Games Ended", typeof(mod_xyzzy)));
             status = statusTypes.Stopped;
-            String message = "Game over! You can continue this game with the same players with /xyzzy_extend \n\rScores are: ";
+            String message = "Game over!";
+            if (players.Count > 1) { message += " You can continue this game with the same players with /xyzzy_extend"; }
+            message += "\n\rScores are: ";
             foreach (mod_xyzzy_player p in players.OrderByDescending(x => x.wins))
             {
-                
                 message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
             }
 
             TelegramAPI.SendMessage(chatID, message);
-
         }
 
         /// <summary>
@@ -449,8 +495,8 @@ namespace Roboto.Modules
                                 mod_xyzzy_player p = getPlayer(r.userID);
                                 if (p != null)
                                 {
-                                    response += " " + p.name;
-                                    if (p.handle != "") { response += "(@" + p.handle + ")"; }
+                                    response += " " + p.ToString();
+                                    
                                     if (!r.isSent())
                                     {
                                         response += "(*)";
@@ -464,7 +510,7 @@ namespace Roboto.Modules
                         break;
 
                     case mod_xyzzy_data.statusTypes.Judging:
-                        response += "Waiting for " + players[lastPlayerAsked].name + " to judge";
+                        response += "Waiting for " + players[lastPlayerAsked].ToString() +  " to judge";
                         break;
                     case statusTypes.cardCastImport:
                     case statusTypes.Invites:
@@ -547,16 +593,25 @@ namespace Roboto.Modules
         /// </summary>
         internal void check()
         {
+            log("Performing status check for " + chatID + ".", logging.loglevel.low);
+
             mod_xyzzy_coredata localData = getLocalData();
             List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
             List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
-            log("Status check for " + chatID + ".");
-
+ 
             //is the tzar valid?
             if (lastPlayerAsked >= players.Count)
             {
                 lastPlayerAsked = 0;
                 log("Reset tzar as ID invalid.");
+            }
+
+            //are we out of players? 
+            if ((status == statusTypes.Judging || status == statusTypes.Question) && players.Count < 2)
+            {
+                log("Stopping game, not enough players");
+                TelegramAPI.SendMessage(chatID, "Stopping game, not enough players");
+                wrapUp();
             }
 
             //responses from non-existent players

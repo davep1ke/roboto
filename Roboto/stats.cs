@@ -158,6 +158,7 @@ namespace Roboto
             registerStatType("Startup", typeof(Roboto), Color.LawnGreen, displaymode.bar);
             registerStatType("Incoming Msgs", typeof(TelegramAPI), Color.Blue );
             registerStatType("Outgoing Msgs", typeof(TelegramAPI), Color.Purple);
+            registerStatType("Hammering Prevention", typeof(logging), Color.Turquoise, stats.displaymode.bar);
 
             logStat(new statItem("Startup", typeof(Roboto)));
         }
@@ -217,22 +218,24 @@ namespace Roboto
         private List<statType> getStatTypes (string regex)
         {
             List<statType> matches = new List<statType>();
-            Regex r = new Regex(regex);
-            foreach (statType t in statsList)
+            try
             {
-                try
-                { 
+                Regex r = new Regex(regex);
+                foreach (statType t in statsList)
+                {
+
                     Match m = r.Match(t.moduleType + ">" + t.name);
                     if (m.Success)
                     {
                         matches.Add(t);
                     }
-                }
-                catch (Exception e)
-                {
-                    //will probably get some regex errors here - ignore them. 
 
                 }
+            }
+            catch
+            {
+                //will probably get some regex errors here - ignore them. 
+                Roboto.log.log("Error parsing statType. Probably a regex issue", logging.loglevel.warn);
             }
             return matches;
         }

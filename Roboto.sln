@@ -9,7 +9,9 @@ Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug - CAHLive|x86 = Debug - CAHLive|x86
 		Debug - RobotoLive|x86 = Debug - RobotoLive|x86
+		Debug (+trigger)|x86 = Debug (+trigger)|x86
 		Debug|x86 = Debug|x86
+		Release Beta|x86 = Release Beta|x86
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
@@ -17,8 +19,12 @@ Global
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - CAHLive|x86.Build.0 = Debug - CAHLive|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - RobotoLive|x86.ActiveCfg = Debug - RobotoLive|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - RobotoLive|x86.Build.0 = Debug - RobotoLive|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug (+trigger)|x86.ActiveCfg = Debug (+trigger)|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug (+trigger)|x86.Build.0 = Debug (+trigger)|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug|x86.ActiveCfg = Debug|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug|x86.Build.0 = Debug|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release Beta|x86.ActiveCfg = Release (Roboto)|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release Beta|x86.Build.0 = Release (Roboto)|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release|x86.ActiveCfg = Release|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection

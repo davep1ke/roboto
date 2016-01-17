@@ -25,7 +25,9 @@ namespace Roboto.Modules
 
             chatHook = true;
             chatEvenIfAlreadyMatched = false;
+            chatIfMuted = true;
             chatPriority = 1;
+
 
             pluginDataType = typeof(mod_standard_data);
 
@@ -59,7 +61,6 @@ namespace Roboto.Modules
                 "stop - Stops listening to the chat, until a START is entered." + "\n\r" +
                 "save - Saves any outstanding in memory stuff to disk." + "\n\r" +
                 "stats - Returns an overview of the currently loaded plugins.";
-
                 ;
         }
 
@@ -86,7 +87,8 @@ namespace Roboto.Modules
         {
             bool processed = false;
 
-            if (m.text_msg.StartsWith("/help"))
+            if (m.text_msg.StartsWith("/help")
+                || m.text_msg.StartsWith ("/start") && c != null && c.muted == false)
             {
                 TelegramAPI.SendMessage(m.chatID, getAllMethodDescriptions());
                 processed = true;
@@ -95,6 +97,16 @@ namespace Roboto.Modules
             {
                 Roboto.Settings.save();
                 TelegramAPI.SendMessage(m.chatID, "Saved settings");
+            }
+            else if (m.text_msg.StartsWith("/stop") && c != null)
+            {
+                c.muted = true;
+                TelegramAPI.SendMessage(m.chatID, "OK, I am now ignoring all messages in this chat until I get a /start command. ");
+            }
+            else if (m.text_msg.StartsWith("/start") && c != null && c.muted == true)
+            {
+                c.muted = false;
+                TelegramAPI.SendMessage(m.chatID, "I am back. Type /help for a list of commands.");
             }
             else if (m.text_msg.StartsWith("/stats"))
             {

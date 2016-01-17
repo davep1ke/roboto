@@ -29,8 +29,18 @@ namespace Roboto.Modules
     {
         public List<mod_birthday_birthday> birthdays = new List<mod_birthday_birthday>();
         public DateTime lastDayProcessed = DateTime.MinValue;
-        //internal mod_birthday_data() { }
+
+        public void listBirthdays()
+        {
+            String message = "I know about the following birthdays!";
+            foreach (mod_birthday_birthday b in birthdays.OrderBy(x => x.birthday.Subtract(new DateTime(x.birthday.Year,1,1))))
+            {
+                message += b.birthday.ToString("\n\r" + "yyyy-MM-dd") + "\t\t - *" + b.name + "*";
+            }
+            TelegramAPI.SendMessage(chatID, message, true);
+        }
     }
+    
 
     /// <summary>
     /// Represents a birthday
@@ -72,7 +82,8 @@ namespace Roboto.Modules
         {
             return
                 "birthday_add - Adds a birthday reminder for the current chat" + "\n\r" +
-                "birthday_remove - Removes a birthday reminder for the current chat";
+                "birthday_remove - Removes a birthday reminder for the current chat" + "\n\r" +
+                "birthday_list - Shows the list of birthdays that have been added";
         }
 
         public override void initData()
@@ -103,57 +114,77 @@ namespace Roboto.Modules
             }
         }
 
+
         public override bool chatEvent(message m, chat c = null)
         {
             bool processed = false;
             if (c != null) //Needs to be done in a chat!
             {
+                mod_birthday_data chatData = c.getPluginData< mod_birthday_data>();
+
                 if (m.text_msg.StartsWith("/birthday_add"))
                 {
-                    TelegramAPI.GetReply(m.chatID, "Whose birthday do you want to add?", m.message_id, true);
+                    TelegramAPI.GetExpectedReply(m.chatID, m.userID,  "Whose birthday do you want to add?", true, this.GetType(), "ADD");
                     processed = true;
                 }
                 else if (m.text_msg.StartsWith("/birthday_remove"))
                 {
-                    TelegramAPI.GetReply(m.chatID, "Whose birthday do you want to remove?", m.message_id, true);
-                    processed = true;
-                }
-                else if (m.isReply && m.replyOrigMessage == "Whose birthday do you want to add?" && m.replyOrigUser == Roboto.Settings.botUserName)
-                {
-                    //reply to add word
-                    TelegramAPI.GetReply(m.chatID, "What birthday does " + m.text_msg + " have? (DD-MON-YYYY format, e.g. 01-JAN-1900)", m.message_id, true);
+                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Whose birthday do you want to remove?", true, this.GetType(), "REMOVE");
                     processed = true;
                 }
 
-                else if (m.isReply && m.replyOrigMessage.StartsWith("What birthday does ") && m.replyOrigUser == Roboto.Settings.botUserName)
+                else if (m.text_msg.StartsWith("/birthday_list"))
                 {
-                    string uname = m.replyOrigMessage.Substring(19);
-                    uname = uname.Substring(0, uname.IndexOf(" have?"));
-                    DateTime birthday;
-                    bool success = DateTime.TryParse(m.text_msg, out birthday);
-                    if (success)
-                    {
-                        mod_birthday_birthday data = new mod_birthday_birthday(uname, birthday);
-                        addBirthday(data, c);
-                    }
-                    else
-                    {
-                        Console.WriteLine("Failed to add birthday");
-                        TelegramAPI.SendMessage(m.chatID, "Failed to add birthday");
-                    }
+                    chatData.listBirthdays();
                     processed = true;
                 }
 
-                else if (m.isReply && m.replyOrigMessage == "Whose birthday do you want to remove?" && m.replyOrigUser == Roboto.Settings.botUserName)
-                {
-
-                    bool success = removeBirthday(m.text_msg, c);
-                    TelegramAPI.SendMessage(m.chatID, "Removed birthday for " + m.text_msg + " " + (success ? "successfully" : "but fell on my ass"));
-                    processed = true;
-                }
             }
             return processed;
         }
+
+        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
+        {
+            chat c = Roboto.Settings.getChat(e.chatID);
+            mod_birthday_data chatData = c.getPluginData<mod_birthday_data>();
+
+            if (e.messageData == "ADD")
+            {
+                //reply to add word
+                TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What is their Birthday? (DD-MON-YYYY format, e.g. 01-JAN-1900)", true, this.GetType(), "ADD2-" + m.text_msg);
+                return true;
+            }
+
+            else if (e.messageData.StartsWith("ADD2"))
+            {
+                string uname = e.messageData.Substring(5);
+                DateTime birthday;
+                bool success = DateTime.TryParse(m.text_msg, out birthday);
+                if (success)
+                {
+                    mod_birthday_birthday data = new mod_birthday_birthday(uname, birthday);
+                    addBirthday(data, c );
+                    TelegramAPI.SendMessage(e.chatID, "Added " + uname + "'s Birthday (" + birthday.ToString("yyyy-MM-dd") + ")");
+                }
+                else
+                {
+                    Console.WriteLine("Failed to add birthday");
+                    TelegramAPI.SendMessage(m.chatID, "Failed to add birthday");
+                }
+                return true;
+            }
+
+            else if (e.messageData == "REMOVE")
+            {
+
+                bool success = removeBirthday(m.text_msg, c);
+                TelegramAPI.SendMessage(m.chatID, "Removed birthday for " + m.text_msg + " " + (success ? "successfully" : "but fell on my ass"));
+                return true;
+            }
+            return false;
+        }
+
+        
 
         protected override void backgroundProcessing()
         {

@@ -10,6 +10,7 @@ namespace Roboto.Modules
     {
         public bool chatHook = false;
         public bool chatEvenIfAlreadyMatched = false;
+        public bool chatIfMuted = false;
         public int chatPriority = 5;
 
         public bool backgroundHook = false;

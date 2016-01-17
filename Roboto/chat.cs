@@ -14,6 +14,7 @@ namespace Roboto
         public bool enabled = false; //assume chats are disabled until we get a /start
 
         public List<Modules.RobotoModuleChatDataTemplate> chatData = new List<Modules.RobotoModuleChatDataTemplate>();
+        public bool muted = false;
 
         internal chat() { }
 
@@ -97,5 +98,6 @@ namespace Roboto
             Console.WriteLine("Couldnt find plugin data of type " + t.ToString());
             return null;
         }
+
     }
 }

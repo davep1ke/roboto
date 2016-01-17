@@ -37,7 +37,7 @@ namespace Roboto
             pairs["chat_id"] = chatID.ToString();
             pairs["text"] =  text;
             
-            if (text.Length > 2000 ) { text = text.Substring(0, 1990); }
+            if (text.Length > 1950 ) { text = text.Substring(0, 1950); }
             if (replyToMessageID != -1) { pairs["reply_to_message_id"] =replyToMessageID.ToString(); }
             if (markDown) { pairs["parse_mode"] = "Markdown"; }
             if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
@@ -338,21 +338,23 @@ namespace Roboto
                             form.Add(c, "photo", fileName);
                         }
 
-                        Roboto.log.log("Sending Message:\n\r" + postURL + logtxt , logging.loglevel.low);
+                        Roboto.log.log("Sending Message: " + postURL + "\n\r" + logtxt , logging.loglevel.low);
 
                         response = await client.PostAsync(uri, form).ConfigureAwait(false);
 
                     }
-
                     responseObject = await response.Content.ReadAsStringAsync();
                     
                 }
-                catch (HttpRequestException e) when (e.Message.Contains("400"))
+                catch (HttpRequestException e) 
                 {
+                    Roboto.log.log("Unable to send Message due to HttpRequestException error:\n\r" + e.ToString(), logging.loglevel.high);
                 }
-
-                //TODO: catch more exceptions
-
+                catch (Exception e)
+                {
+                    Roboto.log.log("Unable to send Message due to unknown error:\n\r" + e.ToString(), logging.loglevel.critical);
+                }
+                
                 if (responseObject == null)
                     return null;
 
