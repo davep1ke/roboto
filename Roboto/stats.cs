@@ -158,7 +158,7 @@ namespace Roboto
             registerStatType("Startup", typeof(Roboto), Color.LawnGreen, displaymode.bar);
             registerStatType("Incoming Msgs", typeof(TelegramAPI), Color.Blue );
             registerStatType("Outgoing Msgs", typeof(TelegramAPI), Color.Purple);
-            registerStatType("Hammering Prevention", typeof(logging), Color.Turquoise, stats.displaymode.bar);
+            registerStatType("Hammering Prevention", typeof(Roboto), Color.Turquoise, stats.displaymode.bar);
 
             logStat(new statItem("Startup", typeof(Roboto)));
         }

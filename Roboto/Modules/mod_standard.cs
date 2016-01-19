@@ -139,9 +139,16 @@ namespace Roboto.Modules
                 {
                     image = Roboto.Settings.stats.generateImage(new List<string>());
                 }
-                
+
                 //Sending image...
-                TelegramAPI.SendPhoto(m.chatID, "Stats", image, "StatsGraph.jpg", "application/octet-stream", m.message_id , false);
+                if (image != null)
+                {
+                    TelegramAPI.SendPhoto(m.chatID, "Stats", image, "StatsGraph.jpg", "application/octet-stream", m.message_id, false);
+                }
+                else
+                {
+                    TelegramAPI.SendMessage(m.chatID, "No statistics were found that matched your input, sorry!");
+                }
 
 
                 //TODO - or get a keyboard

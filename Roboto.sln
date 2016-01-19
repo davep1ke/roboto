@@ -23,8 +23,8 @@ Global
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug (+trigger)|x86.Build.0 = Debug (+trigger)|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug|x86.ActiveCfg = Debug|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug|x86.Build.0 = Debug|x86
-		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release Beta|x86.ActiveCfg = Release (Roboto)|x86
-		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release Beta|x86.Build.0 = Release (Roboto)|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release Beta|x86.ActiveCfg = Release Beta|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release Beta|x86.Build.0 = Release Beta|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release|x86.ActiveCfg = Release|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release|x86.Build.0 = Release|x86
 	EndGlobalSection

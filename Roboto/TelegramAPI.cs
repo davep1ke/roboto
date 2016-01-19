@@ -354,13 +354,23 @@ namespace Roboto
                 {
                     Roboto.log.log("Unable to send Message due to unknown error:\n\r" + e.ToString(), logging.loglevel.critical);
                 }
-                
-                if (responseObject == null)
+
+                if (responseObject == null || responseObject == "")
+                {
+                    Roboto.log.log("Sent message but recieved blank reply confirmation" , logging.loglevel.critical);
                     return null;
-
-                JObject jo = JObject.Parse(responseObject);
-
-                return jo;
+                }
+                try
+                {
+                    JObject jo = JObject.Parse(responseObject);
+                    return jo;
+                }
+                catch (Exception e)
+                {
+                    Roboto.log.log("Couldnt parse response from Telegram when sending message" + e.ToString(), logging.loglevel.critical);
+                    Roboto.log.log("Response was: " + responseObject, logging.loglevel.critical);
+                    return null;
+                }
             }
 
 

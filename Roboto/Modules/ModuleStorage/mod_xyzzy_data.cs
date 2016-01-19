@@ -84,8 +84,12 @@ namespace Roboto.Modules
 
             mod_xyzzy_player existing = getPlayer(playerID);
             //keep track of the judge!
-            mod_xyzzy_player judge = players[lastPlayerAsked];
-
+            mod_xyzzy_player judge = null;
+            if (lastPlayerAsked >= 0 && lastPlayerAsked < players.Count)
+            {
+                judge = players[lastPlayerAsked];
+            }
+            
             if (players.Count == 0)
             {
                 log("No players in game", logging.loglevel.high);
@@ -339,6 +343,7 @@ namespace Roboto.Modules
         private void wrapUp()
         {
             Roboto.Settings.stats.logStat(new statItem("Games Ended", typeof(mod_xyzzy)));
+            Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
             status = statusTypes.Stopped;
             String message = "Game over!";
             if (players.Count > 1) { message += " You can continue this game with the same players with /xyzzy_extend"; }
@@ -488,6 +493,7 @@ namespace Roboto.Modules
                             getLocalData().getQuestionCard(currentQuestion).text + "\n\r" +
                             "The following responses are outstanding :";
                         bool unsentMessages = false;
+                        bool first = true;
                         foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question"))
                         {
                             if (r.chatID == chatID)
@@ -495,13 +501,14 @@ namespace Roboto.Modules
                                 mod_xyzzy_player p = getPlayer(r.userID);
                                 if (p != null)
                                 {
-                                    response += " " + p.ToString();
-                                    
+                                    response += (first? " " : ", ") + p.ToString();
+                                    if (first) { first = false; }
                                     if (!r.isSent())
                                     {
                                         response += "(*)";
                                         unsentMessages = true;
                                     }
+                                    
                                 }
                             }
                         }
