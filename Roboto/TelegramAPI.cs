@@ -169,25 +169,42 @@ namespace Roboto
             string chatID = e.isPrivateMessage ? e.userID.ToString() : e.chatID.ToString(); //send to chat or privately
             pairs.Add("chat_id", chatID);
             pairs.Add("text", e.text);
-
-            if (e.keyboard == "")
+            try //TODO - cant see how this is erroring here. Added try/catch to try debug it.
             {
-                bool forceReply = !e.isPrivateMessage;
+                if (e.keyboard == null || e.keyboard == "")
+                {
+                    bool forceReply = !e.isPrivateMessage;
 
-                //pairs.Add("reply_markup", "{\"force_reply\":true,\"selective\":" + e.selective.ToString().ToLower() + "}");
-                pairs.Add("reply_markup", "{\"force_reply\":"
-                    //force reply if we are NOT in a PM
-                    + forceReply.ToString().ToLower()
-                    //mark selective if passed in
-                    +",\"selective\":" + e.selective.ToString().ToLower() + "}");
+                    //pairs.Add("reply_markup", "{\"force_reply\":true,\"selective\":" + e.selective.ToString().ToLower() + "}");
+                    pairs.Add("reply_markup", "{\"force_reply\":"
+                        //force reply if we are NOT in a PM
+                        + forceReply.ToString().ToLower()
+                        //mark selective if passed in
+                        + ",\"selective\":" + e.selective.ToString().ToLower() + "}");
+                }
+                else
+                {
+                    pairs.Add("reply_markup", "{" + e.keyboard + "}");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                pairs.Add("reply_markup", "{" + e.keyboard + "}");
+                //if we failed to attach, it probably wasnt important!
+                Roboto.log.log("Error assembling message pairs. " + ex.ToString(), logging.loglevel.high);
+            }
+            try //TODO - cant see how this is erroring here. Added try/catch to try debug it.
+            {
+                if (e.replyToMessageID != -1)
+                {
+                    pairs.Add("reply_to_message_id", e.replyToMessageID.ToString());
+                }
+            }
+            catch (Exception ex)
+            {
+                //if we failed to attach, it probably wasnt important!
+                Roboto.log.log("Error attaching Reply Message ID to message. " + ex.ToString() , logging.loglevel.high); 
             }
 
-
-            if (e.replyToMessageID != -1) { pairs.Add("reply_to_message_id", e.replyToMessageID.ToString()); }
             //TODO - should URLEncode the text.
             try
             {
@@ -363,7 +380,15 @@ namespace Roboto
                 try
                 {
                     JObject jo = JObject.Parse(responseObject);
-                    return jo;
+                    if (jo != null)
+                    {
+                        return jo;
+                    }
+                    else
+                    {
+                        Roboto.log.log("JObject response object was null!", logging.loglevel.critical);
+                        return null;
+                    }
                 }
                 catch (Exception e)
                 {

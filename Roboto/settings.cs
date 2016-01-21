@@ -16,8 +16,10 @@ namespace Roboto
     {
         public static string foldername = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Roboto\";
         private static string filename = foldername;
-        public bool enableFileLogging = true;
 
+        //logging
+        public bool enableFileLogging = true;
+        public int rotateLogsEveryXHours = 6;
         //module list. Static, as dont want to serialise the plugins, just the data.
         public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>();
         //stats database
@@ -30,6 +32,7 @@ namespace Roboto
         public string botUserName = "";
         public int waitDuration = 60; //wait duration for long polling. 
         public int lastUpdate = 0; //last update index, needs to be passed back with each call. 
+        
         
         //generic plugin storage. NB: Chats DO want to be serialised. 
         public List<Modules.RobotoModuleDataTemplate> pluginData = new List<Modules.RobotoModuleDataTemplate>();

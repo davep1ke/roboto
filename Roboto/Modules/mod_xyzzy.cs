@@ -547,7 +547,10 @@ namespace Roboto.Modules
             }
 
             //start the game proper
-            else if (chatData.status == mod_xyzzy_data.statusTypes.Invites && e.messageData == "Invites" && m.text_msg == "start")
+            else if (chatData.status == mod_xyzzy_data.statusTypes.Invites && e.messageData == "Invites") 
+                // TBH, dont care what they reply with. Its probably "start" as thats whats on the keyboard, but lets not bother checking, 
+                //as otherwise we would have to do some daft bounds checking 
+                // && m.text_msg == "start")
             {
                 if (chatData.players.Count > 1)
                 {

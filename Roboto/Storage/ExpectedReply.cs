@@ -16,10 +16,10 @@ namespace Roboto
         public bool isPrivateMessage = false;
         public DateTime timeLogged = DateTime.Now;
         public DateTime timeSentToUser = DateTime.MinValue;
-        public string text;
-        public long replyToMessageID;
-        public bool selective;
-        public string keyboard;
+        public string text = "";
+        public long replyToMessageID = -1;
+        public bool selective = false;
+        public string keyboard = "";
         /// <summary>
         /// Internal data that can be returned to the plugin after the response is recieved
         /// </summary>

@@ -20,6 +20,7 @@ namespace Roboto
         private bool initialised = false;
         private bool followOnLine = false;
         private Char bannerChar = "*".ToCharArray()[0];
+        private DateTime currentLogFileDate = DateTime.MinValue;
 
         /// <summary>
         /// 
@@ -34,6 +35,24 @@ namespace Roboto
         /// <param name="skipLevel">Levels of the stack to skip when getting the calling class</param>
         public void log(string text, loglevel level = loglevel.normal, ConsoleColor colour = ConsoleColor.White, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 1)
         {
+
+            //check logfile correct
+            if (initialised && Roboto.Settings.enableFileLogging && DateTime.Now > currentLogFileDate.AddHours(Roboto.Settings.rotateLogsEveryXHours))
+            {
+                initialised = false;
+                try
+                {
+                    log("Saving XML & Rotating Logs", loglevel.warn, ConsoleColor.White, false, true);
+                    Roboto.Settings.save();
+                    finalise();
+                    initialise();
+                }
+                catch (Exception e)
+                {
+                    initialised = false;
+                    log("Error rotating logs! File logging disabled. " + e.ToString(), loglevel.critical);
+                }
+            }
 
             StackFrame frame = new StackFrame(skipLevel);
             var method = frame.GetMethod();
@@ -157,11 +176,13 @@ namespace Roboto
             Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
             Roboto.Settings.stats.registerStatType("High Errors", typeof(logging), Color.Orange, stats.displaymode.bar);
             
+            //todo - remove any logs older than x days.
 
             if (Roboto.Settings.enableFileLogging)
             {
                 //Setup our logging
-                string logfile = settings.foldername + Roboto.Settings.botUserName + ".log";
+                currentLogFileDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, DateTime.Now.Hour, 0, 0);
+                string logfile = settings.foldername + Roboto.Settings.botUserName + " " + DateTime.Now.ToString("yyyy-MM-dd HH") + ".log";
                 textWriter = new StreamWriter(logfile, true);
                 for (int i = 0; i < 10; i++) { textWriter.WriteLine(); }
                 initialised = true;

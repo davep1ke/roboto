@@ -145,6 +145,7 @@ namespace Roboto
             while (!endLoop)
             {
                 //store the time to prevent hammering the service when its down
+                
                 if (lastUpdate > DateTime.Now.Subtract(TimeSpan.FromSeconds(10)))
                 {
                     Roboto.Settings.stats.logStat(new statItem("Hammering Prevention", typeof(Roboto)));
@@ -153,6 +154,7 @@ namespace Roboto
                 }
                 lastUpdate = DateTime.Now;
 
+                //TODO - move this code to the webADI class
                 string updateURL = Settings.telegramAPIURL + Settings.telegramAPIKey + "/getUpdates" +
                     "?offset=" + Settings.getUpdateID() +
                     "&timeout=" + Settings.waitDuration +
@@ -267,6 +269,12 @@ namespace Roboto
                         }
                     }
                 }
+                catch (System.Net.WebException e)
+                {
+                    log.log("Web Service Timeout during getUpdates", logging.loglevel.high);
+                    Settings.stats.logStat(new statItem("BotAPI Timeouts", typeof(Roboto)));
+                }
+
                 catch (Exception e)
                 {
                     try

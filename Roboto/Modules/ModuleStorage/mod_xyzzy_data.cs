@@ -131,7 +131,7 @@ namespace Roboto.Modules
             }
 
             //logging
-            string logtxt = "Current State: Existing ";
+            string logtxt = "Current State: " + status.ToString() + " Existing player: ";
             if (existing == null) { logtxt += " is null "; } else { logtxt += existing.ToString() + " / " +existing.playerID; }
             logtxt += ". Judge ";
             if (judge == null) { logtxt += " is null "; } else { logtxt += judge.ToString() + " / " + judge.playerID; }
@@ -156,6 +156,14 @@ namespace Roboto.Modules
                     {
                         judge.selectedCards.Clear();
                         TelegramAPI.SendMessage(chatID, "Judge " + existing.ToString() + " has left, judge is now " + judge.ToString());
+                        log("Judge " + existing.ToString() + " has left, judge is now " + judge.ToString(), logging.loglevel.verbose);
+                        //if we were in the middle of judging, resend the judge message.
+                        if (status == statusTypes.Judging)
+                        {
+                            log("Resending judges message as player removed mid-judge", logging.loglevel.verbose);
+                            beginJudging(true);
+                        }
+
                     }
                     else
                     {
@@ -177,6 +185,14 @@ namespace Roboto.Modules
                 {
                     log("Soemthing went really wrong and couldnt find judge to reset", logging.loglevel.critical);
                 }
+                //clear any expected replies for the player we removed
+                List<ExpectedReply> matchedReplies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, existing.playerID);
+                foreach (ExpectedReply exr in matchedReplies)
+                {
+                    Roboto.Settings.expectedReplies.Remove(exr);
+                    log("Removed expectedReply: " + exr.messageData);
+                }
+
                 //cant hurt at this stage...
                 check();
                 return true;
