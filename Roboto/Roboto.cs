@@ -271,7 +271,7 @@ namespace Roboto
                 }
                 catch (System.Net.WebException e)
                 {
-                    log.log("Web Service Timeout during getUpdates", logging.loglevel.high);
+                    log.log("Web Service Timeout during getUpdates: " + e.ToString(), logging.loglevel.high);
                     Settings.stats.logStat(new statItem("BotAPI Timeouts", typeof(Roboto)));
                 }
 

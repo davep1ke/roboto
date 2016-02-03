@@ -146,7 +146,7 @@ namespace Roboto
 
         internal void finalise()
         {
-            log("Closing logfile", loglevel.high );
+            log("Closing logfile", loglevel.warn );
             textWriter.Flush();
             textWriter.Close();
             initialised = false;
@@ -186,7 +186,7 @@ namespace Roboto
                 textWriter = new StreamWriter(logfile, true);
                 for (int i = 0; i < 10; i++) { textWriter.WriteLine(); }
                 initialised = true;
-                log("Enabled logging to file " + logfile, loglevel.high);
+                log("Enabled logging to file " + logfile, loglevel.warn);
 
             }
             else

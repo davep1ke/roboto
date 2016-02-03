@@ -34,27 +34,57 @@ namespace Roboto
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage";
 
             var pairs = new NameValueCollection();
-            pairs["chat_id"] = chatID.ToString();
-            pairs["text"] =  text;
-            
-            if (text.Length > 1950 ) { text = text.Substring(0, 1950); }
-            if (replyToMessageID != -1) { pairs["reply_to_message_id"] =replyToMessageID.ToString(); }
-            if (markDown) { pairs["parse_mode"] = "Markdown"; }
-            if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
+            try
+            {
+                pairs["chat_id"] = chatID.ToString();
+
+                if (text.Length > 1950) { text = text.Substring(0, 1950); }
+                pairs["text"] = text;
+
+                if (replyToMessageID != -1) { pairs["reply_to_message_id"] = replyToMessageID.ToString(); }
+                if (markDown) { pairs["parse_mode"] = "Markdown"; }
+                if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
+            }
+            catch (Exception e)
+            {
+                Roboto.log.log("Couldnt assemble message!" + e.ToString(), logging.loglevel.critical);
+                return -1;
+            }
             try
             {
                 JObject response = sendPOST(postURL, pairs).Result;
-                
-                //get the message ID
-                int messageID = response.SelectToken("result.message_id").Value<int>();
-                return messageID;
+
+
+                if (response != null)
+                {
+                    JToken response_token = response.SelectToken("result");
+                    if (response_token != null)
+                    {
+                        JToken messageID_token = response.SelectToken("result.message_id");
+                        if (messageID_token != null)
+                        {
+                            int messageID = messageID_token.Value<int>();
+                            return messageID;
+                        }
+                        else { Roboto.log.log("MessageID Token was null.", logging.loglevel.high); }
+                    }
+                    else { Roboto.log.log("Response Token was null.", logging.loglevel.high); }
+                }
+                else { Roboto.log.log("Response was null.", logging.loglevel.high); }
+
             }
             catch (WebException e)
             {
                 //log it and carry on
                 Roboto.log.log("Couldnt send message " + text + "to " + chatID + "! " + e.ToString(), logging.loglevel.critical);
             }
-            
+            catch (Exception e)
+            {
+                //log it and carry on
+                Roboto.log.log("Exception sending message " + text + "to " + chatID + "! " + e.ToString(), logging.loglevel.critical);
+            }
+
+
             return -1;
             
         }
@@ -167,8 +197,17 @@ namespace Roboto
 
             var pairs = new NameValueCollection();
             string chatID = e.isPrivateMessage ? e.userID.ToString() : e.chatID.ToString(); //send to chat or privately
-            pairs.Add("chat_id", chatID);
-            pairs.Add("text", e.text);
+            try
+            {
+                
+                pairs.Add("chat_id", chatID);
+                pairs.Add("text", e.text);
+            }
+            catch (Exception ex)
+            {
+                //if we failed to attach, it probably wasnt important!
+                Roboto.log.log("Error assembling message!. " + ex.ToString(), logging.loglevel.high);
+            }
             try //TODO - cant see how this is erroring here. Added try/catch to try debug it.
             {
                 if (e.keyboard == null || e.keyboard == "")
@@ -209,8 +248,26 @@ namespace Roboto
             try
             {
                 JObject response = sendPOST(postURL, pairs).Result;
-                int messageID = response.SelectToken("result.message_id").Value<int>();
-                return messageID;
+
+                if (response != null)
+                {
+                    JToken response_token = response.SelectToken("result");
+                    if (response_token != null)
+                    {
+                        JToken messageID_token = response.SelectToken("result.message_id");
+                        if (messageID_token != null)
+                        {
+                            int messageID = messageID_token.Value<int>();
+                            return messageID;
+                        }
+                        else { Roboto.log.log("MessageID Token was null.", logging.loglevel.high); }
+                    }
+                    else { Roboto.log.log("Response Token was null.", logging.loglevel.high); }
+                }
+                else { Roboto.log.log("Response was null.", logging.loglevel.high); }
+
+                Roboto.Settings.parseFailedReply(e);
+                return -1;
             }
             catch (WebException ex)
             {
@@ -221,8 +278,20 @@ namespace Roboto
                 Roboto.Settings.parseFailedReply(e);
                 
                 return -1;
+            }
+
+            catch (Exception ex)
+            {
+                Roboto.log.log("Exception sending message to " + chatID.ToString() + " because " + ex.ToString(), logging.loglevel.high);
+
+                //Mark as failed and return the failure to the calling method
+                Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
+                Roboto.Settings.parseFailedReply(e);
+
+                return -1;
 
             }
+
         }
 
         /* Old version - uses querystring. Switched to multipart.
@@ -379,6 +448,7 @@ namespace Roboto
                 }
                 try
                 {
+                    Roboto.log.log("Result: " + responseObject, logging.loglevel.verbose);
                     JObject jo = JObject.Parse(responseObject);
                     if (jo != null)
                     {
