@@ -103,7 +103,8 @@ namespace Roboto.Modules
         /// </summary>
         public void packSyncCheck()
         {
-            foreach (Helpers.cardcast_pack p in packs)
+            //Packs is already a list, but there is a chance that the importCardCast will update / remove it - so re-list it to prevent mutation errors
+            foreach (Helpers.cardcast_pack p in packs.ToList())
             {
                 if (p.packCode != null && p.packCode != "" && p.lastSynced < DateTime.Now.Subtract(new TimeSpan(5, 0, 0, 0)))
                 {
@@ -116,6 +117,11 @@ namespace Roboto.Modules
                         p.lastSynced = DateTime.Now;
                         p.description = outpack.description;
                     }
+                    else
+                    {
+                        log("Failed to sync pack " + p.packCode + " - " + p.description);
+                    }
+
                     log("Synced deck " + success.ToString(), logging.loglevel.high);
 
                 }
