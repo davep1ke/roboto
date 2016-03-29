@@ -20,6 +20,8 @@ namespace Roboto
         //logging
         public bool enableFileLogging = true;
         public int rotateLogsEveryXHours = 6;
+        public int killInactiveChatsAfterXDays = 30;
+
         //module list. Static, as dont want to serialise the plugins, just the data.
         public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>();
         //stats database
@@ -97,6 +99,9 @@ namespace Roboto
                 plugin.startupChecks();
             }
             stats.startup();
+
+
+
         }
 
 
@@ -129,6 +134,22 @@ namespace Roboto
             foreach (chat c in chatData)
             {
                 c.initPlugins();
+            }
+
+            //Check for dormant chats to purge
+            //TODO - move this to a background proc.
+            List<chat> purgeable = chatData.Where(c => c.lastupdate < DateTime.Now.Subtract(new TimeSpan(20, 0, 0, 0))).ToList();
+            if (purgeable.Count > 0)
+            {
+                Roboto.log.log("Ready to purge " + purgeable.Count + " inactive chats", logging.loglevel.high);
+
+                foreach (chat c in purgeable)
+                {
+                    chatData.Remove(c);
+                }
+
+
+                Roboto.log.log("Purged inactive chats", logging.loglevel.critical);
             }
 
         }

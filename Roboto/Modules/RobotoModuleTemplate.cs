@@ -68,6 +68,8 @@ namespace Roboto.Modules
         {
             return false;
         }
+
+       
         /// <summary>
         /// A reply that was expected from a call to getExpectedReply
         /// </summary>

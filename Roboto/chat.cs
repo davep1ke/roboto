@@ -12,6 +12,7 @@ namespace Roboto
     {
         public long chatID;
         public bool enabled = false; //assume chats are disabled until we get a /start
+        public DateTime lastupdate = DateTime.Now; //track when our last message was. Discard idle chats.
 
         public List<Modules.RobotoModuleChatDataTemplate> chatData = new List<Modules.RobotoModuleChatDataTemplate>();
         public bool muted = false;
@@ -36,6 +37,11 @@ namespace Roboto
                 //find and validate the data
             }
 
+        }
+
+        public void resetLastUpdateTime()
+        {
+            lastupdate = DateTime.Now;
         }
 
         public void enable()

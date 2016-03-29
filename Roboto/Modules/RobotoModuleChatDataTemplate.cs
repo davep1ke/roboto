@@ -8,6 +8,7 @@ namespace Roboto.Modules
     public abstract class RobotoModuleChatDataTemplate
     {
         public long chatID = -1;
+
         internal RobotoModuleChatDataTemplate() {} //for serialisation
         protected RobotoModuleChatDataTemplate(int chatID)
         {
@@ -24,7 +25,7 @@ namespace Roboto.Modules
             return Roboto.Settings.getChat(chatID);
 
         }
-
+        
         /// <summary>
         /// Logging wrapper
         /// </summary>

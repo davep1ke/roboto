@@ -233,6 +233,7 @@ namespace Roboto
                                         {
                                             //prevent delays - its sent something valid back to us so we are probably OK. 
                                             lastUpdate = DateTime.MinValue;
+                                            if (chatData != null) { chatData.resetLastUpdateTime(); }
 
                                             message m = new message(update_TK);
 
@@ -242,16 +243,19 @@ namespace Roboto
                                             //check if this is an expected reply, and if so route it to the 
                                             Settings.parseExpectedReplies(m);
                                             
-                                            
+
                                             //TODO - call plugins in some kind of priority order
                                             foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
                                             {
+                                                
+
                                                 //Skip this message if the chat is muted. 
                                                 if (plugin.chatHook && (chatData == null || (chatData.muted == false || plugin.chatIfMuted)))
                                                 {
                                                     if ((!processed || plugin.chatEvenIfAlreadyMatched))
                                                     {
                                                         processed = plugin.chatEvent(m, chatData);
+                                                        
                                                     }
                                                 }
                                             }
