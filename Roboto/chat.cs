@@ -105,5 +105,25 @@ namespace Roboto
             return null;
         }
 
+        public bool isPurgable()
+        {
+            //If no plugin data is being kept, remaining chat summary data can be purged. Otherwise keep
+            if (chatData.Count == 0) { return true; }
+            return false;
+        }
+
+        public void tryPurgeData()
+        {
+            List<Modules.RobotoModuleChatDataTemplate> dataToPurge = chatData.Where(cd => cd.isPurgable()).ToList();
+
+            foreach (Modules.RobotoModuleChatDataTemplate d in dataToPurge)
+            {
+                Roboto.log.log("About to remove " + d.GetType() + " data for chat " + chatID, logging.loglevel.high);
+                chatData.Remove(d);
+            }
+
+
+                
+        }
     }
 }

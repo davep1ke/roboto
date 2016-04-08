@@ -21,6 +21,7 @@ namespace Roboto
         public bool enableFileLogging = true;
         public int rotateLogsEveryXHours = 6;
         public int killInactiveChatsAfterXDays = 30;
+        public int purgeInactiveChatsAfterXDays = 100;
 
         //module list. Static, as dont want to serialise the plugins, just the data.
         public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>();
@@ -136,21 +137,27 @@ namespace Roboto
                 c.initPlugins();
             }
 
-            //Check for dormant chats to purge
+            //Check for dormant chats & plugins to purge
             //TODO - move this to a background proc.
-            List<chat> purgeable = chatData.Where(c => c.lastupdate < DateTime.Now.Subtract(new TimeSpan(20, 0, 0, 0))).ToList();
-            if (purgeable.Count > 0)
-            {
-                Roboto.log.log("Ready to purge " + purgeable.Count + " inactive chats", logging.loglevel.high);
 
-                foreach (chat c in purgeable)
+            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, ConsoleColor.White, false, true);
+            foreach (chat c in chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(purgeInactiveChatsAfterXDays,0,0,0))).ToList())
+            {
+                //check all plugins and remove data if no longer reqd
+                c.tryPurgeData();
+
+                //if all plugins are purged, delete the chat
+                if (c.isPurgable())
                 {
+                    Roboto.log.log("Purging all data for chat " + c.chatID);
                     chatData.Remove(c);
                 }
-
-
-                Roboto.log.log("Purged inactive chats", logging.loglevel.critical);
+                else
+                {
+                    Roboto.log.log("Skipping purge of chat " + c.chatID + " as one or more plugins reported they shouldn't be purged");
+                }
             }
+            
 
         }
 
@@ -228,7 +235,6 @@ namespace Roboto
             {
                 //send the message, grab the ID. 
                 messageID = e.sendMessage();
-
             }
 
             //either way, chuck it on the stack

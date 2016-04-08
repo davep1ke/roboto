@@ -898,7 +898,8 @@ namespace Roboto.Modules
             {
                 if (packEnabled(q.category)) { questions.Add(q); }
             }
-            if (enteredQuestionCount > questions.Count || enteredQuestionCount == -1) { enteredQuestionCount = questions.Count; }
+            //limit to 500 question's (then redeal)
+            if (enteredQuestionCount > 500) { enteredQuestionCount = 500; }
             //pick n questions and put them in the deck
             List<int> cardsPositions = mod_xyzzy.getUniquePositions(questions.Count, enteredQuestionCount);
             foreach (int pos in cardsPositions)
@@ -916,10 +917,16 @@ namespace Roboto.Modules
             {
                 if (packEnabled(a.category)) { answers.Add(a); }
             }
-            //TODO - shuffle the list
-            foreach (mod_xyzzy_card answer in answers)
+
+            int cardsToPick = answers.Count;
+            // limit to 500 question's (then redeal)
+            if (cardsToPick > 500) { cardsToPick = 500; }
+            //pick n questions and put them in the deck
+            List<int> cardsPositions = mod_xyzzy.getUniquePositions(answers.Count, cardsToPick);
+
+            foreach (int pos in cardsPositions)
             {
-                remainingAnswers.Add(answer.uniqueID);
+                remainingAnswers.Add(answers[pos].uniqueID);
             }
         }
     }

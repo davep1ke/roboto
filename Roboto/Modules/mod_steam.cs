@@ -449,9 +449,12 @@ namespace Roboto.Modules
         {
 
             mod_steam_chat_data localData = c.getPluginData<mod_steam_chat_data>();
-            foreach (mod_steam_player player in localData.players)
+            if (localData != null)
             {
-                player.checkAchievements();
+                foreach (mod_steam_player player in localData.players)
+                {
+                    player.checkAchievements();
+                }
             }
         }
 

@@ -37,5 +37,14 @@ namespace Roboto.Modules
         {
             Roboto.log.log(text, level, colour, noLineBreak, false, false, false, 2);
         }
+
+        public virtual bool isPurgable()
+        {
+            //by default, assume everything is purgeable
+            return true;
+
+        }
+
+            
     }
 }

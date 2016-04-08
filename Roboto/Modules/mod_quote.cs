@@ -29,14 +29,26 @@ namespace Roboto.Modules
     public class mod_quote_data : RobotoModuleChatDataTemplate
     {
         public List<mod_quote_quote> quotes = new List<mod_quote_quote>();
+        //new version, using multi-quotes
+        public List<mod_quote_multiquote> multiquotes = new List<mod_quote_multiquote>();
         public DateTime nextAutoQuoteAfter = DateTime.MinValue;
         public int autoQuoteHours = 24;
         public bool autoQuoteEnabled = true;
         //internal mod_quote_data() { }
+        
+        /// <summary>
+        /// Never purge chats with quote data
+        /// </summary>
+        /// <returns></returns>
+        public override bool isPurgable()
+        {
+            if (multiquotes.Count > 0) { return false; }
+            return true;
+        }
     }
 
     /// <summary>
-    /// Represents a single quote
+    /// Represents a single quote. OBSOLETE - USE mod_quote_multiquote
     /// </summary>
     [XmlType("mod_quote_quote")]
     [Serializable]
@@ -47,6 +59,7 @@ namespace Roboto.Modules
         public DateTime on = DateTime.Now;
 
         internal mod_quote_quote() { }
+        [Obsolete]
         public mod_quote_quote(String by, String text)
         {
             this.by = by;
@@ -54,6 +67,56 @@ namespace Roboto.Modules
 
         }
     }
+
+    /// <summary>
+    /// Represents a single quote
+    /// </summary>
+    [XmlType("mod_quote_multiquote")]
+    [Serializable]
+    public class mod_quote_multiquote
+    {
+
+        public List<mod_quote_quote_line> lines = new List<mod_quote_quote_line>();
+        public DateTime on = DateTime.Now;
+
+        internal mod_quote_multiquote() { }
+        public mod_quote_multiquote(List<mod_quote_quote_line> lines)
+        {
+            this.lines = lines;
+        }
+
+        public string getText()
+        {
+            string text = "On " + on.ToString("g") + "\r\n";
+            //loop through each line
+            foreach (mod_quote_quote_line l in lines)
+            {
+                text += "*" + l.by  + "* : " + l.text + "\r\n";
+            }
+            return text;
+        }
+    }
+
+
+    /// <summary>
+    /// Represents a single quote line
+    /// </summary>
+    [XmlType("mod_quote_quote_line")]
+    [Serializable]
+    public class mod_quote_quote_line
+    {
+        public string by = "";
+        public string text = "";
+       
+        internal mod_quote_quote_line() { }
+        public mod_quote_quote_line(String by, String text)
+        {
+            this.by = by;
+            this.text = text;
+
+        }
+    }
+
 
     public class mod_quote : RobotoModuleTemplate
     {
@@ -78,6 +141,7 @@ namespace Roboto.Modules
         {
             return
                 "quote_add - Adds a quote for the current chat" + "\n\r" +
+                "quote_conv - Adds a quote containing multiple lines" + "\n\r" +
                 "quote - Picks a random quote from the chat's database" + "\n\r" +
                 "quote_config - Configure how often to add quotes into chat";
         }
@@ -107,28 +171,50 @@ namespace Roboto.Modules
                 chatData = new mod_quote_data();
                 c.addChatData(chatData);
             }
+            else
+            {
+                //migrate any old chats to multi_quotes
+                //TODO - remove this once all migrated
+                #pragma warning disable 612, 618
+                foreach (mod_quote_quote q in chatData.quotes)
+                {
+                    //create a single line quote in multiquotes
+
+                    mod_quote_multiquote mq = new mod_quote_multiquote(new List<mod_quote_quote_line>() { new mod_quote_quote_line(q.by, q.text) });
+                    mq.on = q.on;
+                    chatData.multiquotes.Add(mq);
+                    log("Migrated quote for chat " + chatData.chatID + " to multiquote");
+                }
+                if (chatData.quotes.Count > 0)
+                {
+                    log("Migrated " + chatData.quotes.Count + " quotes for chat " + chatData.chatID);
+                    chatData.quotes.Clear();
+                }
+                #pragma warning restore 612, 618
+
+            }
 
         }
 
-        private bool addQuote(string by, string text, chat c)
+        private bool addQuote(List<mod_quote_quote_line> lines, chat c)
         {
             mod_quote_data localData = c.getPluginData<mod_quote_data>();
 
-            if (!quoteExists(by, text, c))
+            if (!quoteExists(lines, c))
             {
-                localData.quotes.Add(new mod_quote_quote(by, text));
+                localData.multiquotes.Add(new mod_quote_multiquote(lines));
                 Roboto.Settings.save();
                 return true;
             }
             return false;
         }
 
-        private bool quoteExists(string by, string text, chat c)
+        private bool quoteExists(List<mod_quote_quote_line> lines, chat c)
         {
             mod_quote_data localData = c.getPluginData<mod_quote_data>();
-            foreach (mod_quote_quote q in localData.quotes)
+            foreach (mod_quote_multiquote q in localData.multiquotes)
             {
-                if (q.by == by && q.text == text)
+                if (q.lines == lines)
                 {
                     return true;
                 }
@@ -143,14 +229,13 @@ namespace Roboto.Modules
         private string getQuote(chat c)
         {
             mod_quote_data localData = c.getPluginData<mod_quote_data>();
-            if (localData.quotes.Count > 0)
+            if (localData.multiquotes.Count > 0)
             {
 
-                mod_quote_quote q = localData.quotes[settings.getRandom(localData.quotes.Count)];
-                return (
-                    "*" + q.by + "* said \r\n" +
-                    q.text + "\r\n" +
-                    "on " + q.on.ToString("g"));
+                mod_quote_multiquote q = localData.multiquotes[settings.getRandom(localData.multiquotes.Count)];
+
+                return (q.getText());
+                
             }
             else
             {
@@ -168,9 +253,15 @@ namespace Roboto.Modules
 
                 if (m.text_msg.StartsWith("/quote_add"))
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Who is the quote by", false, typeof(mod_quote), "WHO", m.message_id, true);
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Who is the quote by? Or enter 'cancel'", true, typeof(mod_quote), "WHO", -1, true);
                     processed = true;
                 }
+                else if (m.text_msg.StartsWith("/quote_conv"))
+                {
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Enter the first speaker's name, a \\, then the text (e.g. Bob\\I like Bees).\n\rOr enter 'cancel' to cancel", true, typeof(mod_quote), "WHO_M", -1, true);
+                    processed = true;
+                }
+
                 else if (m.text_msg.StartsWith("/quote_config"))
                 {
                     List<string> options = new List<string>();
@@ -187,8 +278,12 @@ namespace Roboto.Modules
                     TelegramAPI.SendMessage(m.chatID, getQuote(c), true, m.message_id);
                     processed = true;
                 }
-
             }
+
+            //also accept forwarded messages
+            
+
+
             return processed;
         }
 
@@ -198,7 +293,7 @@ namespace Roboto.Modules
             {
                 mod_quote_data localData = c.getPluginData<mod_quote_data>();
                 
-                if (localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.quotes.Count > 0)
+                if (localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.multiquotes.Count > 0)
                 {
                     TelegramAPI.SendMessage(c.chatID, getQuote(c), true);
                     int maxMins = localData.autoQuoteHours * 60;
@@ -218,17 +313,90 @@ namespace Roboto.Modules
             mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
 
             //Adding quotes
-            if (e.messageData == "WHO")
+            if (e.messageData.StartsWith("WHO_M"))
             {
-                TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, false, typeof(mod_quote), "TEXT " + m.text_msg, m.message_id, true);
+                if (m.text_msg.ToLower() == "cancel")
+                {
+                    TelegramAPI.SendMessage(m.userID, "Cancelled adding a new quote");
+                }
+                else if (m.text_msg.ToLower() == "done")
+                {
+                    
+                    List<mod_quote_quote_line> lines = new List<mod_quote_quote_line>();
+                    //strip the "WHO_M" from the start
+                    string message = e.messageData.TrimStart("WHO_M".ToCharArray());
+                    //split out the text so we can put into a multiquote object
+                    string[] delim = new string[] { "<<#::#>>" };
+                    string[] elements = message.Split(delim, StringSplitOptions.None);
+                    string last = ""; //toggle between null string (populate with the name), and holding the previous value (add to the list)
+                    foreach (string s in elements)
+                    {
+                        if (last == "") { last = s; }
+                        else
+                        {
+                            lines.Add(new mod_quote_quote_line(last, s));
+                            last = "";
+                        }
+                    }
+
+                    //now add the quote to the db
+                    if (lines.Count > 0)
+                    {
+                        mod_quote_multiquote q = new mod_quote_multiquote(lines);
+                        chatData.multiquotes.Add(q);
+                        TelegramAPI.SendMessage(e.chatID, "Added quote \n\r" + q.getText(),true);
+
+                    }
+                    else
+                    {
+                        TelegramAPI.SendMessage(m.userID, "Couldnt add quote - no lines to add?");
+                    }
+                    
+                }
+                else
+                {
+                    //this should have a "\" in the middle of it to split the user from the text
+                    int pos = m.text_msg.IndexOf("\\"[0]);
+                    if (pos == -1) { TelegramAPI.SendMessage(m.userID, "Couldn't work out where the name and text were. Cancelled adding a new quote"); }
+                    else
+                    {
+                        //need to store the whole set of messages in messagedata until we are finished
+                        string newMsgData = e.messageData;
+                        //replace the "\" with something less likely to come up accidentally
+                        newMsgData = newMsgData + m.text_msg.Substring(0, pos) + "<<#::#>>" + m.text_msg.Substring(pos+1) + "<<#::#>>";
+
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the next line, 'cancel' or 'done'", true, typeof(mod_quote), newMsgData, m.message_id, true);
+
+
+                    }
+
+
+                }
+
+
                 return true;
             }
+            else if (e.messageData == "WHO")
+            {
+                if (m.text_msg.ToLower() == "cancel")
+                {
+                    TelegramAPI.SendMessage(m.userID, "Cancelled adding a new quote");
+                }
+                else
+                {
+                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.message_id, true);
+                }
+                return true;
+            }
+
+            
+
 
             else if (e.messageData.StartsWith("TEXT"))
             {
                 string quoteBy = e.messageData.TrimStart("TEXT ".ToCharArray());
-                bool success = addQuote(quoteBy, m.text_msg, c);
-                TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
+                bool success = addQuote(new List<mod_quote_quote_line>() { new mod_quote_quote_line(quoteBy, m.text_msg) }, c);
+                TelegramAPI.SendMessage(e.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
                 return true;
             }
 

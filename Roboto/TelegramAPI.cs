@@ -119,7 +119,7 @@ namespace Roboto
 
 
             if (replyToMessageID != -1) { pairs.Add("reply_to_message_id", replyToMessageID.ToString()); }
-            //TODO - should URLEncode the text.
+            
             try
             {
                 JObject response = sendPOST(postURL,pairs).Result;

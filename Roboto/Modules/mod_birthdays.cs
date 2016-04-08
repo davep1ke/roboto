@@ -39,6 +39,15 @@ namespace Roboto.Modules
             }
             TelegramAPI.SendMessage(chatID, message, true);
         }
+
+        /// <summary>
+        /// Never purge chats with birthday data
+        /// </summary>
+        /// <returns></returns>
+        public override bool isPurgable()
+        {
+            return false;
+        }
     }
     
 
@@ -230,7 +239,7 @@ namespace Roboto.Modules
             return false;
         }
 
-       
+        
 
     }
 }

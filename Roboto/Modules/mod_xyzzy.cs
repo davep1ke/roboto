@@ -62,8 +62,6 @@ namespace Roboto.Modules
 
         internal void topUpCards(int nrCards, List<string> availableAnswers, long chatID)
         {
-
-            
             
             while (cardsInHand.Count < nrCards)
             {
@@ -394,6 +392,8 @@ namespace Roboto.Modules
         /// <returns></returns>
         public static List<int> getUniquePositions(int arraySize, int questions)
         {
+            if (questions > arraySize) { questions = arraySize; }
+
             //TODO - generic
             List<int> results = new List<int>();
             //create a dummy array
