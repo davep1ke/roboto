@@ -393,10 +393,12 @@ namespace Roboto.Modules
         public static List<int> getUniquePositions(int arraySize, int questions)
         {
             if (questions > arraySize) { questions = arraySize; }
+            if (questions == -1) { questions = arraySize; }
 
             //TODO - generic
             List<int> results = new List<int>();
             //create a dummy array
+            
             List<int> dummy = new List<int>();
             for (int i = 0; i < arraySize; i++){dummy.Add(i);}
 
