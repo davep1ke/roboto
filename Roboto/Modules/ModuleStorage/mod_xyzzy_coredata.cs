@@ -106,23 +106,19 @@ namespace Roboto.Modules
             //Packs is already a list, but there is a chance that the importCardCast will update / remove it - so re-list it to prevent mutation errors
             foreach (Helpers.cardcast_pack p in packs.ToList())
             {
-                if (p.packCode != null && p.packCode != "" && p.lastSynced < DateTime.Now.Subtract(new TimeSpan(5, 0, 0, 0)))
+                if (p.packCode != null && p.packCode != "" && p.nextSync < DateTime.Now)
                 {
                     log("Syncing " + p.name);
                     Helpers.cardcast_pack outpack;
                     string response;
                     bool success = importCardCastPack(p.packCode, out outpack, out response);
-                    if (success)
+                    if (!success)
                     {
-                        p.lastSynced = DateTime.Now;
-                        p.description = outpack.description;
-                    }
-                    else
-                    {
+                        
                         log("Failed to sync pack " + p.packCode + " - " + p.description);
                     }
 
-                    log("Synced deck " + success.ToString(), logging.loglevel.high);
+                    log("Synced deck " + success.ToString() + ", next sync " + p.nextSync.ToString("f") , logging.loglevel.high);
 
                 }
 
@@ -150,7 +146,7 @@ namespace Roboto.Modules
             int nr_rep = 0;
             List<Helpers.cardcast_question_card> import_questions = new List<Helpers.cardcast_question_card>();
             List<Helpers.cardcast_answer_card> import_answers = new List<Helpers.cardcast_answer_card>();
-            List<mod_xyzzy_data> brokenChats = new List<mod_xyzzy_data>();
+            List<mod_xyzzy_chatdata> brokenChats = new List<mod_xyzzy_chatdata>();
 
             try
             {
@@ -167,8 +163,18 @@ namespace Roboto.Modules
                     //lets just check if the pack already exists? 
                     log("Retrieved " + import_questions.Count() + " questions and " + import_answers.Count() + " answers from Cardcast");
                     string l_packname = pack.name;
-                    if (getPackFilterList().Where(x => x.name == l_packname).Count() > 0)  // .Contains(pack.name))
+                    List<cardcast_pack> matchingPacks = getPackFilterList().Where(x => x.name == l_packname).ToList();
+
+                    if (matchingPacks.Count > 1)  // .Contains(pack.name))
                     {
+                        log("Multiple packs found for " + l_packname + " - aborting!", logging.loglevel.critical);
+                        response += "/n/r" + "Aborting sync!";
+
+                    }
+                    else if (matchingPacks.Count == 1)
+                    {
+                        cardcast_pack updatePack = matchingPacks[0];
+
                         //sync the pack.
                         response = "Pack " + pack.name + " (" + packCode + ") exists, syncing cards";
                         log("Pack " + pack.name + "(" + packCode + ") exists, syncing cards", logging.loglevel.normal);
@@ -197,7 +203,7 @@ namespace Roboto.Modules
                             //remove any cached questions
                             foreach(chat c in Roboto.Settings.chatData)
                             {
-                                mod_xyzzy_data chatData = (mod_xyzzy_data) c.getPluginData(typeof(mod_xyzzy_data));
+                                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata) c.getPluginData(typeof(mod_xyzzy_chatdata));
                                 chatData.remainingQuestions.RemoveAll(x => x == q.uniqueID);
                                 //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
                                 if (chatData.currentQuestion == q.uniqueID)
@@ -277,7 +283,18 @@ namespace Roboto.Modules
                             mod_xyzzy_card x_answer = new mod_xyzzy_card(a.answer, pack.name);
                             answers.Add(x_answer);
                         }
+
+                        
                         response += "\n\r" + "As: Removed " + remove_cards.Count() + " from local. Skipped " + exist_cards.Count() + " as already exist. Updated " + nr_rep + ". Added " + import_answers.Count() + " new / replacement cards";
+
+                        updatePack.description = pack.description;
+                        //don't sync again within x days. Add a random duration. 
+                        updatePack.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
+                        response += "\n\r" + "Next sync " + updatePack.nextSync.ToString("f") + ".";
+                        //pack.description = outpack.description;
+
+                        Roboto.Settings.stats.logStat(new statItem("Packs Synced", typeof(mod_xyzzy)));
+                        
 
                         success = true;
                     }
@@ -296,12 +313,19 @@ namespace Roboto.Modules
                             answers.Add(x_answer);
                             nr_as++;
                         }
+                        //don't sync again within x days. Add a random duration. 
+                        pack.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
+                        response += "\n\r" + "Next sync " + pack.nextSync.ToString("f") + ".";
+
                         response += "\n\r" + "Added " + nr_qs.ToString() + " questions and " + nr_as.ToString() + " answers.";
                         packs.Add(pack);
                         response += "\n\r" + "Added " + pack.name + " to filter list.";
                     }
-                }
+                    
 
+                    
+                    
+                }
             }
             catch (Exception e)
             {
@@ -309,11 +333,10 @@ namespace Roboto.Modules
                 success = false;
             }
 
-            foreach (mod_xyzzy_data c in brokenChats)
+            foreach (mod_xyzzy_chatdata c in brokenChats)
             {
                 c.askQuestion();
             }
-
 
             log(response, logging.loglevel.normal);
 
@@ -383,7 +406,7 @@ namespace Roboto.Modules
         {
             foreach (chat c in Roboto.Settings.chatData)
             {
-                mod_xyzzy_data chatdata = (mod_xyzzy_data)c.getPluginData(typeof(mod_xyzzy_data));
+                mod_xyzzy_chatdata chatdata = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
                 if (chatdata != null)
                 {
                     chatdata.replaceCard(old, newcard, cardType);

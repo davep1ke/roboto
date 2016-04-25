@@ -8,36 +8,63 @@ using System.Xml.Serialization;
 
 namespace Roboto.Modules
 {
+
+    public enum xyzzy_Statuses { Stopped, SetGameLength, setPackFilter, setMinHours, setMaxHours, cardCastImport, Invites, Question, Judging }
+
     /// <summary>
     /// CHAT (i.e. game) Data to be stored in the XML store
     /// </summary>
     [XmlType("mod_xyzzy_data")]
     [Serializable]
-    public class mod_xyzzy_data : RobotoModuleChatDataTemplate
+    public class mod_xyzzy_chatdata : RobotoModuleChatDataTemplate
     {
-        public List<String> packFilter = new List<string> { "Base" };
-        public enum statusTypes { Stopped, SetGameLength, setPackFilter, cardCastImport, Invites, Question, Judging }
-        public statusTypes status = statusTypes.Stopped;
+
+        //core chat data
         public List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
+        public int lastPlayerAsked = -1; //This is the position in the array, so int is fine! todo - should be an ID!
+        public xyzzy_Statuses status = xyzzy_Statuses.Stopped;
+        public DateTime statusChangedTime = DateTime.Now;
+        public bool remindersSent = false;
+
+        //chat settings
+        public List<String> packFilter = new List<string> { "Base" };
         public int enteredQuestionCount = -1;
-        public int lastPlayerAsked = -1; //todo - should be an ID!
+        public int maxWaitTimeHours = 0;
+        public int minWaitTimeHours = 0;
+
 
         //Store these here, per-chat, so that theres no overlap between chats. Could also help if we want to filter card sets later. Bit heavy on memory, probably. 
         public List<String> remainingQuestions = new List<string>();
         public string currentQuestion;
         public List<String> remainingAnswers = new List<string>();
-        //internal mod_xyzzy_data() { }
 
+
+        //handled by super
+        //internal mod_xyzzy_chatdata() { }
+
+        public void setStatus (xyzzy_Statuses newStatus)
+        {
+            status = newStatus;
+            statusChangedTime = DateTime.Now;
+            remindersSent = false;
+        }
+        
         /// <summary>
         /// Completely stop the game and clear any player data
         /// </summary>
         public void reset()
         {
-            status = statusTypes.Stopped;
+            setStatus(xyzzy_Statuses.Stopped);
             players.Clear();
             remainingAnswers.Clear();
             remainingQuestions.Clear();
             lastPlayerAsked = -1;
+        }
+
+        //when the status is changed, make a note of the date.
+        private void statusChanged()
+        {
+            statusChangedTime = DateTime.Now;
         }
 
         public mod_xyzzy_player getPlayer(long playerID)
@@ -158,7 +185,7 @@ namespace Roboto.Modules
                         TelegramAPI.SendMessage(chatID, "Judge " + existing.ToString() + " has left, judge is now " + judge.ToString());
                         log("Judge " + existing.ToString() + " has left, judge is now " + judge.ToString(), logging.loglevel.verbose);
                         //if we were in the middle of judging, resend the judge message.
-                        if (status == statusTypes.Judging)
+                        if (status == xyzzy_Statuses.Judging)
                         {
                             log("Resending judges message as player removed mid-judge", logging.loglevel.verbose);
                             beginJudging(true);
@@ -257,7 +284,7 @@ namespace Roboto.Modules
                 lastPlayerAsked = playerPos;
                 currentQuestion = remainingQuestions[0];
                 remainingQuestions.Remove(currentQuestion);
-                status = mod_xyzzy_data.statusTypes.Question;
+                setStatus(xyzzy_Statuses.Question);
             }
             else
             {
@@ -360,7 +387,7 @@ namespace Roboto.Modules
         {
             Roboto.Settings.stats.logStat(new statItem("Games Ended", typeof(mod_xyzzy)));
             Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
-            status = statusTypes.Stopped;
+            setStatus(xyzzy_Statuses.Stopped);
             String message = "Game over!";
             if (players.Count > 1) { message += " You can continue this game with the same players with /xyzzy_extend"; }
             message += "\n\rScores are: ";
@@ -416,7 +443,7 @@ namespace Roboto.Modules
                     log("Judge ID invalid during judging, resetting to first player.", logging.loglevel.high);
                     lastPlayerAsked = 0;
                 }
-                status = statusTypes.Judging;
+                setStatus(xyzzy_Statuses.Judging);
                 mod_xyzzy_coredata localData = getLocalData();
 
                 mod_xyzzy_card q = localData.getQuestionCard(currentQuestion);
@@ -474,20 +501,91 @@ namespace Roboto.Modules
         }
 
         /// <summary>
+        /// Handle any background tasks for the chat (timeouts, throttling etc..)
+        /// </summary>
+        public void backgroundChecks()
+        {
+            //Timeout Reminders
+            //workout the time at which we should send reminders
+            DateTime reminderTime = statusChangedTime.AddMinutes((minWaitTimeHours * 60) * .75);
+            DateTime abandonTime = statusChangedTime.AddHours(minWaitTimeHours);
+
+            //timeouts, if we have questions outstanding
+            if (status == xyzzy_Statuses.Question && remindersSent == false && DateTime.Now > reminderTime  )
+            {
+                log("Sending reminders for chat " + chatID);
+                //check if any players are late
+                string outstandingPlayers = "";
+                List<mod_xyzzy_player> outstanding = outstandingResponses(); ;
+                int i = 0;
+
+                if (outstanding.Count == 0)
+                {
+                    log("Couldnt send reminders, as no outstanding players!?", logging.loglevel.high);
+                }
+                else
+                {
+                    foreach (mod_xyzzy_player p in outstanding)
+                    {
+                        i++;
+                        //first
+                        if (outstandingPlayers == "") { outstandingPlayers = p.ToString(); }
+                        //last
+                        else if (i == outstanding.Count()) { outstandingPlayers += " and " + p.ToString(); } 
+                        //middle
+                        else { outstandingPlayers += ", " + p.ToString(); }
+                    }
+                    if (outstanding.Count == 1)
+                    { TelegramAPI.SendMessage(chatID, outstandingPlayers + " needs to hurry up! Tick-tock motherfucker..."); }
+                    else
+                    { TelegramAPI.SendMessage(chatID, outstandingPlayers + " need to hurry up! Tick-tock motherfuckers..."); }
+                }
+
+                remindersSent = true;
+            }
+            
+            else if (status == xyzzy_Statuses.Question && DateTime.Now > abandonTime)
+            {
+                log("Skipping to judging for chat" + chatID);
+                beginJudging();
+            }
+
+            //if we are in judging
+            if (status == xyzzy_Statuses.Judging && remindersSent == false && DateTime.Now > reminderTime)
+            {
+                log("Sending judge reminder for chat " + chatID);
+
+                TelegramAPI.SendMessage(chatID, "Hurry up Judgy Judgerson! (" + players[lastPlayerAsked].ToString() + ")");
+                remindersSent = true;
+            }
+
+            else if (status == xyzzy_Statuses.Judging &&  DateTime.Now > abandonTime)
+            {
+                log("Skipping judging for chat" + chatID);
+
+                TelegramAPI.SendMessage(chatID, "Judge was too slow, " + players[lastPlayerAsked].ToString() + " gets docked a point!");
+                players[lastPlayerAsked].wins--;
+                askQuestion();
+            }
+
+
+        }
+
+        /// <summary>
         /// Gets the status of the currnet game
         /// </summary>
         public void getStatus()
         {
             
             string response = "The current status of the game is " + status.ToString() + ". " ;
-            if (status == mod_xyzzy_data.statusTypes.Stopped)
+            if (status == xyzzy_Statuses.Stopped)
             {
                 response += "Type /xyzzy_start to begin setting up a new game.";
 
             }
             else
             {
-                if (status == statusTypes.Judging || status == statusTypes.Question)
+                if (status == xyzzy_Statuses.Judging || status == xyzzy_Statuses.Question)
                 {
                     response += " with "
                         + remainingQuestions.Count.ToString() + " questions remaining"
@@ -504,7 +602,7 @@ namespace Roboto.Modules
 
                 switch (status)
                 {
-                    case mod_xyzzy_data.statusTypes.Question:
+                    case xyzzy_Statuses.Question:
                         response += "The current question is : " + "\n\r" +
                             getLocalData().getQuestionCard(currentQuestion).text + "\n\r" +
                             "The following responses are outstanding :";
@@ -532,13 +630,13 @@ namespace Roboto.Modules
 
                         break;
 
-                    case mod_xyzzy_data.statusTypes.Judging:
+                    case xyzzy_Statuses.Judging:
                         response += "Waiting for " + players[lastPlayerAsked].ToString() +  " to judge";
                         break;
-                    case statusTypes.cardCastImport:
-                    case statusTypes.Invites:
-                    case statusTypes.SetGameLength:
-                    case statusTypes.setPackFilter:
+                    case xyzzy_Statuses.cardCastImport:
+                    case xyzzy_Statuses.Invites:
+                    case xyzzy_Statuses.SetGameLength:
+                    case xyzzy_Statuses.setPackFilter:
                         response += "\n\r" + players[0].name + " is currently setting the game up - type /xyzzy_join to join in!";
 
                         break;
@@ -549,6 +647,96 @@ namespace Roboto.Modules
             check();
 
         }
+
+        /// <summary>
+        /// Set the timeout value
+        /// </summary>
+        /// <param name="text_msg"></param>
+        /// <returns></returns>
+        public bool setMaxTimeout(string text_msg)
+        {
+            if (text_msg == "Continue") { return true; }
+            else if (text_msg == "No Timeout")
+            {
+                maxWaitTimeHours = 0;
+                return true;
+            }
+            else
+            {
+                int hours = -1;
+                bool success = int.TryParse(text_msg, out hours);
+                if (!success) { return false; }
+                else
+                {
+                    maxWaitTimeHours = hours;
+                    return true;
+                }
+
+           }
+        }
+
+        /// <summary>
+        /// Ask the user what the timeout value should be
+        /// </summary>
+        /// <param name="userID"></param>
+        public void askMaxTimeout(long userID)
+        {
+            string kb = TelegramAPI.createKeyboard(new List<string>()
+            {
+                "Continue", "No Timeout"
+                , "1","2", "6", "12", "24", "48"
+            }, 2);
+
+            TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to set a timeout? Enter how long (in hours) before someone is skipped, or 'Continue' to accept the last value ("
+                + (maxWaitTimeHours == 0 ? "No Timeout" : maxWaitTimeHours.ToString()) + ")"
+                , true, typeof(mod_xyzzy), "setMaxHours", -1, true, kb );
+        }
+
+        /// <summary>
+        /// Ask the user what the throttle should be set to
+        /// </summary>
+        /// <param name="userID"></param>
+        public void askMinTimeout(long userID)
+        {
+
+            string kb = TelegramAPI.createKeyboard(new List<string>()
+            {
+                "Continue"
+                , "1","2", "6", "12", "24", "48"
+            }, 2);
+
+            TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to set a throttle? Enter how long (in hours) before a new round can start, or 'Continue' to accept the last value ("
+                + (minWaitTimeHours == 0 ? "No Throttle" : minWaitTimeHours.ToString()) + ")"
+                , true, typeof(mod_xyzzy), "setMinHours", -1, true, kb);
+        }
+
+        /// <summary>
+        /// Set the timeout value
+        /// </summary>
+        /// <param name="text_msg"></param>
+        /// <returns></returns>
+        public bool setMinTimeout(string text_msg)
+        {
+            if (text_msg == "Continue") { return true; }
+            else if (text_msg == "No Throttle")
+            {
+                minWaitTimeHours = 0;
+                return true;
+            }
+            else
+            {
+                int hours = -1;
+                bool success = int.TryParse(text_msg, out hours);
+                if (!success) { return false; }
+                else
+                {
+                    minWaitTimeHours = hours;
+                    return true;
+                }
+
+            }
+        }
+
 
         /// <summary>
         /// A judge has replied to their PM asking to vote for the winning answer.
@@ -630,7 +818,7 @@ namespace Roboto.Modules
             }
 
             //are we out of players? 
-            if ((status == statusTypes.Judging || status == statusTypes.Question) && players.Count < 2)
+            if ((status == xyzzy_Statuses.Judging || status == xyzzy_Statuses.Question) && players.Count < 2)
             {
                 log("Stopping game, not enough players");
                 TelegramAPI.SendMessage(chatID, "Stopping game, not enough players");
@@ -673,7 +861,7 @@ namespace Roboto.Modules
             //TODO - check when removing the tzar
             switch (status)
             {
-                case statusTypes.Question:
+                case xyzzy_Statuses.Question:
                     if (allPlayersAnswered())
                     {
                         beginJudging();
@@ -685,7 +873,7 @@ namespace Roboto.Modules
                         beginJudging();
                     }
                     break;
-                case statusTypes.Judging:
+                case xyzzy_Statuses.Judging:
                     //check if there is an appropriate expected reply
                     
                     bool reask = false;
@@ -717,7 +905,7 @@ namespace Roboto.Modules
                         log("Redid judging", logging.loglevel.critical);
                     }
                     break;
-                case statusTypes.Stopped:
+                case xyzzy_Statuses.Stopped:
                     reset();
                     break;
             }

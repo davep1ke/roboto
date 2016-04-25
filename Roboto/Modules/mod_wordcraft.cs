@@ -66,12 +66,12 @@ namespace Roboto.Modules
 
             if (m.text_msg.StartsWith("/craft_add"))
             {
-                TelegramAPI.GetReply(m.chatID, "Enter the word to add", m.message_id, true);
+                TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the word to add", true, GetType(), "AddWord");
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/craft_remove"))
             {
-                TelegramAPI.GetReply(m.chatID, "Enter the word to remove", m.message_id, true);
+                TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the word to remove", true, GetType(), "RemWord");
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/craft"))
@@ -79,24 +79,32 @@ namespace Roboto.Modules
                 TelegramAPI.SendMessage(m.chatID, craftWord());
                 processed = true;
             }
-            else if (m.isReply && m.replyOrigMessage == "Enter the word to add" && m.replyOrigUser == Roboto.Settings.botUserName)
-            {
-                //reply to add word
-                addCraftWord(m.text_msg);
-                TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " for " + m.userFirstName);
-                processed = true;
-            }
-            else if (m.isReply && m.replyOrigMessage == "Enter the word to remove" && m.replyOrigUser == Roboto.Settings.botUserName)
-            {
-                bool success = removeCraftWord(m.text_msg);
-                TelegramAPI.SendMessage(m.chatID, "Removed " + m.text_msg + " for " + m.userFirstName + " " + (success ? "successfully" : "but fell on my ass"));
-                processed = true;
-            }
-            
+           
             return processed;
         }
 
+
+        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
+        {
+            if (e.messageData == "AddWord")
+            {
+                addCraftWord(m.text_msg);
+                TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " for " + m.userFirstName);
+                return true;
+            }
+            
+            else if (e.messageData == "RemWord")
+            {
+                bool success = removeCraftWord(m.text_msg);
+                TelegramAPI.SendMessage(m.chatID, "Removed " + m.text_msg + " for " + m.userFirstName + " " + (success ? "successfully" : "but fell on my ass"));
+                return true;
+            }
+            
+            return false;
+        }
+
         
+
         public override void sampleData()
         {
             

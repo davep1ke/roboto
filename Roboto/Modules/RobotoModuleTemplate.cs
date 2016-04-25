@@ -91,8 +91,7 @@ namespace Roboto.Modules
             DateTime lastCall = getLastUpdate();
             if (DateTime.Now > lastCall.AddMinutes(backgroundMins))
             {
-                Console.WriteLine("------");
-                Console.WriteLine("Background Processing for " + GetType().ToString());
+                log("Background Processing for " + GetType().ToString());
                 backgroundProcessing();
                 setLastUpdate(DateTime.Now);
             }

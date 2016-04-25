@@ -156,7 +156,7 @@
     <Compile Include="logging.cs" />
     <Compile Include="Modules\ModuleCode\mod_steam_steamapi.cs" />
     <Compile Include="Modules\ModuleStorage\mod_xyzzy_coredata.cs" />
-    <Compile Include="Modules\ModuleStorage\mod_xyzzy_data.cs" />
+    <Compile Include="Modules\ModuleStorage\mod_xyzzy_chatdata.cs" />
     <Compile Include="Modules\mod_steam.cs" />
     <Compile Include="stats.cs" />
     <Compile Include="Storage\ExpectedReply.cs" />

@@ -69,7 +69,7 @@ namespace Roboto.Modules
                 if (availableAnswers.Count == 0)
                 {
                     //get the chatData and top up the cards. 
-                    mod_xyzzy_data chatData = (mod_xyzzy_data)Roboto.Settings.getChat(chatID).getPluginData(typeof(mod_xyzzy_data));
+                    mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)Roboto.Settings.getChat(chatID).getPluginData(typeof(mod_xyzzy_chatdata));
                     chatData.addAllAnswers();
                     TelegramAPI.SendMessage(chatID, "All answers have been used up, pack has been refilled!");
                 }
@@ -155,17 +155,15 @@ namespace Roboto.Modules
         public override void init()
         {
             pluginDataType = typeof(mod_xyzzy_coredata);
-            pluginChatDataType = typeof(mod_xyzzy_data);
+            pluginChatDataType = typeof(mod_xyzzy_chatdata);
 
             chatHook = true;
             chatEvenIfAlreadyMatched = false;
             chatPriority = 3;
 
-            //backgroundHook = true;
-            //backgroundMins = 1;
-
-
-
+            backgroundHook = true;
+            backgroundMins = 10;
+            
         }
 
         public override string getMethodDescriptions()
@@ -199,6 +197,7 @@ namespace Roboto.Modules
             Roboto.Settings.stats.registerStatType("New Games Started", this.GetType(), System.Drawing.Color.Aqua);
             Roboto.Settings.stats.registerStatType("Games Ended", this.GetType(), System.Drawing.Color.Orange);
             Roboto.Settings.stats.registerStatType("Hands Played", this.GetType(), System.Drawing.Color.Olive);
+            Roboto.Settings.stats.registerStatType("Packs Synced", this.GetType(), System.Drawing.Color.Beige);
 
             Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
 
@@ -206,12 +205,12 @@ namespace Roboto.Modules
 
         public override void initChatData(chat c)
         {
-            mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
+            mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
            
             if (chatData == null)
             {
                 //Data doesnt exist, create, populate with sample data and register for saving
-                chatData = new mod_xyzzy_data();
+                chatData = new mod_xyzzy_chatdata();
                 c.addChatData(chatData);
             }
         }
@@ -230,15 +229,15 @@ namespace Roboto.Modules
             if (c != null) //Setup needs to be done in a chat! Other replies will now have a chat object passed in here too!
             {
                 //get current game data. 
-                mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
+                mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
                 
-                if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == mod_xyzzy_data.statusTypes.Stopped)
+                if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == xyzzy_Statuses.Stopped)
                 {
                     Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                     //Start a new game!
                     chatData.reset();
                     Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
-                    chatData.status = mod_xyzzy_data.statusTypes.SetGameLength;
+                    chatData.setStatus(xyzzy_Statuses.SetGameLength);
                     //add the player that started the game
                     chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
 
@@ -265,7 +264,7 @@ namespace Roboto.Modules
 
 
                 //player joining
-                else if (m.text_msg.StartsWith("/xyzzy_join") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
+                else if (m.text_msg.StartsWith("/xyzzy_join") && chatData.status != xyzzy_Statuses.Stopped)
                 {
                     //TODO - try send a test message. If it fails, tell the user to open a 1:1 chat.
                     long i = -1;
@@ -315,10 +314,10 @@ namespace Roboto.Modules
                     processed = true;
                 }
                 //abandon game
-                else if (m.text_msg.StartsWith("/xyzzy_abandon") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
+                else if (m.text_msg.StartsWith("/xyzzy_abandon") && chatData.status != xyzzy_Statuses.Stopped)
                 {
                     Roboto.Settings.stats.logStat(new statItem("Games Ended", this.GetType()));
-                    chatData.status = mod_xyzzy_data.statusTypes.Stopped;
+                    chatData.setStatus( xyzzy_Statuses.Stopped);
                     Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
                     TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game.");
                     processed = true;
@@ -336,7 +335,7 @@ namespace Roboto.Modules
                     chatData.addQuestions();
 
                     TelegramAPI.SendMessage(c.chatID, "Added additional cards to the game!");
-                    if (chatData.status == mod_xyzzy_data.statusTypes.Stopped && chatData.players.Count > 1 )
+                    if (chatData.status == xyzzy_Statuses.Stopped && chatData.players.Count > 1 )
                     {
                         Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                         chatData.askQuestion();
@@ -346,7 +345,7 @@ namespace Roboto.Modules
                 }
 
                 //debug question
-                else if (m.text_msg.StartsWith("/xyzzy_question") && chatData.status != mod_xyzzy_data.statusTypes.Stopped)
+                else if (m.text_msg.StartsWith("/xyzzy_question") && chatData.status != xyzzy_Statuses.Stopped)
                 {
                     //TODO - DEBUG ONLY
                     chatData.askQuestion();
@@ -371,6 +370,17 @@ namespace Roboto.Modules
                     TelegramAPI.SendMessage(m.chatID, "Scores have been reset!", false, m.message_id);
                     processed = true;
                 }
+
+                //inflite options
+                else if (m.text_msg.StartsWith("/xyzzy_setTimeout"))
+                {
+                    chatData.askMaxTimeout(m.userID);
+                }
+                else if (m.text_msg.StartsWith("/xyzzy_setThrottle"))
+                {
+                    chatData.askMinTimeout(m.userID);
+                }
+
             }
             //has someone tried to do something unexpected in a private chat?
             else if (m.chatID == m.userID && m.text_msg.StartsWith("/xyzzy_"))
@@ -415,10 +425,25 @@ namespace Roboto.Modules
 
         protected override void backgroundProcessing()
         {
-            //TODO - time people out and stuff.
-            throw new NotImplementedException();
+            mod_xyzzy_coredata localdata = (mod_xyzzy_coredata)getPluginData();
 
-            //todo sync packs where needed
+            //sync packs where needed
+            localdata.packSyncCheck();
+
+            //Handle background processing per chat (Timeouts / Throttle etc..)
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(GetType(), true);
+                if (chatData != null)
+                {
+                    chatData.backgroundChecks();
+                }
+
+            }
+
+            
+
+
         }
 
         public override string getStats()
@@ -428,11 +453,11 @@ namespace Roboto.Modules
 
             foreach (chat c in Roboto.Settings.chatData)
             {
-                mod_xyzzy_data cd = c.getPluginData<mod_xyzzy_data>();
-                if (cd.status != mod_xyzzy_data.statusTypes.Stopped)
+                mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
+                if (chatData.status != xyzzy_Statuses.Stopped)
                 {
                     activeGames++;
-                    activePlayers += cd.players.Count;
+                    activePlayers += chatData.players.Count;
                 }
                 
             }
@@ -447,7 +472,7 @@ namespace Roboto.Modules
         {
             bool processed = false;
             chat c = Roboto.Settings.getChat(e.chatID);
-            mod_xyzzy_data chatData = c.getPluginData<mod_xyzzy_data>();
+            mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
 
             //did one of our outbound messages fail?
             if (messageFailed)
@@ -455,14 +480,14 @@ namespace Roboto.Modules
                 if (e.messageData == "SetGameLength")
                 {
                     TelegramAPI.SendMessage(e.chatID, "I need to be able to send you a direct message. Open up a chat with " + Roboto.Settings.botUserName + " and try again");
-                    chatData.status = mod_xyzzy_data.statusTypes.Stopped;
+                    chatData.setStatus(xyzzy_Statuses.Stopped);
                 }
                 processed = true;
             }
 
 
             //Set up the game, once we get a reply from the user. 
-            if (chatData.status == mod_xyzzy_data.statusTypes.SetGameLength && e.messageData == "SetGameLength")
+            if (chatData.status == xyzzy_Statuses.SetGameLength && e.messageData == "SetGameLength")
             {
                 int questions;
 
@@ -471,7 +496,7 @@ namespace Roboto.Modules
                     chatData.enteredQuestionCount = questions;
                     //next, ask which packs they want:
                     chatData.sendPackFilterMessage(m);
-                    chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
+                    chatData.setStatus(xyzzy_Statuses.setPackFilter);
                 }
                 else
                 {
@@ -481,14 +506,14 @@ namespace Roboto.Modules
             }
 
             //Set up the game filter, once we get a reply from the user. 
-            else if (chatData.status == mod_xyzzy_data.statusTypes.setPackFilter && e.messageData == "setPackFilter")
+            else if (e.messageData == "setPackFilter")
             {
                 //import a cardcast pack
                 if (m.text_msg == "Import CardCast Pack")
                 {
                     TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
                         + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
-                    chatData.status = mod_xyzzy_data.statusTypes.cardCastImport;
+                    chatData.setStatus( xyzzy_Statuses.cardCastImport);
                 }
                 //enable/disable an existing pack
                 else if (m.text_msg != "Continue")
@@ -507,22 +532,20 @@ namespace Roboto.Modules
                     chatData.addQuestions();
                     chatData.addAllAnswers();
 
-                    //tell the player they can start when they want
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
-                    chatData.status = mod_xyzzy_data.statusTypes.Invites;
+                    chatData.askMaxTimeout(m.userID);
                 }
                 processed = true;
             }
 
+            
             //Cardcast importing
-            else if (chatData.status == mod_xyzzy_data.statusTypes.cardCastImport && e.messageData == "cardCastImport")
+            else if (e.messageData == "cardCastImport")
             {
                 if (m.text_msg == "Cancel")
                 {
                     //return to plugins
                     chatData.sendPackFilterMessage(m);
-                    chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
+                    chatData.setStatus(xyzzy_Statuses.setPackFilter);
                 }
                 else
                 {
@@ -537,7 +560,7 @@ namespace Roboto.Modules
                         chatData.setPackFilter(m, pack.name);
                         //return to plugin selection
                         chatData.sendPackFilterMessage(m);
-                        chatData.status = mod_xyzzy_data.statusTypes.setPackFilter;
+                        chatData.setStatus( xyzzy_Statuses.setPackFilter);
                     }
                     else
                     {
@@ -548,8 +571,66 @@ namespace Roboto.Modules
                 processed = true;
             }
 
+            //work out the maxWaitTime (timeout)
+            else if (e.messageData == "setMaxHours")
+            {
+                //try parse
+                bool success = chatData.setMaxTimeout(m.text_msg);
+                if (success && chatData.status == xyzzy_Statuses.setMaxHours ) //could be at another status if being set mid-game
+                {
+                    //move to the throttle
+                    chatData.setStatus(xyzzy_Statuses.setMinHours);
+                    chatData.askMinTimeout(m.userID);
+
+                }
+                else if (success)
+                {
+                    //success, called inflite
+                    TelegramAPI.SendMessage(e.chatID, "Set timeouts to " + (chatData.maxWaitTimeHours == 0 ? "No Timeout" : chatData.maxWaitTimeHours.ToString() + " hours") );
+
+                }
+                else {
+                    //send message, and retry
+                    TelegramAPI.SendMessage(m.userID, "Not a valid value!");
+                    chatData.askMaxTimeout(m.userID);
+                }
+                processed = true;
+            }
+
+            //work out the minWaitTime (throttle)
+            else if (e.messageData == "setMinHours")
+            {
+                //try parse
+                bool success = chatData.setMinTimeout(m.text_msg);
+                if (success && chatData.status == xyzzy_Statuses.setMinHours)//could be at another status if being set mid-game
+                {
+
+                    //Ready to start game - tell the player they can start when they want
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    chatData.setStatus(xyzzy_Statuses.Invites);
+
+                }
+                else if (success)
+                {
+                    //success, called inflite
+                    TelegramAPI.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
+                }
+                
+                else 
+                {
+                    //send message, and retry
+                    TelegramAPI.SendMessage(m.userID, "Not a valid number!");
+                    chatData.askMinTimeout(m.userID);
+                }
+                processed = true;
+            }
+
+            
+
+
             //start the game proper
-            else if (chatData.status == mod_xyzzy_data.statusTypes.Invites && e.messageData == "Invites") 
+            else if (chatData.status == xyzzy_Statuses.Invites && e.messageData == "Invites") 
                 // TBH, dont care what they reply with. Its probably "start" as thats whats on the keyboard, but lets not bother checking, 
                 //as otherwise we would have to do some daft bounds checking 
                 // && m.text_msg == "start")
@@ -567,7 +648,7 @@ namespace Roboto.Modules
             }
 
             //A player answering the question
-            else if (chatData.status == mod_xyzzy_data.statusTypes.Question && e.messageData == "Question")
+            else if (chatData.status == xyzzy_Statuses.Question && e.messageData == "Question")
             {
                 bool answerAccepted = chatData.logAnswer(m.userID, m.text_msg);
                 processed = true;
@@ -583,7 +664,7 @@ namespace Roboto.Modules
             }
 
             //A judges response
-            else if (chatData.status == mod_xyzzy_data.statusTypes.Judging && e.messageData == "Judging" && m != null)
+            else if (chatData.status == xyzzy_Statuses.Judging && e.messageData == "Judging" && m != null)
             {
                 bool success = chatData.judgesResponse(m.text_msg);
 
@@ -642,13 +723,13 @@ namespace Roboto.Modules
             //TODO - how does this differ from INIT ???
             log("Startup Checks");
             //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
-            foreach (mod_xyzzy_card q in localData.questions) { q.category = pack_replacements(q.category); }
-            foreach (mod_xyzzy_card a in localData.answers) { a.category = pack_replacements(a.category); }
+            /*foreach (mod_xyzzy_card q in localData.questions) { q.category = pack_replacements(q.category); }
+            foreach (mod_xyzzy_card a in localData.answers) { a.category = pack_replacements(a.category); }*/
 
             //make sure our OOTB filters exist. Will be deduped afterwards. Messy as it relies on the new dummy pack being added AFTER the existing one, 
             //then keeping oldest pack first during dedupe.
             //TODO Can probably remove this when we have finished migrating everything
-            sampleData();
+            //sampleData();
 
             //make sure our local pack filter list is fully populated & dupe-free
             localData.startupChecks();
@@ -662,9 +743,10 @@ namespace Roboto.Modules
 
 
             //Replace any chat pack filters.
+            /*no longer needed
             foreach (chat c in Roboto.Settings.chatData)
             {
-                mod_xyzzy_data chatData = (mod_xyzzy_data)c.getPluginData(typeof(mod_xyzzy_data));
+                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
                 if (chatData != null)
                 {
                     if (chatData.packFilter.Contains("Base") || chatData.packFilter.Contains(" Base")) { chatData.packFilter.Add("Cards Against Humanity"); }
@@ -688,11 +770,12 @@ namespace Roboto.Modules
                     chatData.check();
                 }
             }
+            */
 
 
         }
 
-        private string pack_replacements(string input)
+        /*private string pack_replacements(string input)
         {
             string result = input;
             switch (input.Trim())
@@ -721,6 +804,6 @@ namespace Roboto.Modules
 
             }
             return result;
-        }
+        }*/
     }
 }

@@ -31,7 +31,7 @@ namespace Roboto.Helpers
         public string name;
         public string packCode;
         public string description;
-        public DateTime lastSynced = DateTime.MinValue;
+        public DateTime nextSync = DateTime.MinValue;
 
         internal cardcast_pack() { }
         public cardcast_pack(string name, string packCode, string description)

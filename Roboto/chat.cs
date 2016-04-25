@@ -91,7 +91,7 @@ namespace Roboto
         }
 
 
-        internal Modules.RobotoModuleChatDataTemplate getPluginData(Type t)
+        internal Modules.RobotoModuleChatDataTemplate getPluginData(Type t, bool supressWarning = false)
         {
             foreach (Modules.RobotoModuleChatDataTemplate existing in chatData)
             {
@@ -100,8 +100,10 @@ namespace Roboto
                     return existing;
                 }
             }
-
-            Console.WriteLine("Couldnt find plugin data of type " + t.ToString());
+            if (!supressWarning)
+            { 
+                Console.WriteLine("Couldnt find plugin data of type " + t.ToString());
+            }
             return null;
         }
 
