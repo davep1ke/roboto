@@ -162,7 +162,7 @@ namespace Roboto.Modules
             chatPriority = 3;
 
             backgroundHook = true;
-            backgroundMins = 10;
+            backgroundMins = 5;
             
         }
 
@@ -433,7 +433,7 @@ namespace Roboto.Modules
             //Handle background processing per chat (Timeouts / Throttle etc..)
             foreach (chat c in Roboto.Settings.chatData)
             {
-                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(GetType(), true);
+                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
                 if (chatData != null)
                 {
                     chatData.backgroundChecks();
@@ -487,7 +487,7 @@ namespace Roboto.Modules
 
 
             //Set up the game, once we get a reply from the user. 
-            if (chatData.status == xyzzy_Statuses.SetGameLength && e.messageData == "SetGameLength")
+            if (e.messageData == "SetGameLength")
             {
                 int questions;
 

@@ -454,7 +454,7 @@ namespace Roboto.Modules
                 List<string> responses = new List<string>();
                 string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
                     "Question: " + q.text + "\n\r" + "\n\r";
-                string missingRepliestxt = "The following replies were missing: ";
+                string missingRepliestxt = "Skipped these chumps: ";
                 bool missingReplies = false;
                 foreach (mod_xyzzy_player p in players)
                 {
@@ -477,7 +477,6 @@ namespace Roboto.Modules
                             missingReplies = true;
                             missingRepliestxt += "\n\r" + " - " + p.name;
                         }
-
                     }
                 }
                 responses.Sort(); //sort so that player order isnt same each time.
@@ -507,8 +506,8 @@ namespace Roboto.Modules
         {
             //Timeout Reminders
             //workout the time at which we should send reminders
-            DateTime reminderTime = statusChangedTime.AddMinutes((minWaitTimeHours * 60) * .75);
-            DateTime abandonTime = statusChangedTime.AddHours(minWaitTimeHours);
+            DateTime reminderTime = statusChangedTime.AddMinutes((maxWaitTimeHours * 60) * .75);
+            DateTime abandonTime = statusChangedTime.AddHours(maxWaitTimeHours);
 
             //timeouts, if we have questions outstanding
             if (status == xyzzy_Statuses.Question && remindersSent == false && DateTime.Now > reminderTime  )
@@ -546,12 +545,27 @@ namespace Roboto.Modules
             
             else if (status == xyzzy_Statuses.Question && DateTime.Now > abandonTime)
             {
+                List<mod_xyzzy_player> outstanding = outstandingResponses(); ;
+                string outstandingPlayers = "";
+                int i = 0;
+                foreach (mod_xyzzy_player p in outstanding)
+                {
+                    i++;
+                    //first
+                    if (i==1) { outstandingPlayers = p.ToString(); }
+                    //last
+                    else if (i == outstanding.Count()) { outstandingPlayers += " and " + p.ToString(); }
+                    //middle
+                    else { outstandingPlayers += ", " + p.ToString(); }
+                }
+                TelegramAPI.SendMessage(chatID, outstandingPlayers + " can suck it for not answering in time:");
+                
                 log("Skipping to judging for chat" + chatID);
                 beginJudging();
             }
 
             //if we are in judging
-            if (status == xyzzy_Statuses.Judging && remindersSent == false && DateTime.Now > reminderTime)
+            else if (status == xyzzy_Statuses.Judging && remindersSent == false && DateTime.Now > reminderTime)
             {
                 log("Sending judge reminder for chat " + chatID);
 
@@ -572,7 +586,7 @@ namespace Roboto.Modules
         }
 
         /// <summary>
-        /// Gets the status of the currnet game
+        /// Gets the status of the current game
         /// </summary>
         public void getStatus()
         {
@@ -590,7 +604,17 @@ namespace Roboto.Modules
                     response += " with "
                         + remainingQuestions.Count.ToString() + " questions remaining"
                         //                            + chatData.remainingAnswers.Count.ToString() + " answers in the pack. "
-                        + ". Say /xyzzy_join to join. The following players are currently playing: \n\r";
+                        + ". Say /xyzzy_join to join.";
+                    if (maxWaitTimeHours != 0) {
+                        TimeSpan remainingTime = statusChangedTime.AddHours(maxWaitTimeHours).Subtract(DateTime.Now);
+                        response += " There are " +
+                            (remainingTime.Days > 0 ? remainingTime.Days + " days " : "") +
+                            (remainingTime.Hours > 0 ? remainingTime.Hours + " hours " : "" ) +
+                            (remainingTime.Minutes > 0 ? remainingTime.Minutes + " minutes " : "" ) +
+                            " left to answer!";
+                    }
+
+                    response += "The following players are currently playing: \n\r";
                     //order the list of players
                     List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
 
@@ -637,6 +661,8 @@ namespace Roboto.Modules
                     case xyzzy_Statuses.Invites:
                     case xyzzy_Statuses.SetGameLength:
                     case xyzzy_Statuses.setPackFilter:
+                    case xyzzy_Statuses.setMaxHours:
+                    case xyzzy_Statuses.setMinHours:
                         response += "\n\r" + players[0].name + " is currently setting the game up - type /xyzzy_join to join in!";
 
                         break;
