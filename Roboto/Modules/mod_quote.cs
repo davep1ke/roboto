@@ -384,7 +384,7 @@ namespace Roboto.Modules
                 }
                 else
                 {
-                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.message_id, true);
+                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.message_id, true, "", false,false,true);
                 }
                 return true;
             }

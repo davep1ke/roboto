@@ -153,6 +153,7 @@
   <ItemGroup>
     <Compile Include="chat.cs" />
     <Compile Include="Helpers\cardCast.cs" />
+    <Compile Include="Helpers\common.cs" />
     <Compile Include="logging.cs" />
     <Compile Include="Modules\ModuleCode\mod_steam_steamapi.cs" />
     <Compile Include="Modules\ModuleStorage\mod_xyzzy_coredata.cs" />

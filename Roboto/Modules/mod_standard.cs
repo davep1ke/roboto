@@ -15,6 +15,30 @@ namespace Roboto.Modules
 
     }
 
+    [XmlType("mod_standard_chatdata")]
+    [Serializable]
+    public class mod_standard_chatdata : RobotoModuleChatDataTemplate
+    {
+        //Timespan won't serialise, so need to use a backing "long" to store the actual value. 
+        public long x_quietHoursStartTime = TimeSpan.MinValue.Ticks;
+        public long x_quietHoursEndTime = TimeSpan.MinValue.Ticks;
+
+        [XmlIgnore]
+        public TimeSpan quietHoursStartTime
+        {
+            get { return new TimeSpan(x_quietHoursStartTime); }
+            set { x_quietHoursStartTime = value.Ticks; }
+
+        }
+        [XmlIgnore]
+        public TimeSpan quietHoursEndTime
+        {
+            get { return new TimeSpan(x_quietHoursEndTime); }
+            set { x_quietHoursEndTime = value.Ticks; }
+        }
+
+    }
+
     public class mod_standard : RobotoModuleTemplate
     {
         private mod_standard_data localData;
@@ -30,6 +54,7 @@ namespace Roboto.Modules
 
 
             pluginDataType = typeof(mod_standard_data);
+            pluginChatDataType = typeof(mod_standard_chatdata);
 
             backgroundHook = true;
             backgroundMins = 30;
@@ -53,6 +78,18 @@ namespace Roboto.Modules
             }
         }
 
+        public override void initChatData(chat c)
+        {
+            mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
+
+            if (chatData == null)
+            {
+                //Data doesnt exist, create, populate with sample data and register for saving
+                chatData = new mod_standard_chatdata();
+                c.addChatData(chatData);
+            }
+        }
+
         public override string getMethodDescriptions()
         {
             return
@@ -60,7 +97,8 @@ namespace Roboto.Modules
                 "start - Starts listening to the chat" + "\n\r" +
                 "stop - Stops listening to the chat, until a START is entered." + "\n\r" +
                 "save - Saves any outstanding in memory stuff to disk." + "\n\r" +
-                "stats - Returns an overview of the currently loaded plugins.";
+                "stats - Returns an overview of the currently loaded plugins." + "\n\r" +
+                "setQuietHours - Sets quiet hours for the chat."
                 ;
         }
 
@@ -80,6 +118,7 @@ namespace Roboto.Modules
         protected override void backgroundProcessing()
         {
             Roboto.Settings.stats.houseKeeping();
+            Roboto.Settings.expectedReplyBackgroundProcessing();
 
         }
 
@@ -97,17 +136,26 @@ namespace Roboto.Modules
             {
                 Roboto.Settings.save();
                 TelegramAPI.SendMessage(m.chatID, "Saved settings");
+                processed = true;
             }
             else if (m.text_msg.StartsWith("/stop") && c != null)
             {
                 c.muted = true;
                 TelegramAPI.SendMessage(m.chatID, "OK, I am now ignoring all messages in this chat until I get a /start command. ");
+                processed = true;
             }
             else if (m.text_msg.StartsWith("/start") && c != null && c.muted == true)
             {
                 c.muted = false;
                 TelegramAPI.SendMessage(m.chatID, "I am back. Type /help for a list of commands.");
+                processed = true;
             }
+            else if (m.text_msg.StartsWith("/setQuietHours"))
+            {
+                TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours");
+                processed = true;
+            }
+
             else if (m.text_msg.StartsWith("/stats"))
             {
                 TimeSpan uptime = DateTime.Now.Subtract(Roboto.startTime);
@@ -124,6 +172,7 @@ namespace Roboto.Modules
                 }
 
                 TelegramAPI.SendMessage(m.chatID, statstxt, true);
+                processed = true;
             }
             else if (m.text_msg.StartsWith("/statgraph"))
             {
@@ -149,17 +198,93 @@ namespace Roboto.Modules
                 {
                     TelegramAPI.SendMessage(m.chatID, "No statistics were found that matched your input, sorry!");
                 }
+                processed = true;
 
-
-                //TODO - or get a keyboard
+                //TODO - keyboard for stats?
             }
-                //TODO - start, stop listening to chat. 
-
 
                 return processed;
         }
 
-               
+
+        public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
+        {
+            chat c = Roboto.Settings.getChat(e.chatID);
+            mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
+
+            if (e.messageData == "setQuietHours")
+            {
+                if (m.text_msg.ToLower() == "cancel")
+                {
+                    //dont need to do anything else
+                }
+                else if (m.text_msg.ToLower() == "disable")
+                {
+                    chatData.quietHoursEndTime = TimeSpan.MinValue;
+                    chatData.quietHoursStartTime = TimeSpan.MinValue;
+                    TelegramAPI.SendMessage(e.chatID, "Quiet hours have been disabled");
+                }
+                else
+                {
+                    //try parse it 
+                    TimeSpan s;
+                    bool success = TimeSpan.TryParse(m.text_msg, out s);
+                    if (success && s > TimeSpan.Zero && s.TotalDays < 1)
+                    {
+                        chatData.quietHoursStartTime = s;
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the wake time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setWakeHours", -1, false, "", false, false, true);
+                    }
+                    else
+                    {
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", -1, false, "", false, false, true);
+                    }
+
+
+                }
+                return true;
+
+            }
+            else if (e.messageData == "setWakeHours")
+            {
+                if (m.text_msg.ToLower() == "cancel")
+                {
+                    //dont need to do anything else
+                }
+                else if (m.text_msg.ToLower() == "disable")
+                {
+                    chatData.quietHoursEndTime = TimeSpan.MinValue;
+                    chatData.quietHoursStartTime = TimeSpan.MinValue;
+                    TelegramAPI.SendMessage(e.chatID, "Quiet hours have been disabled");
+                }
+                else
+                {
+                    //try parse it 
+                    TimeSpan s;
+                    bool success = TimeSpan.TryParse(m.text_msg, out s);
+                    if (success && s > TimeSpan.Zero && s.TotalDays < 1)
+                    {
+                        chatData.quietHoursEndTime = s;
+                        TelegramAPI.SendMessage(e.chatID, "Quiet time set from " + chatData.quietHoursStartTime.ToString("c") + " to " + chatData.quietHoursEndTime.ToString("c"));   
+                    }
+                    else
+                    {
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", -1, false, "", false, false, true);
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        public static void getQuietTimes (long chatID, out TimeSpan startQuietHours, out TimeSpan endQuietHours )
+        {
+            chat c = Roboto.Settings.getChat(chatID);
+            mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
+
+            startQuietHours = chatData.quietHoursStartTime;
+            endQuietHours = chatData.quietHoursEndTime;
+            
+        }
         
     }
 }

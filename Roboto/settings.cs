@@ -22,6 +22,7 @@ namespace Roboto
         public int rotateLogsEveryXHours = 6;
         public int killInactiveChatsAfterXDays = 30;
         public int purgeInactiveChatsAfterXDays = 100;
+        public int chatPresenceExpiresAfterHours = 96;
 
         //module list. Static, as dont want to serialise the plugins, just the data.
         public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>();
@@ -46,6 +47,7 @@ namespace Roboto
 
         //list of expected replies
         public List<ExpectedReply> expectedReplies = new List<ExpectedReply>();
+        public List<chatPresence> RecentChatMembers = new List<chatPresence>();
 
         //is this the first time the settings file has been initialised?
         public bool isFirstTimeInitialised = false;
@@ -209,7 +211,7 @@ namespace Roboto
         }
 
         /// <summary>
-        /// Does the user have any outstanding expected Replies?
+        /// Does the user have any outstanding (queued) expected Replies?
         /// </summary>
         /// <param name="playerID"></param>
         /// <returns></returns>
@@ -223,23 +225,99 @@ namespace Roboto
         }
 
         /// <summary>
+        /// Does the user have any outstanding (asked) expected Replies?
+        /// </summary>
+        /// <param name="playerID"></param>
+        /// <returns></returns>
+        public bool userHasOutstandingQuestions(long playerID)
+        {
+            foreach (ExpectedReply e in expectedReplies)
+            {
+                if (e.userID == playerID && e.isSent()) { return true; }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Mark someone as having participated in a chat in some way. Used for determining wether to stamp outgoing messages or not. 
+        /// </summary>
+        /// <param name="userID"></param>
+        /// <param name="chatID"></param>
+        public void markPresence(long userID, long chatID)
+        {
+            foreach (chatPresence p in RecentChatMembers)
+            {
+                if (p.userID == userID && p.chatID == chatID) { p.touch(); return; }
+            }
+            RecentChatMembers.Add(new chatPresence(userID, chatID));
+        }
+
+        /// <summary>
+        /// Gets a list of the chats that the user has been active in recently
+        /// </summary>
+        /// <param name="userID"></param>
+        /// <returns></returns>
+        public List<chatPresence> getChatPresence(long userID)
+        {
+            return RecentChatMembers.Where(x => x.userID == userID).ToList();
+
+        }
+
+        /// <summary>
         /// Add a new expected reply to the stack. Should be called internally only - New messages should be sent via TelegramAPI.GetExpectedReply
         /// </summary>
         /// <param name="e"></param>
-        /// <returns></returns>
-        public long newExpectedReply(ExpectedReply e)
+        /// <param name="trySendImmediately">Try and send the message immediately, assuming nothing is outstanding. Will jump the queue, but not override any existing messages</param>
+        /// <returns>An integer specifying the message id. -1 indicates it is queueed, long.MinValue indicates a failure</returns>
+        public long newExpectedReply(ExpectedReply e, bool trySendImmediately)
         {
-            //check if we can send it? Get the messageID back
-            long messageID = -1;
-            if (!userHasOutstandingMessages(e.userID))
+            //flag the user as present in the chat
+            if (e.isPrivateMessage)
             {
-                //send the message, grab the ID. 
-                messageID = e.sendMessage();
+                markPresence(e.userID, e.chatID);
             }
 
-            //either way, chuck it on the stack
-            expectedReplies.Add(e);
-            
+            //check if we can send it? Get the messageID back
+            long messageID = -1;
+            //is this a message to a group? 
+            if (!e.isPrivateMessage)
+            {
+                //send, dont queue.
+                messageID = e.sendMessage();
+            }
+            //this is a PM. Does the user have anything in the queue?                
+            else if (!userHasOutstandingMessages(e.userID))
+            {
+                //send the message.  
+                messageID = e.sendMessage();
+                //queue if it was a question
+                if (e.expectsReply) { expectedReplies.Add(e); }
+            }
+            //If they have messages in the queue, and we want to jump ahead, has one already been asked, or are we open? 
+            else if (trySendImmediately && !userHasOutstandingQuestions(e.userID))
+            {
+                Roboto.log.log("Message jumping queue due to immediatemode", logging.loglevel.verbose);
+                //send the message, grab the ID. 
+                messageID = e.sendMessage();
+                //did it work/
+                if (messageID == long.MinValue)
+                {
+                    Roboto.log.log("Tried to send message using immediateMode, but it failed.", logging.loglevel.warn);
+                    return messageID;
+                }
+
+                //queue if it was a question
+                else if (e.expectsReply) { expectedReplies.Add(e); }
+            }
+            else
+            {
+                //chuck it on the stack if its going to be queued
+                expectedReplies.Add(e);
+            }
+
+            //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
+            expectedReplyHousekeeping();
+
             return messageID;
 
         }
@@ -282,6 +360,18 @@ namespace Roboto
             return customTypes.ToArray();
         }
 
+
+        /// <summary>
+        /// Do a healthcheck, and archive any old presence data
+        /// </summary>
+        public void expectedReplyBackgroundProcessing()
+        {
+
+            RecentChatMembers.RemoveAll(x => x.lastSeen < DateTime.Now.Subtract(new TimeSpan(chatPresenceExpiresAfterHours, 0, 0)));
+
+            expectedReplyHousekeeping();
+        }
+
         /// <summary>
         /// Make sure any reply processing is being done
         /// </summary>
@@ -291,33 +381,73 @@ namespace Roboto
             //List<int> userIDs = new List<int>();
             //foreach (ExpectedReply e in expectedReplies) { userIDs.Add(e.userID); }
             //userIDs = (List<int>)userIDs.Distinct<int>();
-            List<long> userIDs = expectedReplies.Select(e => e.userID).Distinct().ToList<long>();
-            
-            foreach (long userID in userIDs)
+            try
             {
-                List<ExpectedReply> userReplies = expectedReplies.Where(e => e.userID == userID).ToList();
-                
-                //for each user, check if a message has been sent, and track the oldest message
-                ExpectedReply oldest = null;
-                bool sent = false;
-                foreach (ExpectedReply e in userReplies)
+                List<long> userIDs = expectedReplies.Select(e => e.userID).Distinct().ToList<long>();
+
+                //remove any invalid messages
+                List<ExpectedReply> messagesToRemove = expectedReplies.Where(e => e.outboundMessageID > 0 && e.expectsReply == false).ToList();
+                if (messagesToRemove.Count > 0)
                 {
-                    if (e.isSent()) { sent = true; }
-                    else
+                    Roboto.log.log("Removing " + messagesToRemove.Count() + " messages from queue as they are sent and dont require a reply", logging.loglevel.warn) ;
+                }
+                foreach (ExpectedReply e in messagesToRemove)
+                {
+                    expectedReplies.Remove(e);
+                }
+                
+
+
+                foreach (long userID in userIDs)
+                {
+                    
+
+
+                    bool retry = true;
+                    while (retry)
                     {
-                        if (oldest == null || e.timeLogged < oldest.timeLogged )
+                        //for each user, check if a message has been sent, and track the oldest message
+                        ExpectedReply oldest = null;
+                        List<ExpectedReply> userReplies = expectedReplies.Where(e => e.userID == userID).ToList();
+
+                        //try find a message to send. Drop out if we already have a sent message on the stack (waiting for a reply)
+                        bool sent = false;
+                        foreach (ExpectedReply e in userReplies)
                         {
-                            oldest = e;
+                            if (e.isSent()) { sent = true; } //message is waiting
+                            else
+                            {
+                                if (oldest == null || e.timeLogged < oldest.timeLogged)
+                                {
+                                    oldest = e;
+                                }
+                            }
                         }
+
+                        //send the message if neccessary
+                        if (!sent && oldest != null)
+                        {
+                            oldest.sendMessage();
+                            if (!oldest.expectsReply)
+                            {
+                                expectedReplies.Remove(oldest);
+
+                            }
+                            //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
+                            
+                        }
+
+                        //what do we do next? 
+                        if (sent == true) { retry = false; } // drop out if we have a message awaiting an answer
+                        else if (oldest == null) { retry = false; } // drop out if we have no messages to send
+                        else if (oldest.expectsReply) { retry = false; } //drop out if we sent a message that expects a reply
+
                     }
                 }
-
-                //send the message if neccessary
-                if (!sent && oldest != null)
-                {
-                    oldest.sendMessage();
-                }
-
+            }
+            catch (Exception e)
+            {
+                Roboto.log.log("Error during expected reply housekeeping " + e.ToString(), logging.loglevel.critical);
             }
             
         }
@@ -356,46 +486,58 @@ namespace Roboto
             bool processed = false;
             Modules.RobotoModuleTemplate pluginToCall = null;
             ExpectedReply er = null;
-            foreach (ExpectedReply e in expectedReplies)
+            try
             {
-                //we are looking for direct messages from the user where c_id = m_id, OR reply messages where m_id = reply_id
-                //could trigger twice if we fucked something up - dont think this is an issue but checking processed flag for safety
-                if (!processed && e.isSent() && m.userID == e.userID)
+                foreach (ExpectedReply e in expectedReplies)
                 {
-                    if (m.chatID == e.userID || m.replyMessageID == e.outboundMessageID)
+                    //we are looking for direct messages from the user where c_id = m_id, OR reply messages where m_id = reply_id
+                    //could trigger twice if we fucked something up - dont think this is an issue but checking processed flag for safety
+                    if (!processed && e.isSent() && m.userID == e.userID)
                     {
-                        processed = true;
-                        //find the plugin, send the expectedreply to it
-                        foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
+                        if (m.chatID == e.userID || m.replyMessageID == e.outboundMessageID)
                         {
-                            if (e.isOfType(plugin.GetType()))
+                            //find the plugin, send the expectedreply to it
+                            foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
                             {
-                                //stash these for calling outside of the "foreach" loop. This is so we can be sure it is called ONCE only, and so that we can remove
-                                //the expected reply before calling the method, so any post-processing works smoother.
-                                pluginToCall = plugin;
-                                er = e;
+                                if (e.isOfType(plugin.GetType()))
+                                {
+                                    //stash these for calling outside of the "foreach" loop. This is so we can be sure it is called ONCE only, and so that we can remove
+                                    //the expected reply before calling the method, so any post-processing works smoother.
+                                    pluginToCall = plugin;
+                                    er = e;
+                                }
                             }
+                            processed = true;
                         }
                     }
                 }
             }
-
+            catch (Exception e)
+            {
+                Roboto.log.log("Error matching incoming message to plugin - " + e.ToString(), logging.loglevel.critical);
+            }
             
 
             if (processed)
             {
                 expectedReplies.Remove(er);
                 //now send it to the plugin (remove first, so any checks can be done)
-                bool pluginProcessed = pluginToCall.replyReceived(er, m);
-
-                if (!pluginProcessed)
+                try
                 {
-                    throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
-                        
+                    bool pluginProcessed = pluginToCall.replyReceived(er, m);
+
+                    if (!pluginProcessed)
+                    {
+                        throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
+
+                    }
+                }
+                catch (Exception e)
+                {
+                    Roboto.log.log("Error calling plugin " + pluginToCall.GetType().ToString() + " with expected reply. " + e.ToString(), logging.loglevel.critical);
                 }
 
-
-                //are there any more messages for the user? If so, find & send
+                /*/are there any more messages for the user? If so, find & send
                 ExpectedReply messageToSend = null;
                 foreach (ExpectedReply e in expectedReplies)
                 {
@@ -410,10 +552,15 @@ namespace Roboto
                 }
 
                 //send it
+                //note that the plugin might send an urgent message during this processing that may have jumped the queue (using trySendImmediate param)
                 if ( !userHasOutstandingMessages(m.userID) && messageToSend != null)
                 {
                     messageToSend.sendMessage();
+                    //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
+                    expectedReplyHousekeeping();
                 }
+                */
+                expectedReplyHousekeeping();
                 
             }
             return processed;   
@@ -603,12 +750,12 @@ namespace Roboto
         /// Add data about a chat to the store. 
         /// </summary>
         /// <param name="chat_id"></param>
-        public chat addChat(long chat_id)
+        public chat addChat(long chat_id, string chatTitle)
         {
             if (getChat(chat_id) == null)
             {
                 Console.WriteLine("Creating data for chat " + chat_id.ToString());
-                chat chatObj = new chat(chat_id);
+                chat chatObj = new chat(chat_id, chatTitle);
                 chatData.Add(chatObj);
                 return chatObj;
             }
@@ -620,4 +767,21 @@ namespace Roboto
 
     }
 
+    /// <summary>
+    /// Represents a user being part of a chat. Expires after a while. 
+    /// </summary>
+    public class chatPresence
+    {
+        public long userID;
+        public long chatID;
+        public DateTime lastSeen = DateTime.Now;
+
+        internal chatPresence() { }
+        public chatPresence(long userID, long chatID)
+        {
+            this.userID = userID;
+            this.chatID = chatID;
+        }
+        public void touch() { lastSeen = DateTime.Now; }
+    }
 }

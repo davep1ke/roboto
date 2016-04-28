@@ -90,13 +90,20 @@ namespace Roboto
 
             if (debugTrigger)
             {
-                while (true)
+                /*while (true)
                 {
                     Stream image = Settings.stats.generateImage(new List<string>() { "Roboto.TelegramAPI>Incoming Msgs", "Roboto.Roboto>Startup" });
                     //TelegramAPI.SendMessage(120498152, "Sending image...");
                     TelegramAPI.SendPhoto(120498152,"Stats", image, "StatsGraph.jpg", "application/octet-stream", - 1,false );
                     Thread.Sleep(15000);
-                }
+                }*/
+
+                Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(5, 0, 0), new TimeSpan(12, 0, 0), new TimeSpan(5, 0, 0, 0));
+                Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(12, 0, 0), new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0, 0));
+                Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0), new TimeSpan(5, 0, 0, 0));
+
+                if (1 == 1) { }
+
             }
 
             if (!Settings.isFirstTimeInitialised)
@@ -211,21 +218,25 @@ namespace Roboto
                                         //is this for a group chat?
                                         
                                         long chatID = update_TK.SelectToken("chat.id").Value<long>();
+                                        
                                         chat chatData = null;
                                         if (chatID < 0)
                                         {
                                             //find the chat 
                                             chatData = Settings.getChat(chatID);
+                                            string chatTitle = update_TK.SelectToken("chat.title").Value<string>();
                                             //new chat, add
                                             if (chatData == null)
                                             {
-                                                chatData = Settings.addChat(chatID);
+                                                chatData = Settings.addChat(chatID, chatTitle);
                                             }
                                             if (chatData == null)
                                             {
                                                 throw new DataMisalignedException("Something went wrong creating the new chat data");
                                             }
+                                            chatData.setTitle(chatTitle);
                                         }
+                                       
 
 
                                         //Do we have an incoming message?

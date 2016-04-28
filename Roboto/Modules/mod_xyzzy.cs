@@ -271,13 +271,23 @@ namespace Roboto.Modules
                     try
                     {
                         i = TelegramAPI.SendMessage(m.userID, "You joined the xyzzy game in " + m.chatName);
-                        if (i == -1) { throw new Exception("Couldn't send join confirmation message"); }
+                        if (i == -1)
+                        {
+                            TelegramAPI.SendMessage(m.chatID, "Sent " + m.userFullName + " a message, but I'm waiting for him to reply to another question. "
+                                + m.userFullName + " is in, but will need to clear their PMs before they see any questions. ", false, m.message_id);
+
+                        }
+                        else if (i == long.MinValue)
+                        {
+                            TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
+                               + m.userFullName + " probably needs to open a chat session with me. "
+                               + "Create a message session, then try /xyzzy_join again. Asshole.", false, m.message_id);
+                        }
+
                     }
                     catch
                     {
-                        TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
-                            + m.userFullName + " probably needs to open a chat session with me. "
-                            + "Create a message session, then try /xyzzy_join again. Asshole.", false, m.message_id);
+                        
                     }
 
                     if (i != -1)
@@ -533,6 +543,7 @@ namespace Roboto.Modules
                     chatData.addAllAnswers();
 
                     chatData.askMaxTimeout(m.userID);
+                    chatData.setStatus(xyzzy_Statuses.setMaxHours);
                 }
                 processed = true;
             }
@@ -635,7 +646,12 @@ namespace Roboto.Modules
                 //as otherwise we would have to do some daft bounds checking 
                 // && m.text_msg == "start")
             {
-                if (chatData.players.Count > 1)
+                if (m.text_msg == "cancel")
+                {
+                    //allow player to cancel, otherwise the message just keeps coming back. 
+                    chatData.setStatus(xyzzy_Statuses.Stopped);
+                } 
+                else if (chatData.players.Count > 1)
                 {
                     chatData.askQuestion();
                 }

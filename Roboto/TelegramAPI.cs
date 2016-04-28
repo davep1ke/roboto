@@ -22,122 +22,38 @@ namespace Roboto
         /// <summary>
         /// Send a message. Returns the ID of the send message
         /// </summary>
-        /// <param name="chatID"></param>
+        /// <param name="chatID">User or Chat ID</param>
         /// <param name="text"></param>
         /// <param name="markDown"></param>
         /// <param name="replyToMessageID"></param>
-        /// <returns></returns>
-        public static long SendMessage(long chatID, string text, bool markDown = false, long replyToMessageID = -1, bool clearKeyboard = false)
+        /// <returns>An integer specifying the message id. -1 indicates it is queueed, int.MinValue indicates a failure</returns>
+        public static long SendMessage(long chatID, string text, bool markDown = false, long replyToMessageID = -1, bool clearKeyboard = false, bool trySendImmediately = false)
         {
-            Roboto.Settings.stats.logStat(new statItem("Outgoing Msgs", typeof(TelegramAPI)));
             
-            string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage";
-
-            var pairs = new NameValueCollection();
-            try
-            {
-                pairs["chat_id"] = chatID.ToString();
-
-                if (text.Length > 1950) { text = text.Substring(0, 1950); }
-                pairs["text"] = text;
-
-                if (replyToMessageID != -1) { pairs["reply_to_message_id"] = replyToMessageID.ToString(); }
-                if (markDown) { pairs["parse_mode"] = "Markdown"; }
-                if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
-            }
-            catch (Exception e)
-            {
-                Roboto.log.log("Couldnt assemble message!" + e.ToString(), logging.loglevel.critical);
-                return -1;
-            }
-            try
-            {
-                JObject response = sendPOST(postURL, pairs).Result;
-
-
-                if (response != null)
-                {
-                    JToken response_token = response.SelectToken("result");
-                    if (response_token != null)
-                    {
-                        JToken messageID_token = response.SelectToken("result.message_id");
-                        if (messageID_token != null)
-                        {
-                            int messageID = messageID_token.Value<int>();
-                            return messageID;
-                        }
-                        else { Roboto.log.log("MessageID Token was null.", logging.loglevel.high); }
-                    }
-                    else { Roboto.log.log("Response Token was null.", logging.loglevel.high); }
-                }
-                else { Roboto.log.log("Response was null.", logging.loglevel.high); }
-
-            }
-            catch (WebException e)
-            {
-                //log it and carry on
-                Roboto.log.log("Couldnt send message " + text + "to " + chatID + "! " + e.ToString(), logging.loglevel.critical);
-            }
-            catch (Exception e)
-            {
-                //log it and carry on
-                Roboto.log.log("Exception sending message " + text + "to " + chatID + "! " + e.ToString(), logging.loglevel.critical);
-            }
-
-
-            return -1;
+            bool isPM = (chatID < 0 ? false : true);
+            ExpectedReply e = new ExpectedReply(chatID, chatID, text, isPM , null, null, replyToMessageID, false, "", markDown, clearKeyboard, false);
             
+            //add the message to the stack. If it is sent, get the messageID back.
+            long messageID = Roboto.Settings.newExpectedReply(e, trySendImmediately);
+            return messageID;
+
         }
+        
 
         /// <summary>
-        /// Send a message, which we are expecting a reply to.
+        /// 
         /// </summary>
         /// <param name="chatID"></param>
-        /// <param name="text"></param>
+        /// <param name="caption"></param>
+        /// <param name="image"></param>
+        /// <param name="fileName"></param>
+        /// <param name="fileContentType"></param>
         /// <param name="replyToMessageID"></param>
-        /// <param name="selective"></param>
-        /// <param name="answerKeyboard"></param>
+        /// <param name="clearKeyboard"></param>
         /// <returns></returns>
-        [Obsolete ("Should call GetExpectedReply which will track responses properly")]
-        public static long GetReply(long chatID, string text, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
-        {
-            Roboto.Settings.stats.logStat(new statItem("Outgoing Msgs", typeof(TelegramAPI)));
-            string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage";
-
-            var pairs = new NameValueCollection();
-            pairs.Add("chat_id", chatID.ToString());
-            pairs.Add("text", text);
-
-            if (answerKeyboard == "")
-            {
-                pairs.Add("reply_markup","{\"force_reply\":true,\"selective\":" + selective.ToString().ToLower() + "}");
-            }
-            else
-            {
-                pairs.Add("reply_markup" ,"{" + answerKeyboard + "}");
-            }
-
-
-            if (replyToMessageID != -1) { pairs.Add("reply_to_message_id", replyToMessageID.ToString()); }
-            
-            try
-            {
-                JObject response = sendPOST(postURL,pairs).Result;
-                int messageID = response.SelectToken("result.message_id").Value<int>();
-                return messageID;
-            }
-            catch (WebException e)
-            {
-                Console.WriteLine("Couldnt send message to " + chatID.ToString() + " because " + e.ToString());
-                return -1;
-
-            }
-        }
-
-
-
         public static long SendPhoto(long chatID, string caption, Stream image, string fileName, string fileContentType, long replyToMessageID, bool clearKeyboard)
         {
+            //TODO - should be cached in the expectedReply object first. 
             Roboto.Settings.stats.logStat(new statItem("Outgoing Msgs", typeof(TelegramAPI)));
 
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendPhoto";
@@ -164,7 +80,7 @@ namespace Roboto
 
             return -1;
 
-
+            
         }
 
         /// <summary>
@@ -175,44 +91,75 @@ namespace Roboto
         /// <param name="replyToMessageID"></param>
         /// <param name="selective"></param>
         /// <param name="answerKeyboard"></param>
-        /// <returns></returns>
-        public static long GetExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "")
+        /// <returns>An integer specifying the message id. -1 indicates it is queueed, long.MinValue indicates a failure</returns>
+        public static long GetExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "", bool useMarkdown = false, bool clearKeyboard = false, bool trySendImmediately = false)
         {
-            ExpectedReply e = new ExpectedReply(chatID, userID, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard );
+            ExpectedReply e = new ExpectedReply(chatID, userID, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard, useMarkdown, clearKeyboard, true );
        
             //add the message to the stack. If it is sent, get the messageID back.
-            long messageID = Roboto.Settings.newExpectedReply(e);
+            long messageID = Roboto.Settings.newExpectedReply(e, trySendImmediately);
             return messageID;
-
         }
 
+        
+
         /// <summary>
-        /// Send the message in the expected reply. Should only be called from the expectedReply Class.
+        /// Send the message in the expected reply. Should only be called from the expectedReply Class. May or may not expect a reply. 
         /// </summary>
         /// <param name="e"></param>
-        public static int postExpectedReplyToPlayer(ExpectedReply e)
-        { 
+        /// <returns>A long specifying the message id. long.MinValue indicates a failure</returns>
+        public static long postExpectedReplyToPlayer(ExpectedReply e)
+        {
+
+            Roboto.Settings.stats.logStat(new statItem("Outgoing Msgs", typeof(TelegramAPI)));
 
             string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendMessage";
 
+            //assemble collection of name/value data
             var pairs = new NameValueCollection();
             string chatID = e.isPrivateMessage ? e.userID.ToString() : e.chatID.ToString(); //send to chat or privately
             try
             {
-                
                 pairs.Add("chat_id", chatID);
+                if (e.text.Length > 1950) { e.text = e.text.Substring(0, 1950); }
+
+
+                //check if the user has participated in multiple chats recently, so we can stamp the message with the current chat title. 
+                //only do this where the message relates to a chat. The chat ID shouldnt = the user id if this is the case. 
+                if (e.isPrivateMessage && e.chatID != e.userID && e.chatID < 0)
+                {
+                    int nrChats = Roboto.Settings.getChatPresence(e.userID).Count();
+                    if (nrChats > 1)
+                    {
+                        //get the current chat;
+                        chat c = Roboto.Settings.getChat(e.chatID);
+                        if (c == null)
+                        {
+                            Roboto.log.log("Couldnt find chat for " + e.chatID + " - did you use the userID accidentally?", logging.loglevel.high);
+                        }
+                        else
+                        {
+                            if (e.markDown && c.chatTitle != null) { e.text = "*" + c.chatTitle + "* :" + "\r\n" + e.text; }
+                            else { e.text = "=>" + c.chatTitle + "\r\n" + e.text; }
+                        }
+                    }
+                }
                 pairs.Add("text", e.text);
+
+                if (e.markDown) { pairs["parse_mode"] = "Markdown"; }
+
             }
             catch (Exception ex)
             {
-                //if we failed to attach, it probably wasnt important!
-                Roboto.log.log("Error assembling message!. " + ex.ToString(), logging.loglevel.high);
+                Roboto.log.log("Error assembling message!. " + ex.ToString(), logging.loglevel.critical);
             }
             try //TODO - cant see how this is erroring here. Added try/catch to try debug it.
             {
-                if (e.keyboard == null || e.keyboard == "")
+                //force a reply if we expect one, and the keyboard is empty
+                if (e.expectsReply && (e.keyboard == null || e.keyboard == ""))
+
                 {
-                    bool forceReply = !e.isPrivateMessage;
+                    bool forceReply = (!e.isPrivateMessage);
 
                     //pairs.Add("reply_markup", "{\"force_reply\":true,\"selective\":" + e.selective.ToString().ToLower() + "}");
                     pairs.Add("reply_markup", "{\"force_reply\":"
@@ -221,10 +168,13 @@ namespace Roboto
                         //mark selective if passed in
                         + ",\"selective\":" + e.selective.ToString().ToLower() + "}");
                 }
-                else
+
+                else if (e.clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
+                else if (e.keyboard != null && e.keyboard != "")
                 {
                     pairs.Add("reply_markup", "{" + e.keyboard + "}");
                 }
+                
             }
             catch (Exception ex)
             {
@@ -267,7 +217,7 @@ namespace Roboto
                 else { Roboto.log.log("Response was null.", logging.loglevel.high); }
 
                 Roboto.Settings.parseFailedReply(e);
-                return -1;
+                return long.MinValue;
             }
             catch (WebException ex)
             {
@@ -277,7 +227,7 @@ namespace Roboto
                 Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
                 Roboto.Settings.parseFailedReply(e);
                 
-                return -1;
+                return long.MinValue;
             }
 
             catch (Exception ex)
@@ -288,105 +238,13 @@ namespace Roboto
                 Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
                 Roboto.Settings.parseFailedReply(e);
 
-                return -1;
+                return long.MinValue;
 
             }
 
         }
 
-        /* Old version - uses querystring. Switched to multipart.
-        /// <summary>
-        /// Sends a POST message, returns the reply object
-        /// </summary>
-        /// <param name="postURL"></param>
-        /// <returns></returns>
-        public static JObject sendPOST(String postURL, NameValueCollection pairs, Byte[] image = null, string fileName = null, string fileContentType = null)
-        {
-            string finalString = postURL;
-            Encoding enc = Encoding.GetEncoding(1252);
-            WebClient client = new WebClient();
-            
-            //now move the params across
-            bool first = true;
-
-            foreach (string itemKey in pairs)
-            {
-                if (first)
-                {
-                    finalString += "?";
-                    first = false;
-                }
-                else
-                { finalString += "&"; }
-                finalString += Uri.EscapeDataString(itemKey) + "=" + Uri.EscapeDataString(pairs[itemKey]);
-
-            }
-            
-
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
-            request.Method = "POST";
-            
-            Roboto.log.log("Sending Message:\n\r" + request.RequestUri.ToString(), logging.loglevel.low) ;
-
-            if(image != null)
-            {
-                //boundarys for multipart messages
-                string boundary = "----------" + DateTime.Now.Ticks.ToString("x");
-                byte[] boundarybytes = Encoding.UTF8.GetBytes("--" + boundary + "\r\n");
-                byte[] boundarytrailer = Encoding.UTF8.GetBytes("\r\n--" + boundary + "–-\r\n");
-                string fileheaderTemplate = "Content-Dis-data; name=\"{0}\"; filename=\"{1}\";\r\nContent-Type: {2}\r\n\r\n";
-
-                //set content type
-                request.ContentType = "multipart/form-data; boundary=" + boundary;
-
-                //send data on the stream
-                Stream requestStream = request.GetRequestStream();
-                WriteToStream(requestStream, boundarybytes);
-                WriteToStream(requestStream, string.Format(fileheaderTemplate, "InputFile", fileName, fileContentType));
-                WriteToStream(requestStream, image);
-                WriteToStream(requestStream, boundarytrailer);
-            }
-            else
-            {
-                request.ContentType = "application/json";
-            }
-
-            try
-            {
-                HttpWebResponse webResponse = (HttpWebResponse)request.GetResponse();
-
-                if (webResponse != null)
-                {
-                    StreamReader responseSR = new StreamReader(webResponse.GetResponseStream(), enc);
-                    string response = responseSR.ReadToEnd();
-
-                    JObject jo = JObject.Parse(response);
-
-                    //success?
-                    string path = jo.First.Path;
-                    string result = jo.First.First.Value<string>();
-
-
-                    if (path != "ok" || result != "True")
-                    {
-                        Console.WriteLine("Error recieved sending message!");
-                        //throw new WebException("Failure code from web service");
-
-                    }
-                    Console.WriteLine("Message Success");
-                    return jo;
-
-                }
-            }
-            catch (Exception e)
-            {
-                throw new WebException("Error during method call", e);
-            }
-            
-            return null;
-        }
-    */
-
+        
 
         /// <summary>
         /// Sends a POST message, returns the reply object
@@ -467,95 +325,7 @@ namespace Roboto
                     return null;
                 }
             }
-
-
-
-
-            /*string finalString = postURL;
-            Encoding enc = Encoding.GetEncoding(1252);
-            WebClient client = new WebClient();
             
-            //boundarys for multipart messages
-            string boundary = "----------" + DateTime.Now.Ticks.ToString("x");
-            string boundarytrailer = boundary + "–-\r\n";
-            string fileheaderTemplate = "Content-Disposition: form-data; name=\"{0}\"; filename=\"{1}\";\r\nContent-Type: {2}\r\n";
-            string parameterTemplate  = "Content-Disposition: form-data; name=\"{0}\"\r\n{1}";
-
-            //setup the request
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
-            request.Method = "POST";
-            request.ContentType = "multipart/form-data; boundary=" + boundary;
-            
-
-            Roboto.log.log("Assembling Message:\n\r" + request.RequestUri.ToString(), logging.loglevel.verbose) ;
-            
-            
-            bool first = true;
-
-            using (Stream requestStream = request.GetRequestStream())
-            {
-                //now move the params across
-                foreach (string itemKey in pairs)
-                {
-                    if (!first)
-                    {
-                        WriteToStream(requestStream, "\r\n");
-                    }
-                    WriteToStream(requestStream, boundary);
-                    WriteToStream(requestStream, string.Format(parameterTemplate, itemKey, pairs[itemKey]));
-                }
-                //attach image
-                if (image != null)
-                {
-                    WriteToStream(requestStream, "\r\n");
-                    WriteToStream(requestStream, boundary);
-                    WriteToStream(requestStream, string.Format(fileheaderTemplate, "InputFile", fileName, fileContentType));
-                    WriteToStream(requestStream, image);
-                }
-
-                WriteToStream(requestStream, boundarytrailer);
-                
-            }
-            
-
-            try
-            {
-                HttpWebResponse webResponse = (HttpWebResponse)request.GetResponse();
-
-                if (webResponse != null)
-                {
-                    StreamReader responseSR = new StreamReader(webResponse.GetResponseStream(), enc);
-                    string response = responseSR.ReadToEnd();
-
-                    JObject jo = JObject.Parse(response);
-
-                    //success?
-                    string path = jo.First.Path;
-                    string result = jo.First.First.Value<string>();
-
-
-                    if (path != "ok" || result != "True")
-                    {
-                        Console.WriteLine("Error recieved sending message!");
-                        //throw new WebException("Failure code from web service");
-
-                    }
-                    Console.WriteLine("Message Success");
-                    return jo;
-
-                }
-            }
-            catch (Exception e)
-            {
-                throw new WebException("Error during method call", e);
-            }
-            
-            return null;
-            */
-
-            //UGGGGHHHH
-
-
         }
 
 

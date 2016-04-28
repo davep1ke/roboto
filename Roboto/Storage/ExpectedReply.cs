@@ -20,12 +20,16 @@ namespace Roboto
         public long replyToMessageID = -1;
         public bool selective = false;
         public string keyboard = "";
+        public bool expectsReply = true;
+        public bool markDown = false;
+        public bool clearKeyboard = false;
+
         /// <summary>
         /// Internal data that can be returned to the plugin after the response is recieved
         /// </summary>
         public string messageData;
-        public String pluginType;
-        public int outboundMessageID;
+        public string pluginType;
+        public long outboundMessageID;
         
 
         internal ExpectedReply() { }
@@ -39,17 +43,24 @@ namespace Roboto
         /// <param name="isPrivateMessage"></param>
         /// <param name="pluginType"></param>
         /// <param name="messageData"></param>
-        public ExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID, bool selective, string keyboard)
+        public ExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID, bool selective, string keyboard, bool  markDown, bool clearKeyboard, bool expectsReply)
         {
+            
             this.chatID = chatID;
             this.userID = userID;
             this.text = text;
             this.isPrivateMessage = isPrivateMessage;
             this.messageData = messageData;
-            this.pluginType = pluginType.ToString();
+            if (pluginType != null)
+            {
+                this.pluginType = pluginType.ToString();
+            }
             this.replyToMessageID = replyToMessageID;
             this.selective = selective;
             this.keyboard = keyboard;
+            this.expectsReply = expectsReply;
+            this.markDown = markDown;
+            this.clearKeyboard = clearKeyboard;
 
         }
 
@@ -83,11 +94,13 @@ namespace Roboto
         /// <summary>
         /// Send the message
         /// </summary>
-        /// <returns></returns>
-        public int sendMessage()
+        /// <returns>An integer specifying the message id.long.MinValue indicates a failure</returns>
+        public long sendMessage()
         {
-
+            //lets restamp the users chat Presence (in case it took a long time on the queue)
+            Roboto.Settings.markPresence(userID, chatID);
             outboundMessageID = TelegramAPI.postExpectedReplyToPlayer(this);
+
             timeSentToUser = DateTime.Now;
 
             return outboundMessageID;

@@ -334,7 +334,7 @@ namespace Roboto.Modules
                     //just check if this needs more responses:
                     if (player.selectedCards.Count != question.nrAnswers)
                     {
-                        TelegramAPI.GetExpectedReply(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData));
+                        TelegramAPI.GetExpectedReply(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData),false,false,true);
                     }
                 }
             }
@@ -590,31 +590,45 @@ namespace Roboto.Modules
         /// </summary>
         public void getStatus()
         {
-            
-            string response = "The current status of the game is " + status.ToString() + ". " ;
+            string response = "";
+            TimeSpan quietHoursStart = TimeSpan.MinValue;
+            TimeSpan quietHoursEnd = TimeSpan.MinValue;
+            mod_standard.getQuietTimes(chatID, out quietHoursStart, out quietHoursEnd);
+            TimeSpan currentTime = new TimeSpan(DateTime.Now.Hour, DateTime.Now.Minute, DateTime.Now.Second);
+
+            if ( (quietHoursStart > quietHoursEnd && (currentTime > quietHoursStart || currentTime < quietHoursEnd ))
+                || (quietHoursStart < quietHoursEnd && (currentTime > quietHoursStart && currentTime < quietHoursEnd)))
+            {
+                response += "Shhh... its sleepy times" + "\n\r";
+            }
+
+            response += "The current status of the game is " + status.ToString() + ".";
             if (status == xyzzy_Statuses.Stopped)
             {
-                response += "Type /xyzzy_start to begin setting up a new game.";
+                response += " Type /xyzzy_start to begin setting up a new game.";
 
             }
             else
             {
                 if (status == xyzzy_Statuses.Judging || status == xyzzy_Statuses.Question)
                 {
-                    response += " with "
-                        + remainingQuestions.Count.ToString() + " questions remaining"
-                        //                            + chatData.remainingAnswers.Count.ToString() + " answers in the pack. "
-                        + ". Say /xyzzy_join to join.";
-                    if (maxWaitTimeHours != 0) {
-                        TimeSpan remainingTime = statusChangedTime.AddHours(maxWaitTimeHours).Subtract(DateTime.Now);
-                        response += " There are " +
+                    response += " There are " + remainingQuestions.Count.ToString() + " questions remaining";
+                    if (maxWaitTimeHours != 0)
+                    {
+                        DateTime expiresTime = Helpers.common.addTimeIgnoreQuietHours(statusChangedTime, quietHoursStart, quietHoursEnd, new TimeSpan(maxWaitTimeHours, 0, 0));
+                        TimeSpan remainingTime = expiresTime.Subtract(DateTime.Now);
+                        response += " and " +
                             (remainingTime.Days > 0 ? remainingTime.Days + " days " : "") +
-                            (remainingTime.Hours > 0 ? remainingTime.Hours + " hours " : "" ) +
-                            (remainingTime.Minutes > 0 ? remainingTime.Minutes + " minutes " : "" ) +
+                            (remainingTime.Hours > 0 ? remainingTime.Hours + " hours " : "") +
+                            (remainingTime.Minutes > 0 ? remainingTime.Minutes + " minutes " : "") +
                             " left to answer!";
+
+                        
+                        //                            + chatData.remainingAnswers.Count.ToString() + " answers in the pack. "
+                        response += " Say /xyzzy_join to join.";
                     }
 
-                    response += "The following players are currently playing: \n\r";
+                    response += " The following players are currently playing: \n\r";
                     //order the list of players
                     List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
 
@@ -629,7 +643,7 @@ namespace Roboto.Modules
                     case xyzzy_Statuses.Question:
                         response += "The current question is : " + "\n\r" +
                             getLocalData().getQuestionCard(currentQuestion).text + "\n\r" +
-                            "The following responses are outstanding :";
+                            "Still waiting on the following players :";
                         bool unsentMessages = false;
                         bool first = true;
                         foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question"))
@@ -691,7 +705,7 @@ namespace Roboto.Modules
             {
                 int hours = -1;
                 bool success = int.TryParse(text_msg, out hours);
-                if (!success) { return false; }
+                if (!success || hours < 0 || hours > 168) { return false; }
                 else
                 {
                     maxWaitTimeHours = hours;
@@ -753,7 +767,7 @@ namespace Roboto.Modules
             {
                 int hours = -1;
                 bool success = int.TryParse(text_msg, out hours);
-                if (!success) { return false; }
+                if (!success || hours < 0 || hours > 168) { return false; }
                 else
                 {
                     minWaitTimeHours = hours;

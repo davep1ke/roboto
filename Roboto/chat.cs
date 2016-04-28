@@ -13,15 +13,16 @@ namespace Roboto
         public long chatID;
         public bool enabled = false; //assume chats are disabled until we get a /start
         public DateTime lastupdate = DateTime.Now; //track when our last message was. Discard idle chats.
-
+        public string chatTitle = "";
         public List<Modules.RobotoModuleChatDataTemplate> chatData = new List<Modules.RobotoModuleChatDataTemplate>();
         public bool muted = false;
 
         internal chat() { }
 
-        public chat(long chatID)
+        public chat(long chatID, string chatTitle)
         {
             this.chatID = chatID;
+            this.chatTitle = chatTitle;
             initPlugins();
         }
 
@@ -126,6 +127,15 @@ namespace Roboto
 
 
                 
+        }
+
+        public void setTitle(string chatTitle)
+        {
+            if (this.chatTitle != chatTitle)
+            {
+                Roboto.log.log("Chat title changed from '" + this.chatTitle + "' to '" + chatTitle + "'", logging.loglevel.warn);
+                this.chatTitle = chatTitle;
+            }
         }
     }
 }
