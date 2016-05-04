@@ -348,7 +348,7 @@ namespace Roboto.Modules
                     if (chatData.status == xyzzy_Statuses.Stopped && chatData.players.Count > 1 )
                     {
                         Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
-                        chatData.askQuestion();
+                        chatData.askQuestion(true);
                     }
 
                     processed = true;
@@ -358,7 +358,7 @@ namespace Roboto.Modules
                 else if (m.text_msg.StartsWith("/xyzzy_question") && chatData.status != xyzzy_Statuses.Stopped)
                 {
                     //TODO - DEBUG ONLY
-                    chatData.askQuestion();
+                    chatData.askQuestion(true);
                     processed = true;
                 }
                 else if (m.text_msg.StartsWith("/xyzzy_status"))
@@ -446,7 +446,7 @@ namespace Roboto.Modules
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
                 if (chatData != null)
                 {
-                    chatData.backgroundChecks();
+                    chatData.check();
                 }
 
             }
@@ -653,7 +653,7 @@ namespace Roboto.Modules
                 } 
                 else if (chatData.players.Count > 1)
                 {
-                    chatData.askQuestion();
+                    chatData.askQuestion(true);
                 }
                 else
                 {

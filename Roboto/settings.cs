@@ -245,11 +245,14 @@ namespace Roboto
         /// <param name="chatID"></param>
         public void markPresence(long userID, long chatID)
         {
-            foreach (chatPresence p in RecentChatMembers)
+            if (chatID < 0) //only mark group chats, not private chats. 
             {
-                if (p.userID == userID && p.chatID == chatID) { p.touch(); return; }
+                foreach (chatPresence p in RecentChatMembers)
+                {
+                    if (p.userID == userID && p.chatID == chatID) { p.touch(); return; }
+                }
+                RecentChatMembers.Add(new chatPresence(userID, chatID));
             }
-            RecentChatMembers.Add(new chatPresence(userID, chatID));
         }
 
         /// <summary>
@@ -366,10 +369,33 @@ namespace Roboto
         /// </summary>
         public void expectedReplyBackgroundProcessing()
         {
-
+            RecentChatMembers.RemoveAll(x => x.chatID == x.userID);
             RecentChatMembers.RemoveAll(x => x.lastSeen < DateTime.Now.Subtract(new TimeSpan(chatPresenceExpiresAfterHours, 0, 0)));
 
             expectedReplyHousekeeping();
+        }
+
+        /// <summary>
+        /// General background processing loop. Called 
+        /// </summary>
+        public void backgroundProcessing(bool force)
+        {
+            foreach (Modules.RobotoModuleTemplate plugin in plugins)
+            {
+                if (plugin.backgroundHook)
+                {
+                    try
+                    {
+                        plugin.callBackgroundProcessing(force);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.Out.WriteLine("-----------------");
+                        Console.Out.WriteLine("Error During Plugin " + plugin.GetType().ToString() + " background processing");
+                        Console.Out.WriteLine(e.Message);
+                    }
+                }
+            }
         }
 
         /// <summary>

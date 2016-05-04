@@ -104,7 +104,7 @@ namespace Roboto.Modules
 
         public static String getAllMethodDescriptions()
         {
-            String methods = "The following methods are supported:";
+            String methods = "The following commands are available:";
             foreach (RobotoModuleTemplate plugin in settings.plugins)
             {
                 methods += "\n\r" + plugin.getMethodDescriptions(); 
@@ -129,7 +129,16 @@ namespace Roboto.Modules
             if (m.text_msg.StartsWith("/help")
                 || m.text_msg.StartsWith ("/start") && c != null && c.muted == false)
             {
-                TelegramAPI.SendMessage(m.chatID, getAllMethodDescriptions());
+
+                mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
+                string openingMessage = "This is chat " + (c.chatTitle == null ? "" : c.chatTitle) + " (" + c.chatID + "). " +"\n\r";
+                if (chatData.quietHoursStartTime != TimeSpan.MinValue && chatData.quietHoursEndTime != TimeSpan.MinValue)
+                {
+                    openingMessage += "Quiet time set between " + chatData.quietHoursStartTime.ToString("c") + " and " + chatData.quietHoursEndTime.ToString("c") + ". \n\r";
+                }
+
+
+                TelegramAPI.SendMessage(m.chatID, openingMessage +  getAllMethodDescriptions());
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/save"))
@@ -150,6 +159,12 @@ namespace Roboto.Modules
                 TelegramAPI.SendMessage(m.chatID, "I am back. Type /help for a list of commands.");
                 processed = true;
             }
+            else if (m.text_msg.StartsWith("/background"))
+            {
+                //kick off the background loop. 
+                Roboto.Settings.backgroundProcessing(true);
+            }
+
             else if (m.text_msg.StartsWith("/setQuietHours"))
             {
                 TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours");
@@ -284,6 +299,42 @@ namespace Roboto.Modules
             startQuietHours = chatData.quietHoursStartTime;
             endQuietHours = chatData.quietHoursEndTime;
             
+        }
+
+        public static bool isTimeInQuietPeriod (long chatID, DateTime time )
+        {
+            TimeSpan start;
+            TimeSpan end;
+            getQuietTimes(chatID, out start, out end);
+
+
+            //ignore the date for now - go off times. 
+            TimeSpan currentTimePart = new TimeSpan(time.Hour, time.Minute, time.Second);
+
+            //does the quiet period cross midnight? 
+            if (start > end)
+            {
+                //looking for times after start or before end ?
+                if (currentTimePart >= start || currentTimePart <= end)
+                {
+                    return true;
+                }
+
+            }
+            //otherwise it's a normal period of time
+            else
+            {
+                //looking for times after start AND before end.
+                if (currentTimePart >= start && currentTimePart <= end)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+
+
+
         }
         
     }

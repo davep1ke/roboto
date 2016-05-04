@@ -102,7 +102,7 @@ namespace Roboto
                 Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(12, 0, 0), new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0, 0));
                 Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0), new TimeSpan(5, 0, 0, 0));
 
-                if (1 == 1) { }
+                if (2 == 2) { }
 
             }
 
@@ -307,23 +307,10 @@ namespace Roboto
 
                     }
                 }
+
+                Settings.backgroundProcessing(false);
                 
-                foreach (Modules.RobotoModuleTemplate plugin in settings.plugins)
-                {
-                    if (plugin.backgroundHook)
-                    {
-                        try
-                        {
-                            plugin.callBackgroundProcessing();
-                        }
-                        catch (Exception e)
-                        {
-                            Console.Out.WriteLine("-----------------");
-                            Console.Out.WriteLine("Error During Plugin " + plugin.GetType().ToString() + " background processing");
-                            Console.Out.WriteLine(e.Message);
-                        }
-                    }
-                }
+               
                 
             }
         }

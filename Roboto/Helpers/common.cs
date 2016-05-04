@@ -43,7 +43,7 @@ namespace Roboto.Helpers
                 if (timeToEnd == TimeSpan.Zero) { timeToEnd = oneDay; }
                 if (timeToEnd < TimeSpan.Zero) { timeToEnd = timeToEnd + oneDay; }
 
-                Roboto.log.log("Currently " + endTime.ToString("f") + (timeToStart < timeToEnd? "(L)" : "(Q)")  + ". Start is in " + timeToStart.ToString("c") + ", end in " + timeToEnd.ToString("c") + ". " + timeToAdd.ToString("c") + " remaining" , logging.loglevel.verbose);
+                //Roboto.log.log("Currently " + endTime.ToString("f") + (timeToStart < timeToEnd? "(L)" : "(Q)")  + ". Start is in " + timeToStart.ToString("c") + ", end in " + timeToEnd.ToString("c") + ". " + timeToAdd.ToString("c") + " remaining" , logging.loglevel.verbose);
                 
                 if (timeToStart < timeToEnd || timeToStart == timeToEnd)
                 {

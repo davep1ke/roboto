@@ -86,10 +86,10 @@ namespace Roboto.Modules
         /// </summary>
         protected virtual void backgroundProcessing() { }
 
-        public void callBackgroundProcessing()
+        public void callBackgroundProcessing(bool force)
         {
             DateTime lastCall = getLastUpdate();
-            if (DateTime.Now > lastCall.AddMinutes(backgroundMins))
+            if (force || DateTime.Now > lastCall.AddMinutes(backgroundMins))
             {
                 log("Background Processing for " + GetType().ToString());
                 backgroundProcessing();

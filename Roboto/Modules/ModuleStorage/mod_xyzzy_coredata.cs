@@ -128,7 +128,17 @@ namespace Roboto.Modules
 
         private string cleanseText(string s)
         {
-            return s.ToUpper().Trim().Replace(" ", "").Replace("__", "_").Replace(".", "");
+            try
+            {
+                return s.ToUpper().Trim().Replace(" ", "").Replace("__", "_").Replace(".", "");
+            }
+            
+            catch (Exception e)
+            {
+                log("Error cleansing string", logging.loglevel.critical);
+            }
+            return "";
+        
         }
 
         /// <summary>
@@ -203,29 +213,56 @@ namespace Roboto.Modules
                             //remove any cached questions
                             foreach(chat c in Roboto.Settings.chatData)
                             {
+                                
                                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata) c.getPluginData(typeof(mod_xyzzy_chatdata));
-                                chatData.remainingQuestions.RemoveAll(x => x == q.uniqueID);
-                                //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
-                                if (chatData.currentQuestion == q.uniqueID)
+                                if (chatData != null)
                                 {
-                                    log("The current question " + chatData.currentQuestion + " for chat " + c.chatID + " has been removed!");
-                                    if (!brokenChats.Contains(chatData)) { brokenChats.Add(chatData); }
+                                    chatData.remainingQuestions.RemoveAll(x => x == q.uniqueID);
+                                    //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
+                                    if (chatData.currentQuestion == q.uniqueID)
+                                    {
+                                        log("The current question " + chatData.currentQuestion + " for chat " + c.chatID + " has been removed!");
+                                        if (!brokenChats.Contains(chatData)) { brokenChats.Add(chatData); }
+                                    }
                                 }
                             }
                         }
                         //or from the import list 
                         foreach (mod_xyzzy_card q in exist_cards)
                         {
-                            //update the local text if it was a match-ish
-                            cardcast_question_card match = import_questions.Where(y => cleanseText(y.question) == cleanseText(q.text)).ToList()[0];
-                            if (q.text != match.question)
+                            //update the local text if it was a match-
+                            cardcast_question_card match = null;
+                            try
                             {
-                                log("Question text updated from " + q.text + " to " + match.question);
-                                q.text = match.question;
-                                q.nrAnswers = match.nrAnswers;
-                                nr_rep++;
+                                 match = import_questions.Where(y => cleanseText(y.question) == cleanseText(q.text)).ToList()[0];
                             }
-                            int removed = import_questions.RemoveAll(x => x.question == q.text);
+                            catch (Exception e)
+                            {
+                                log("Error finding cleansed version of q card", logging.loglevel.critical);
+                            }
+
+                            if (match != null && q.text != match.question)
+                            {
+                                try
+                                {
+                                    log("Question text updated from " + q.text + " to " + match.question);
+                                    q.text = match.question;
+                                    q.nrAnswers = match.nrAnswers;
+                                    nr_rep++;
+                                }
+                                catch (Exception e)
+                                {
+                                    log("Error updating question text on qcard", logging.loglevel.critical);
+                                }
+                            }
+                            try
+                            {
+                                int removed = import_questions.RemoveAll(x => x.question == q.text); //swallow this. 
+                            }
+                            catch (Exception e)
+                            {
+                                log("Error removing qcard from importlist ", logging.loglevel.critical);
+                            }
                         }
                         //add the rest to the localData
                         foreach (Helpers.cardcast_question_card q in import_questions)
@@ -335,7 +372,7 @@ namespace Roboto.Modules
 
             foreach (mod_xyzzy_chatdata c in brokenChats)
             {
-                c.askQuestion();
+                c.askQuestion(false);
             }
 
             log(response, logging.loglevel.normal);
@@ -356,7 +393,7 @@ namespace Roboto.Modules
                 {
                     //is there a matching card already?
                     List<mod_xyzzy_card> matchList = validQCards.Where(x => (x.category == pack.name && cleanseText(x.text) == cleanseText(c.text))).ToList();
-                    if (matchList.Count() > 0)
+                    if (matchList.Count() > 1)
                     {
                         removeQCards.Add(c);
                         //updating any references in active games. 
@@ -377,7 +414,7 @@ namespace Roboto.Modules
                 {
                     //is there a matching card already?
                     List<mod_xyzzy_card> matchList = validACards.Where(x => (x.category == pack.name && cleanseText(x.text) == cleanseText(c.text))).ToList();
-                    if (matchList.Count() > 0)
+                    if (matchList.Count() > 1)
                     {
                         removeACards.Add(c);
                         //updating any references in active games. 

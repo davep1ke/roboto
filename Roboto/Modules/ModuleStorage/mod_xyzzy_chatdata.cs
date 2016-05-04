@@ -9,7 +9,7 @@ using System.Xml.Serialization;
 namespace Roboto.Modules
 {
 
-    public enum xyzzy_Statuses { Stopped, SetGameLength, setPackFilter, setMinHours, setMaxHours, cardCastImport, Invites, Question, Judging }
+    public enum xyzzy_Statuses { Stopped, SetGameLength, setPackFilter, setMinHours, setMaxHours, cardCastImport, Invites, Question, Judging, waitingForNextHand }
 
     /// <summary>
     /// CHAT (i.e. game) Data to be stored in the XML store
@@ -24,6 +24,8 @@ namespace Roboto.Modules
         public int lastPlayerAsked = -1; //This is the position in the array, so int is fine! todo - should be an ID!
         public xyzzy_Statuses status = xyzzy_Statuses.Stopped;
         public DateTime statusChangedTime = DateTime.Now;
+        public DateTime lastHandStartedTime = DateTime.Now;
+
         public bool remindersSent = false;
 
         //chat settings
@@ -45,8 +47,12 @@ namespace Roboto.Modules
         public void setStatus (xyzzy_Statuses newStatus)
         {
             status = newStatus;
-            statusChangedTime = DateTime.Now;
             remindersSent = false;
+
+            //update some date pointers for future reference
+            statusChangedTime = DateTime.Now;
+            if (newStatus == xyzzy_Statuses.Question) { lastHandStartedTime = DateTime.Now; }
+
         }
         
         /// <summary>
@@ -233,10 +239,11 @@ namespace Roboto.Modules
              }
         }
 
-        internal void askQuestion()
+        internal void askQuestion(bool force)
         {
             Roboto.Settings.stats.logStat(new statItem("Hands Played", typeof(mod_xyzzy)));
             mod_xyzzy_coredata localData = getLocalData();
+            //TODO - this causes issues if someone is changing settings in the middle of a round. 
             Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy)  ); //shouldnt be needed, but handy if we are forcing a question in debug.
 
             //check that the question card still exists. 
@@ -251,44 +258,64 @@ namespace Roboto.Modules
                 }
             }
 
-
-
-            if (remainingQuestions.Count > 0 && question != null)
+            
+            //carry on if force is ticked (e.g. commands from chat for /extend and /question)
+            //are we in a quiet period? 
+            if (! force && mod_standard.isTimeInQuietPeriod(chatID, DateTime.Now))
             {
+                log("About to ask question, but we are in a quiet period. Waiting until awake.", logging.loglevel.warn);
+                setStatus(xyzzy_Statuses.waitingForNextHand);
 
-                
-                int playerPos = lastPlayerAsked + 1;
-                if (playerPos >= players.Count) { playerPos = 0; }
-                mod_xyzzy_player tzar = players[playerPos];
-
-                //loop through each player and act accordingly
-                foreach (mod_xyzzy_player player in players)
-                {
-                    //throw away old cards and select new ones. 
-                    player.selectedCards.Clear();
-                    player.topUpCards(10, remainingAnswers, chatID);
-                    if (player == tzar)
-                    {
-                        TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, false,-1,true);
-                    }
-                    else
-                    {
-                        /*int questionMsg = TelegramAPI.GetReply(player.playerID,, -1, true, player.getAnswerKeyboard(localData));*/
-                        string questionText = tzar.name + " asks: " + "\n\r" + question.text;
-                        //we are expecting a reply to this:
-                        TelegramAPI.GetExpectedReply(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question",-1 ,true, player.getAnswerKeyboard(localData));
-                    }
-                }
-
-                //todo - should this be winner stays on, or round-robbin?
-                lastPlayerAsked = playerPos;
-                currentQuestion = remainingQuestions[0];
-                remainingQuestions.Remove(currentQuestion);
-                setStatus(xyzzy_Statuses.Question);
+            }
+            //do we have a throttle set? If so, are we within the window? 
+            if (!force && minWaitTimeHours > 0 && lastHandStartedTime.Add(new TimeSpan(minWaitTimeHours, 0, 0)) > DateTime.Now)
+            {
+                log("About to ask question, but we are throttling.", logging.loglevel.warn);
+                setStatus(xyzzy_Statuses.waitingForNextHand);
             }
             else
             {
-                wrapUp();
+                //good to ask the question - find out if there are any left
+                if (remainingQuestions.Count > 0 && question != null)
+                {
+
+
+                    int playerPos = lastPlayerAsked + 1;
+                    if (playerPos >= players.Count) { playerPos = 0; }
+                    mod_xyzzy_player tzar = players[playerPos];
+
+                    //loop through each player and act accordingly
+                    foreach (mod_xyzzy_player player in players)
+                    {
+                        //throw away old cards and select new ones. 
+                        player.selectedCards.Clear();
+                        player.topUpCards(10, remainingAnswers, chatID);
+                        if (player == tzar)
+                        {
+                            TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, false, -1, true);
+                        }
+                        else
+                        {
+                            /*int questionMsg = TelegramAPI.GetReply(player.playerID,, -1, true, player.getAnswerKeyboard(localData));*/
+                            string questionText = tzar.name + " asks: " + "\n\r" + question.text;
+                            //we are expecting a reply to this:
+                            TelegramAPI.GetExpectedReply(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData));
+                        }
+                    }
+
+                    lastPlayerAsked = playerPos;
+                    currentQuestion = remainingQuestions[0];
+                    int count = remainingQuestions.Count; 
+                    remainingQuestions.Remove(currentQuestion);
+
+                    log("Removing " + question.uniqueID + " from remainingQuestions. Went from " + count.ToString() + " to " + remainingQuestions.Count.ToString() + " remaining.", logging.loglevel.verbose);
+                    setStatus(xyzzy_Statuses.Question);
+                }
+                else
+                {
+                    //no questions left, finish game
+                    wrapUp();
+                }
             }
         }
 
@@ -311,7 +338,11 @@ namespace Roboto.Modules
 
             if (answerCard == null)
             {
-                log("Couldn't match card against " + answer + " - probably an invalid response");
+                log("Couldn't match card against " + answer 
+                    + " in chat " + chatID
+                    + " which has question " + currentQuestion + " (" 
+                    + (question.text.Length > 10 ? question.text.Substring(0,10) : question.text )
+                    + ") out - probably an invalid response");
                 //couldnt find answer, reask
                 string questionText = players[lastPlayerAsked].name + " asks: " + "\n\r" + question.text;
                 //we are expecting a reply to this:
@@ -420,7 +451,7 @@ namespace Roboto.Modules
                     else
                     {
                         log("Current question card not found!", logging.loglevel.critical);
-                        askQuestion();
+                        askQuestion(false);
                     }
                 }
             }
@@ -499,91 +530,9 @@ namespace Roboto.Modules
             }
         }
 
-        /// <summary>
-        /// Handle any background tasks for the chat (timeouts, throttling etc..)
-        /// </summary>
-        public void backgroundChecks()
-        {
-            //Timeout Reminders
-            //workout the time at which we should send reminders
-            DateTime reminderTime = statusChangedTime.AddMinutes((maxWaitTimeHours * 60) * .75);
-            DateTime abandonTime = statusChangedTime.AddHours(maxWaitTimeHours);
-
-            //timeouts, if we have questions outstanding
-            if (status == xyzzy_Statuses.Question && remindersSent == false && DateTime.Now > reminderTime  )
-            {
-                log("Sending reminders for chat " + chatID);
-                //check if any players are late
-                string outstandingPlayers = "";
-                List<mod_xyzzy_player> outstanding = outstandingResponses(); ;
-                int i = 0;
-
-                if (outstanding.Count == 0)
-                {
-                    log("Couldnt send reminders, as no outstanding players!?", logging.loglevel.high);
-                }
-                else
-                {
-                    foreach (mod_xyzzy_player p in outstanding)
-                    {
-                        i++;
-                        //first
-                        if (outstandingPlayers == "") { outstandingPlayers = p.ToString(); }
-                        //last
-                        else if (i == outstanding.Count()) { outstandingPlayers += " and " + p.ToString(); } 
-                        //middle
-                        else { outstandingPlayers += ", " + p.ToString(); }
-                    }
-                    if (outstanding.Count == 1)
-                    { TelegramAPI.SendMessage(chatID, outstandingPlayers + " needs to hurry up! Tick-tock motherfucker..."); }
-                    else
-                    { TelegramAPI.SendMessage(chatID, outstandingPlayers + " need to hurry up! Tick-tock motherfuckers..."); }
-                }
-
-                remindersSent = true;
-            }
-            
-            else if (status == xyzzy_Statuses.Question && DateTime.Now > abandonTime)
-            {
-                List<mod_xyzzy_player> outstanding = outstandingResponses(); ;
-                string outstandingPlayers = "";
-                int i = 0;
-                foreach (mod_xyzzy_player p in outstanding)
-                {
-                    i++;
-                    //first
-                    if (i==1) { outstandingPlayers = p.ToString(); }
-                    //last
-                    else if (i == outstanding.Count()) { outstandingPlayers += " and " + p.ToString(); }
-                    //middle
-                    else { outstandingPlayers += ", " + p.ToString(); }
-                }
-                TelegramAPI.SendMessage(chatID, outstandingPlayers + " can suck it for not answering in time:");
-                
-                log("Skipping to judging for chat" + chatID);
-                beginJudging();
-            }
-
-            //if we are in judging
-            else if (status == xyzzy_Statuses.Judging && remindersSent == false && DateTime.Now > reminderTime)
-            {
-                log("Sending judge reminder for chat " + chatID);
-
-                TelegramAPI.SendMessage(chatID, "Hurry up Judgy Judgerson! (" + players[lastPlayerAsked].ToString() + ")");
-                remindersSent = true;
-            }
-
-            else if (status == xyzzy_Statuses.Judging &&  DateTime.Now > abandonTime)
-            {
-                log("Skipping judging for chat" + chatID);
-
-                TelegramAPI.SendMessage(chatID, "Judge was too slow, " + players[lastPlayerAsked].ToString() + " gets docked a point!");
-                players[lastPlayerAsked].wins--;
-                askQuestion();
-            }
 
 
-        }
+
 
         /// <summary>
         /// Gets the status of the current game
@@ -595,14 +544,36 @@ namespace Roboto.Modules
             TimeSpan quietHoursEnd = TimeSpan.MinValue;
             mod_standard.getQuietTimes(chatID, out quietHoursStart, out quietHoursEnd);
             TimeSpan currentTime = new TimeSpan(DateTime.Now.Hour, DateTime.Now.Minute, DateTime.Now.Second);
+            DateTime throttleTimeStart = lastHandStartedTime.Add(new TimeSpan(minWaitTimeHours, 0, 0));
 
             if ( (quietHoursStart > quietHoursEnd && (currentTime > quietHoursStart || currentTime < quietHoursEnd ))
                 || (quietHoursStart < quietHoursEnd && (currentTime > quietHoursStart && currentTime < quietHoursEnd)))
             {
                 response += "Shhh... its sleepy times" + "\n\r";
             }
+            
 
-            response += "The current status of the game is " + status.ToString() + ".";
+            if (status == xyzzy_Statuses.waitingForNextHand )
+            {
+                response = "Waiting for next hand to start. ";
+                DateTime nextHand = DateTime.MinValue;
+                
+
+                //we are either throttled, or waiting for the quiet hours to run out. 
+                if (mod_standard.isTimeInQuietPeriod(chatID, DateTime.Now))
+                {
+                    response += "Chat quiet time finishes at " + quietHoursEnd.ToString("c") + ".";                    
+                }
+                //do we have a throttle set? If so, are we within the window? 
+                if (minWaitTimeHours > 0 && throttleTimeStart > DateTime.Now)
+                {
+                    response += "Next hand won't start until " + throttleTimeStart.ToString() + " (" + minWaitTimeHours.ToString() + " hours between hands.)";
+                }
+
+            }
+
+
+            response += " The current status of the game is " + status.ToString() + ".";
             if (status == xyzzy_Statuses.Stopped)
             {
                 response += " Type /xyzzy_start to begin setting up a new game.";
@@ -610,24 +581,23 @@ namespace Roboto.Modules
             }
             else
             {
-                if (status == xyzzy_Statuses.Judging || status == xyzzy_Statuses.Question)
+
+                if ((status == xyzzy_Statuses.Judging || status == xyzzy_Statuses.Question) && maxWaitTimeHours != 0)
+                {
+                    DateTime expiresTime = Helpers.common.addTimeIgnoreQuietHours(statusChangedTime, quietHoursStart, quietHoursEnd, new TimeSpan(maxWaitTimeHours, 0, 0));
+                    TimeSpan remainingTime = expiresTime.Subtract(DateTime.Now);
+                    response += " and " +
+                        (remainingTime.Days > 0 ? remainingTime.Days + " days " : "") +
+                        (remainingTime.Hours > 0 ? remainingTime.Hours + " hours " : "") +
+                        (remainingTime.Minutes > 0 ? remainingTime.Minutes + " minutes " : "") +
+                        "left to answer!";
+                }
+
+                if (status == xyzzy_Statuses.Judging || status == xyzzy_Statuses.Question || status == xyzzy_Statuses.waitingForNextHand)
                 {
                     response += " There are " + remainingQuestions.Count.ToString() + " questions remaining";
-                    if (maxWaitTimeHours != 0)
-                    {
-                        DateTime expiresTime = Helpers.common.addTimeIgnoreQuietHours(statusChangedTime, quietHoursStart, quietHoursEnd, new TimeSpan(maxWaitTimeHours, 0, 0));
-                        TimeSpan remainingTime = expiresTime.Subtract(DateTime.Now);
-                        response += " and " +
-                            (remainingTime.Days > 0 ? remainingTime.Days + " days " : "") +
-                            (remainingTime.Hours > 0 ? remainingTime.Hours + " hours " : "") +
-                            (remainingTime.Minutes > 0 ? remainingTime.Minutes + " minutes " : "") +
-                            " left to answer!";
 
-                        
-                        //                            + chatData.remainingAnswers.Count.ToString() + " answers in the pack. "
-                        response += " Say /xyzzy_join to join.";
-                    }
-
+                    response += " Say /xyzzy_join to join.";
                     response += " The following players are currently playing: \n\r";
                     //order the list of players
                     List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
@@ -826,7 +796,7 @@ namespace Roboto.Modules
                 TelegramAPI.SendMessage(chatID, message);
 
                 //ask the next question (will jump to summary if no more questions). 
-                askQuestion();
+                askQuestion(false);
             }
             else
             {
@@ -849,7 +819,19 @@ namespace Roboto.Modules
             mod_xyzzy_coredata localData = getLocalData();
             List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
             List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
- 
+
+            //find out if our chat has a quiet time set
+            TimeSpan quietStartTime = TimeSpan.Zero;
+            TimeSpan quietEndTime = TimeSpan.Zero;
+            mod_standard.getQuietTimes(chatID, out quietStartTime, out quietEndTime);
+
+            //Timeout Reminders
+            //workout the time at which we should send reminders
+            float dur = maxWaitTimeHours * 60; 
+            DateTime reminderTime = Helpers.common.addTimeIgnoreQuietHours(statusChangedTime, quietStartTime, quietEndTime, new TimeSpan(0, Convert.ToInt32(dur * 0.75), 0));  //statusChangedTime.AddMinutes((maxWaitTimeHours * 60) * .75);
+            DateTime abandonTime = Helpers.common.addTimeIgnoreQuietHours(statusChangedTime, quietStartTime, quietEndTime, new TimeSpan(0, Convert.ToInt32(dur), 0));
+
+
             //is the tzar valid?
             if (lastPlayerAsked >= players.Count)
             {
@@ -912,6 +894,63 @@ namespace Roboto.Modules
                         log("ExpectedReply missing - skipping to judging", logging.loglevel.high);
                         beginJudging();
                     }
+
+                    //timeout players who havent answered
+                    if (maxWaitTimeHours > 0 && DateTime.Now > abandonTime)
+                    {
+                        List<mod_xyzzy_player> outstanding = outstandingResponses(); ;
+                        string outstandingPlayers = "";
+                        int i = 0;
+                        foreach (mod_xyzzy_player p in outstanding)
+                        {
+                            i++;
+                            //first
+                            if (i == 1) { outstandingPlayers = p.ToString(); }
+                            //last
+                            else if (i == outstanding.Count()) { outstandingPlayers += " and " + p.ToString(); }
+                            //middle
+                            else { outstandingPlayers += ", " + p.ToString(); }
+                        }
+                        TelegramAPI.SendMessage(chatID, outstandingPlayers + " can suck it for not answering in time:");
+
+                        log("Skipping to judging for chat" + chatID);
+                        beginJudging();
+                    }
+                    //timeouts, if we have questions outstanding
+                    else if (remindersSent == false && maxWaitTimeHours > 0 && DateTime.Now > reminderTime)
+                    {
+                        log("Sending reminders for chat " + chatID);
+                        //check if any players are late
+                        string outstandingPlayers = "";
+                        List<mod_xyzzy_player> outstanding = outstandingResponses(); ;
+                        int i = 0;
+
+                        if (outstanding.Count == 0)
+                        {
+                            log("Couldnt send reminders, as no outstanding players!?", logging.loglevel.high);
+                        }
+                        else
+                        {
+                            foreach (mod_xyzzy_player p in outstanding)
+                            {
+                                i++;
+                                //first
+                                if (outstandingPlayers == "") { outstandingPlayers = p.ToString(); }
+                                //last
+                                else if (i == outstanding.Count()) { outstandingPlayers += " and " + p.ToString(); }
+                                //middle
+                                else { outstandingPlayers += ", " + p.ToString(); }
+                            }
+                            if (outstanding.Count == 1)
+                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " needs to hurry up! Tick-tock motherfucker..."); }
+                            else
+                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " need to hurry up! Tick-tock motherfuckers..."); }
+                        }
+
+                        remindersSent = true;
+                    }
+                    
+                    
                     break;
                 case xyzzy_Statuses.Judging:
                     //check if there is an appropriate expected reply
@@ -939,22 +978,71 @@ namespace Roboto.Modules
                         reask = true;
                         log("Removed invalid expected reply during judging from game " + chatID.ToString(), logging.loglevel.high);
                     }
+
                     if (reask)
                     {
                         beginJudging(true);
                         log("Redid judging", logging.loglevel.critical);
                     }
+                    else
+                    {
+
+                        //send reminder to judge
+                        if (maxWaitTimeHours > 0 && remindersSent == false && DateTime.Now > reminderTime)
+                        {
+                            log("Sending judge reminder for chat " + chatID);
+
+                            TelegramAPI.SendMessage(chatID, "Hurry up Judgy Judgerson! (" + players[lastPlayerAsked].ToString() + ")");
+                            remindersSent = true;
+                        }
+                        //abandon judging, too slow
+                        else if (maxWaitTimeHours > 0 && DateTime.Now > abandonTime)
+                        {
+                            log("Skipping judging for chat" + chatID);
+
+                            TelegramAPI.SendMessage(chatID, "Judge was too slow, " + players[lastPlayerAsked].ToString() + " gets docked a point!");
+                            players[lastPlayerAsked].wins--;
+                            askQuestion(false);
+                        }
+                    }
+
+                    
+
                     break;
+
+                case xyzzy_Statuses.waitingForNextHand:
+                    //handle where we have paused the game due to quiet hours and / or throttling
+
+                    //make sure we arent in a quiet period
+                    if (mod_standard.isTimeInQuietPeriod(chatID, DateTime.Now))
+                    {
+                        log("Still in quiet hours", logging.loglevel.verbose);
+                    }
+                    //are we still throttled?
+                    else if (minWaitTimeHours != 0 && DateTime.Now < lastHandStartedTime.Add(new TimeSpan(minWaitTimeHours, 0, 0)))
+                    {
+                        log("Still throttled", logging.loglevel.verbose);
+                    }
+                    else
+                    {
+                        log("Resuming game", logging.loglevel.verbose);
+                        askQuestion(false);
+                    }
+
+                    break;
+                    
                 case xyzzy_Statuses.Stopped:
                     reset();
                     break;
             }
-
+            
         }
+        
 
         public void replaceCard(mod_xyzzy_card old, mod_xyzzy_card newcard, string cardType)
         {
-            String actions = "Replacing " + cardType + "card " + old.text + " with " + newcard.text + " in " + getChat().chatID + "." ;
+            String text = "Replacing " + cardType + "card " + old.text + " with " + newcard.text + " in " + getChat().chatID + "." ;
+            string actions = "";
             if (cardType == "Q")
             {
 
@@ -999,7 +1087,10 @@ namespace Roboto.Modules
                 }
 
             }
-            log(actions, logging.loglevel.normal);
+            if (actions != "")
+            {
+                log(text + actions, logging.loglevel.normal);
+            }
         }
 
         /// <summary>
@@ -1074,7 +1165,7 @@ namespace Roboto.Modules
 
             //Now build up keybaord
             List<String> keyboardResponse = new List<string> { "Continue", "Import CardCast Pack", "All", "None" };
-            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList())
+            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList().Take(50).OrderBy(x => x.name).ToList()) //TODO - replace this with some kind of paging mechanism.
             {
                 keyboardResponse.Add(pack.name);
             }
@@ -1134,6 +1225,7 @@ namespace Roboto.Modules
             {
                 remainingQuestions.Add(questions[pos].uniqueID);
             }
+            log("Added up to " + enteredQuestionCount + " question cards to the deck, from a total of " + questions.Count + " choices. There are " + remainingQuestions.Count + " currently in the deck.", logging.loglevel.low);
 
         }
 
@@ -1156,6 +1248,7 @@ namespace Roboto.Modules
             {
                 remainingAnswers.Add(answers[pos].uniqueID);
             }
+            log("Added up to " + cardsToPick + " answer cards to the deck, from a total of " + answers.Count + " choices. There are " + remainingAnswers.Count + " currently in the deck.", logging.loglevel.low);
         }
     }
 }
