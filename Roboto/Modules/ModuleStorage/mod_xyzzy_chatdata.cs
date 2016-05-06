@@ -326,23 +326,28 @@ namespace Roboto.Modules
             mod_xyzzy_card question = localData.getQuestionCard(currentQuestion);
             //make sure the response is in the list of cards the player has
             mod_xyzzy_card answerCard = null;
+
+            string possibleAnswers = "";
             foreach (string cardUID in player.cardsInHand)
             {
                 //find the card, then check the text matches the response.
                 mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                if (card != null && card.text == answer)
+                //cleanse both bits of text, limit to 100 chars as keybaord cuts off sometimes. Try exact match first jsut in case the cleanse does something wierd. 
+                if (card != null && (card.text == answer || Helpers.common.cleanseText(card.text, 100) == Helpers.common.cleanseText(answer, 100)))
                 {
                     answerCard = card;
                 }
+                possibleAnswers += card.text +", ";
             }
 
             if (answerCard == null)
             {
-                log("Couldn't match card against " + answer 
-                    + " in chat " + chatID
+                log("Couldn't match card against '" + answer 
+                    + "' in chat " + chatID
                     + " which has question " + currentQuestion + " (" 
                     + (question.text.Length > 10 ? question.text.Substring(0,10) : question.text )
-                    + ") out - probably an invalid response");
+                    + ") out - probably an invalid response", logging.loglevel.warn );
+                log("Possible answers for player " + playerID + " were: " + possibleAnswers, logging.loglevel.verbose);
                 //couldnt find answer, reask
                 string questionText = players[lastPlayerAsked].name + " asks: " + "\n\r" + question.text;
                 //we are expecting a reply to this:
@@ -1220,7 +1225,7 @@ namespace Roboto.Modules
             //limit to 500 question's (then redeal)
             if (enteredQuestionCount > 500) { enteredQuestionCount = 500; }
             //pick n questions and put them in the deck
-            List<int> cardsPositions = mod_xyzzy.getUniquePositions(questions.Count, enteredQuestionCount);
+            List<int> cardsPositions =  Helpers.common.getUniquePositions(questions.Count, enteredQuestionCount);
             foreach (int pos in cardsPositions)
             {
                 remainingQuestions.Add(questions[pos].uniqueID);
@@ -1238,17 +1243,14 @@ namespace Roboto.Modules
                 if (packEnabled(a.category)) { answers.Add(a); }
             }
 
-            int cardsToPick = answers.Count;
-            // limit to 500 question's (then redeal)
-            if (cardsToPick > 500) { cardsToPick = 500; }
             //pick n questions and put them in the deck
-            List<int> cardsPositions = mod_xyzzy.getUniquePositions(answers.Count, cardsToPick);
+            List<int> cardsPositions = Helpers.common.getUniquePositions(answers.Count, answers.Count);
 
             foreach (int pos in cardsPositions)
             {
                 remainingAnswers.Add(answers[pos].uniqueID);
             }
-            log("Added up to " + cardsToPick + " answer cards to the deck, from a total of " + answers.Count + " choices. There are " + remainingAnswers.Count + " currently in the deck.", logging.loglevel.low);
+            log("Added answer cards to the deck, from a total of " + answers.Count + " choices. There are " + remainingAnswers.Count + " currently in the deck.", logging.loglevel.low);
         }
     }
 }

@@ -109,6 +109,7 @@ namespace Roboto.Modules
                 if (p.packCode != null && p.packCode != "" && p.nextSync < DateTime.Now)
                 {
                     log("Syncing " + p.name);
+                    Roboto.Settings.stats.logStat(new statItem("Packs Synced", typeof(mod_xyzzy)));
                     Helpers.cardcast_pack outpack;
                     string response;
                     bool success = importCardCastPack(p.packCode, out outpack, out response);
@@ -126,20 +127,7 @@ namespace Roboto.Modules
 
         }
 
-        private string cleanseText(string s)
-        {
-            try
-            {
-                return s.ToUpper().Trim().Replace(" ", "").Replace("__", "_").Replace(".", "");
-            }
-            
-            catch (Exception e)
-            {
-                log("Error cleansing string", logging.loglevel.critical);
-            }
-            return "";
-        
-        }
+
 
         /// <summary>
         /// Import a cardcast pack into the xyzzy localdata
@@ -196,7 +184,7 @@ namespace Roboto.Modules
                         foreach (mod_xyzzy_card q in questions.Where(x => x.category == l_packname))
                         {
                             //find existing cards which don't exist in our import pack
-                            if (import_questions.Where(y => cleanseText(y.question) == cleanseText(q.text)).Count() == 0)
+                            if (import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text)).Count() == 0)
                             {
                                 remove_cards.Add(q);
                             }
@@ -234,7 +222,7 @@ namespace Roboto.Modules
                             cardcast_question_card match = null;
                             try
                             {
-                                 match = import_questions.Where(y => cleanseText(y.question) == cleanseText(q.text)).ToList()[0];
+                                 match = import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text)).ToList()[0];
                             }
                             catch (Exception e)
                             {
@@ -280,7 +268,7 @@ namespace Roboto.Modules
                         foreach (mod_xyzzy_card a in answers.Where(x => x.category == l_packname))
                         {
                             //find existing cards which don't exist in our import pack
-                            if (import_answers.Where(y => cleanseText(y.answer) == cleanseText(a.text)).Count() == 0)
+                            if (import_answers.Where(y => Helpers.common.cleanseText(y.answer) == Helpers.common.cleanseText(a.text)).Count() == 0)
                             {
                                 remove_cards.Add(a);
                             }
@@ -296,7 +284,7 @@ namespace Roboto.Modules
                         foreach (mod_xyzzy_card a in exist_cards)
                         {
                             //update the local text if it was a match-ish
-                            List<cardcast_answer_card> amatches = import_answers.Where(y => cleanseText(y.answer) == cleanseText(a.text)).ToList();
+                            List<cardcast_answer_card> amatches = import_answers.Where(y => Helpers.common.cleanseText(y.answer) == Helpers.common.cleanseText(a.text)).ToList();
                             if (amatches.Count > 0)
                             {
                                 cardcast_answer_card matcha = amatches[0];
@@ -392,7 +380,7 @@ namespace Roboto.Modules
                 foreach (mod_xyzzy_card c in questions.Where(y => y.category == pack.name) )
                 {
                     //is there a matching card already?
-                    List<mod_xyzzy_card> matchList = validQCards.Where(x => (x.category == pack.name && cleanseText(x.text) == cleanseText(c.text))).ToList();
+                    List<mod_xyzzy_card> matchList = validQCards.Where(x => (x.category == pack.name && Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(c.text))).ToList();
                     if (matchList.Count() > 1)
                     {
                         removeQCards.Add(c);
@@ -413,7 +401,7 @@ namespace Roboto.Modules
                 foreach (mod_xyzzy_card c in answers.Where(y => y.category == pack.name))
                 {
                     //is there a matching card already?
-                    List<mod_xyzzy_card> matchList = validACards.Where(x => (x.category == pack.name && cleanseText(x.text) == cleanseText(c.text))).ToList();
+                    List<mod_xyzzy_card> matchList = validACards.Where(x => (x.category == pack.name && Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(c.text))).ToList();
                     if (matchList.Count() > 1)
                     {
                         removeACards.Add(c);

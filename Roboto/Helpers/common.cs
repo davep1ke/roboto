@@ -9,6 +9,65 @@ namespace Roboto.Helpers
     static class common
     {
         private static TimeSpan oneDay = new TimeSpan(1, 0, 0, 0);
+
+        /// <summary>
+        /// Cleanse some text so that it is matchable. Limit to first n characters. 
+        /// </summary>
+        /// <param name="s"></param>
+        /// <returns></returns>
+        public static string cleanseText(string s, int maxLength = -1)
+        {
+            try
+            {
+
+                string matchString = new string(s.Where(c => !char.IsPunctuation(c)).ToArray());
+                matchString = matchString.ToUpper().Trim();
+                if (maxLength != -1 && s.Length > maxLength) { matchString = matchString.Substring(0, maxLength); }
+                return matchString;
+            }
+
+            catch (Exception e)
+            {
+               Roboto.log.log("Error cleansing string " + s, logging.loglevel.critical);
+            }
+            return "";
+
+        }
+
+
+
+        /// <summary>
+        /// Gets card positions that havent already been picked. 
+        /// </summary>
+        /// <param name="p"></param>
+        /// <param name="questions"></param>
+        /// <returns></returns>
+        public static List<int> getUniquePositions(int arraySize, int questions)
+        {
+            if (questions > arraySize) { questions = arraySize; }
+            if (questions == -1) { questions = arraySize; }
+            if (questions > 500) { questions = 500; }
+
+            //TODO - generic
+            List<int> results = new List<int>();
+            //create a dummy array
+
+            List<int> dummy = new List<int>();
+            for (int i = 0; i < arraySize; i++) { dummy.Add(i); }
+
+            //pick from the array, removing the picked number
+            for (int i = 0; i < questions; i++)
+            {
+                int newCardPos = settings.getRandom(dummy.Count);
+                results.Add(dummy[newCardPos]);
+                dummy.Remove(newCardPos);
+            }
+
+            return results;
+        }
+
+
+
         /// <summary>
         /// Add a time to a datetime, ignoring any "quiet"  periods
         /// </summary>
@@ -19,14 +78,14 @@ namespace Roboto.Helpers
         /// <returns></returns>
         public static DateTime addTimeIgnoreQuietHours(DateTime startTime, TimeSpan startQuietHours, TimeSpan endQuietHours, TimeSpan timeToAdd)
         {
+            
             if (startQuietHours == TimeSpan.MinValue || endQuietHours == TimeSpan.MinValue)
             {
-                Roboto.log.log("No quiet hours, defaulting", logging.loglevel.verbose);
+                Roboto.log.log("Adding " + timeToAdd.ToString("c") + " to " + startTime.ToString("f") + " with no quiet hours set", logging.loglevel.verbose);
                 return startTime.Add(timeToAdd);
             }
 
-
-            Roboto.log.log("Adding " + timeToAdd.ToString("c") + " to " + startTime.ToString("f") + " ignoring " + startQuietHours.ToString("c") + " to " + endQuietHours.ToString("c"), logging.loglevel.verbose);
+            String logtext = "Adding " + timeToAdd.ToString("c") + " to " + startTime.ToString("f") + " ignoring " + startQuietHours.ToString("c") + " to " + endQuietHours.ToString("c") + ". ";
             DateTime endTime = startTime;
             
             //loop through and subtract time from the timeToAdd, and move the endTime forwards;
@@ -62,12 +121,10 @@ namespace Roboto.Helpers
                     //add time to our start, ignore end.
                     endTime = endTime.Add(timeToEnd);
                 }
-
-
+                
             }
 
-
-            Roboto.log.log("Result was " + endTime.ToString("f"), logging.loglevel.verbose);
+            Roboto.log.log(logtext + "Result was " + endTime.ToString("f"), logging.loglevel.verbose);
             return endTime;
 
          }

@@ -137,5 +137,12 @@ namespace Roboto
                 this.chatTitle = chatTitle;
             }
         }
+
+        public override string ToString()
+        {
+            string text = "";
+            if (chatTitle != null) { text = chatTitle; }
+            return text + "(" + chatID + ")";
+        }
     }
 }

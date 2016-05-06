@@ -404,34 +404,6 @@ namespace Roboto.Modules
         }
 
 
-        /// <summary>
-        /// Gets card positions that havent already been picked. 
-        /// </summary>
-        /// <param name="p"></param>
-        /// <param name="questions"></param>
-        /// <returns></returns>
-        public static List<int> getUniquePositions(int arraySize, int questions)
-        {
-            if (questions > arraySize) { questions = arraySize; }
-            if (questions == -1) { questions = arraySize; }
-
-            //TODO - generic
-            List<int> results = new List<int>();
-            //create a dummy array
-            
-            List<int> dummy = new List<int>();
-            for (int i = 0; i < arraySize; i++){dummy.Add(i);}
-
-            //pick from the array, removing the picked number
-            for (int i = 0; i < questions; i++)
-            {
-                int newCardPos = settings.getRandom(dummy.Count);
-                results.Add(dummy[newCardPos]);
-                dummy.Remove(newCardPos);
-            }
-
-            return results;
-        }
 
         protected override void backgroundProcessing()
         {
@@ -483,6 +455,8 @@ namespace Roboto.Modules
             bool processed = false;
             chat c = Roboto.Settings.getChat(e.chatID);
             mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
+
+            log("Incoming expected reply for chat " + c.ToString() + " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.verbose);
 
             //did one of our outbound messages fail?
             if (messageFailed)
