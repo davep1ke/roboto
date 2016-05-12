@@ -235,7 +235,7 @@ namespace Roboto.Modules
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == xyzzy_Statuses.Stopped)
                 {
 
-               Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
+                    Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                     //Start a new game!
 
                     //try and send the opening message
@@ -253,7 +253,7 @@ namespace Roboto.Modules
                     {
                         //message went out successfully, start setting it up proper
                         chatData.reset();
-                        Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
+                        //Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy)); //Cant do this, as clears the "how many questions" we just asked!
                         chatData.setStatus(xyzzy_Statuses.SetGameLength);
                         //add the player that started the game
                         chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
@@ -474,7 +474,7 @@ namespace Roboto.Modules
             if (messageFailed)
             {
                 //TODO - better handling of failed outbound messages. Timeout player or something depending on status? 
-               
+                log("Failed Incoming expected reply for chat " + c.ToString() + " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.high);
                 return true;
             }
 
