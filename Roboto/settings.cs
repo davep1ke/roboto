@@ -614,13 +614,20 @@ namespace Roboto
                 }
             }
             //now send it to the plugin (remove first, so any checks can be done)
-            bool pluginProcessed = pluginToCall.replyReceived(er, null, true);
-
-            if (!pluginProcessed)
+            if (pluginToCall == null)
             {
-                Roboto.log.log("Plugin " + pluginToCall.GetType().ToString() + " didnt process the message it expected a reply to!", logging.loglevel.high);
-                throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
+                Roboto.log.log("Expected Reply wasnt on the stack! Couldnt remove it", logging.loglevel.warn);
+            }
+            else
+            {
+                bool pluginProcessed = pluginToCall.replyReceived(er, null, true);
 
+                if (!pluginProcessed)
+                {
+                    Roboto.log.log("Plugin " + pluginToCall.GetType().ToString() + " didnt process the message it expected a reply to!", logging.loglevel.high);
+                    throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
+
+                }
             }
             
         }

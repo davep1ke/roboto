@@ -26,7 +26,7 @@ namespace Roboto
         /// <param name="text"></param>
         /// <param name="markDown"></param>
         /// <param name="replyToMessageID"></param>
-        /// <returns>An integer specifying the message id. -1 indicates it is queueed, int.MinValue indicates a failure</returns>
+        /// <returns>An integer specifying the message id. -1 indicates it is queued, int.MinValue indicates a failure</returns>
         public static long SendMessage(long chatID, string text, bool markDown = false, long replyToMessageID = -1, bool clearKeyboard = false, bool trySendImmediately = false)
         {
             
@@ -222,11 +222,13 @@ namespace Roboto
             catch (WebException ex)
             {
                 Roboto.log.log("Couldnt send message to " + chatID.ToString() + " because " + ex.ToString(), logging.loglevel.high);
-                
+
                 //Mark as failed and return the failure to the calling method
-                Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
-                Roboto.Settings.parseFailedReply(e);
-                
+                if (e.expectsReply)
+                {
+                    Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
+                    Roboto.Settings.parseFailedReply(e);
+                }
                 return long.MinValue;
             }
 
@@ -235,9 +237,11 @@ namespace Roboto
                 Roboto.log.log("Exception sending message to " + chatID.ToString() + " because " + ex.ToString(), logging.loglevel.high);
 
                 //Mark as failed and return the failure to the calling method
-                Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
-                Roboto.Settings.parseFailedReply(e);
-
+                if (e.expectsReply)
+                {
+                    Roboto.log.log("Returning message " + e.messageData + " to plugin " + e.pluginType.ToString() + " as failed.", logging.loglevel.high);
+                    Roboto.Settings.parseFailedReply(e);
+                }
                 return long.MinValue;
 
             }

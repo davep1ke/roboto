@@ -342,6 +342,7 @@ namespace Roboto.Modules
 
             if (answerCard == null)
             {
+                Roboto.Settings.stats.logStat(new statItem("Bad Responses", typeof(mod_xyzzy)));
                 log("Couldn't match card against '" + answer 
                     + "' in chat " + chatID
                     + " which has question " + currentQuestion + " (" 
@@ -768,21 +769,30 @@ namespace Roboto.Modules
             chosenAnswer = chosenAnswer.Replace("»", ">>");
 
             //find the response that matches
+            string possiblematches = "";
             foreach (mod_xyzzy_player p in players)
             {
                 //handle multiple answers for a question 
                 string answer = "";
+                
                 foreach (string cardUID in p.selectedCards)
                 {
                     mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                    if (answer != "") { answer += " >> "; }
+                    if (answer != "")
+                    {
+                        answer += " >> ";
+                    }
                     answer += card.text;
+                    possiblematches += answer + ", ";
                 }
 
                 //Keyboard seems to trim the answers at about 110 chars, so ignore anything after that point. 
-                if (answer.Substring(0, Math.Min(answer.Length, 100)) == chosenAnswer.Substring(0, Math.Min(chosenAnswer.Length, 100)))
+                //cleanse text and match
+                //if ( answer.Substring(0, Math.Min(answer.Length, 100)) == chosenAnswer.Substring(0, Math.Min(chosenAnswer.Length, 100)))
                 //if (answer == chosenAnswer)
-                    {
+
+                if (answer == chosenAnswer || Helpers.common.cleanseText(answer, 100) == Helpers.common.cleanseText(chosenAnswer, 100))
+                {
                     winner = p;
                 }
             }
@@ -806,7 +816,16 @@ namespace Roboto.Modules
             else
             {
                 //answer not found?
+                Roboto.Settings.stats.logStat(new statItem("Bad Responses", typeof(mod_xyzzy)));
                 TelegramAPI.SendMessage(tzar.playerID, "Couldnt find your answer, try again?");
+
+                log("Couldn't match judges response '" + chosenAnswer
+                + "' in chat " + chatID
+                + " which has question " + currentQuestion + " ("
+                + (q.text.Length > 10 ? q.text.Substring(0, 10) : q.text)
+                + ") out - probably an invalid response", logging.loglevel.warn);
+                log("Possible answers for judge were: " + possiblematches, logging.loglevel.verbose);
+
                 beginJudging(true);
                 return false;
             }

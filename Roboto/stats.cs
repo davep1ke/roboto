@@ -260,16 +260,19 @@ namespace Roboto
                     ch.Height = 600;
                     ch.TextAntiAliasingQuality = TextAntiAliasingQuality.High;
 
-                    Title t = new Title(Roboto.Settings.botUserName + " Statistics", Docking.Top, new System.Drawing.Font("Verdana", 13, System.Drawing.FontStyle.Bold), Color.Black);
+                    Title t = new Title(Roboto.Settings.botUserName + " Statistics", Docking.Top, new System.Drawing.Font("Roboto", 14), Color.Black);
                     ch.Titles.Add(t);
                     
                     ChartArea cha = new ChartArea("cha");
+                    cha.BackColor = Color.FromArgb(200,225,255);
                     
                     cha.AxisX.Title = "Hours Ago";
-                    cha.AxisX.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
+                    //cha.AxisX.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
+                    cha.AxisX.TitleFont = new System.Drawing.Font("Roboto", 11);
                     cha.AxisX.MajorGrid.Interval = 6;
                     cha.AxisY.Title = "Value / " + granularity.TotalMinutes.ToString() + " mins"  ;
-                    cha.AxisY.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
+                    cha.AxisY.TitleFont = new System.Drawing.Font("Roboto", 11);
+                    //cha.AxisY.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
 
                     Legend l = new Legend("Legend");
                     l.DockedToChartArea = "cha";

@@ -35,6 +35,7 @@ namespace Roboto
         /// <param name="skipLevel">Levels of the stack to skip when getting the calling class</param>
         public void log(string text, loglevel level = loglevel.normal, ConsoleColor colour = ConsoleColor.White, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 1)
         {
+            //TODO - add exceptions into the log. 
 
             //check logfile correct
             if (initialised && Roboto.Settings.enableFileLogging && DateTime.Now > currentLogFileDate.AddHours(Roboto.Settings.rotateLogsEveryXHours))
@@ -154,7 +155,9 @@ namespace Roboto
 
         private void writeLine(string s)
         {
+            s = cleanse(s);
             Console.WriteLine(s);
+
             if (initialised && textWriter != null)
             {
                 textWriter.WriteLine(s);
@@ -163,12 +166,25 @@ namespace Roboto
 
         private void write(string s)
         {
+            //cleanse our text of anything we shouldnt log
+            s = cleanse(s);
+            
             Console.Write(s);
             if (Roboto.Settings.enableFileLogging && textWriter != null)
             {
                 textWriter.Write(s);
             }
         }
+
+        private string cleanse(string s)
+        {
+            if (Roboto.Settings != null && Roboto.Settings.telegramAPIKey != null)
+            {
+                s = s.Replace(Roboto.Settings.telegramAPIKey, "<APIKEY>");
+            }
+            return s;
+        }
+
 
         public void initialise()
         {

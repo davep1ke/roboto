@@ -197,7 +197,8 @@ namespace Roboto.Modules
             Roboto.Settings.stats.registerStatType("New Games Started", this.GetType(), System.Drawing.Color.Aqua);
             Roboto.Settings.stats.registerStatType("Games Ended", this.GetType(), System.Drawing.Color.Orange);
             Roboto.Settings.stats.registerStatType("Hands Played", this.GetType(), System.Drawing.Color.Olive);
-            Roboto.Settings.stats.registerStatType("Packs Synced", this.GetType(), System.Drawing.Color.Beige);
+            Roboto.Settings.stats.registerStatType("Packs Synced", this.GetType(), System.Drawing.Color.DarkBlue );
+            Roboto.Settings.stats.registerStatType("Bad Responses", this.GetType(), System.Drawing.Color.Olive);
 
             Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
 
@@ -233,26 +234,39 @@ namespace Roboto.Modules
                 
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == xyzzy_Statuses.Stopped)
                 {
-                    Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
+
+               Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                     //Start a new game!
-                    chatData.reset();
-                    Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
-                    chatData.setStatus(xyzzy_Statuses.SetGameLength);
-                    //add the player that started the game
-                    chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
 
-                    //send out invites
-                    TelegramAPI.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
-                        "at any time - you will be included next time a question is asked. You will need to open a private chat to @" +
-                        Roboto.Settings.botUserName + " if you haven't got one yet - unfortunately I am a stupid bot and can't do it myself :("
-                        , false, -1, true);
-
+                    //try and send the opening message
                     //confirm number of questions
-                    //TODO - wrap the TelegramAPI calls into methods in the plugin and pluginData classes. 
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
+                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
 
-                    //int nrQuestionID = TelegramAPI.GetReply(m.userID, "How many questions do you want the round to last for (-1 for infinite)", -1, true);
-                    //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(nrQuestionID, m.userID, c.chatID, "")); //this will last until the game is started. 
+                    if (messageID == long.MinValue)
+                    {
+                        //send out invites
+                        TelegramAPI.SendMessage(m.chatID, m.userFullName + " needs to open a private chat to @" +
+                            Roboto.Settings.botUserName + " to be able to start a game", false, -1, true);
+
+                    }
+                    else
+                    {
+                        //message went out successfully, start setting it up proper
+                        chatData.reset();
+                        Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
+                        chatData.setStatus(xyzzy_Statuses.SetGameLength);
+                        //add the player that started the game
+                        chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
+
+
+                        //send out invites
+                        TelegramAPI.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
+                            "at any time - you will be included next time a question is asked. You will need to open a private chat to @" +
+                            Roboto.Settings.botUserName + " if you haven't got one yet - unfortunately I am a stupid bot and can't do it myself :("
+                            , false, -1, true);
+                    }
+                    
+                    //TODO - wrap the TelegramAPI calls into methods in the plugin and pluginData classes.                    
                     
                 }
                 //Start but there is an existing game
@@ -287,10 +301,10 @@ namespace Roboto.Modules
                     }
                     catch
                     {
-                        
+                        log("Error sending message!", logging.loglevel.high);
                     }
 
-                    if (i != -1)
+                    if (i != long.MinValue) //if we didnt get an error sending the message
                     {
                         bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
                         if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
@@ -456,19 +470,18 @@ namespace Roboto.Modules
             chat c = Roboto.Settings.getChat(e.chatID);
             mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
 
-            log("Incoming expected reply for chat " + c.ToString() + " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.verbose);
-
             //did one of our outbound messages fail?
             if (messageFailed)
             {
-                if (e.messageData == "SetGameLength")
-                {
-                    TelegramAPI.SendMessage(e.chatID, "I need to be able to send you a direct message. Open up a chat with " + Roboto.Settings.botUserName + " and try again");
-                    chatData.setStatus(xyzzy_Statuses.Stopped);
-                }
-                processed = true;
+                //TODO - better handling of failed outbound messages. Timeout player or something depending on status? 
+               
+                return true;
             }
 
+            else
+            {
+                log("Incoming expected reply for chat " + c.ToString() + " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.verbose);
+            }
 
             //Set up the game, once we get a reply from the user. 
             if (e.messageData == "SetGameLength")
