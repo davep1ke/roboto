@@ -31,6 +31,8 @@ namespace Roboto.Helpers
         public string name;
         public string packCode;
         public string description;
+        public string language = "Unknown";
+        public string category = "Unknown";
         public DateTime nextSync = DateTime.MinValue;
 
         internal cardcast_pack() { }

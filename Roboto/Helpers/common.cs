@@ -128,5 +128,13 @@ namespace Roboto.Helpers
             return endTime;
 
          }
+
+        public static string removeMarkDownChars(string name)
+        {
+            name = name.Replace("_", "-");
+            name = name.Replace("*", "x");
+
+            return name;
+        }
     }
 }

@@ -416,10 +416,10 @@ namespace Roboto.Modules
                 //remove any flagged cards
                 int total = removeQCards.Count() + removeACards.Count();
                 foreach (mod_xyzzy_card c in removeACards) { answers.Remove(c); }
-                log("Removed " + removeQCards.Count() + " duplicate questions and " + removeACards.Count() 
-                    + " answers from " + pack.name 
-                    + " new totals now " + questions.Where(y => y.category == pack.name).Count() 
-                    + " questions and " + answers.Where(y => y.category == pack.name).Count() + " answers."
+                log("Removed " + removeQCards.Count() + " / " + removeACards.Count() 
+                    + " duplicate q/a from " + pack.name 
+                    + " new totals are " + questions.Where(y => y.category == pack.name).Count() 
+                    + " / " + answers.Where(y => y.category == pack.name).Count() + " q/a."
                     , total > 0? logging.loglevel.warn:logging.loglevel.verbose);
 
 

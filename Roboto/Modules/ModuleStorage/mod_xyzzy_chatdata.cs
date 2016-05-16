@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -11,6 +12,7 @@ namespace Roboto.Modules
 
     public enum xyzzy_Statuses { Stopped, SetGameLength, setPackFilter, setMinHours, setMaxHours, cardCastImport, Invites, Question, Judging, waitingForNextHand }
 
+    
     /// <summary>
     /// CHAT (i.e. game) Data to be stored in the XML store
     /// </summary>
@@ -18,6 +20,7 @@ namespace Roboto.Modules
     [Serializable]
     public class mod_xyzzy_chatdata : RobotoModuleChatDataTemplate
     {
+        public int maxPacksPerPage = 30;
 
         //core chat data
         public List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
@@ -52,6 +55,7 @@ namespace Roboto.Modules
             //update some date pointers for future reference
             statusChangedTime = DateTime.Now;
             if (newStatus == xyzzy_Statuses.Question) { lastHandStartedTime = DateTime.Now; }
+            log("Status for " + chatID + " now " + newStatus.ToString(), logging.loglevel.verbose);
 
         }
         
@@ -401,6 +405,28 @@ namespace Roboto.Modules
             return true;
         }
 
+        public void reDeal()
+        {
+            //set the status (temporarily)
+            setStatus(xyzzy_Statuses.Stopped);
+
+            //clear the various cached lists
+            foreach (mod_xyzzy_player p in players)
+            {
+                p.cardsInHand.Clear();
+                p.selectedCards.Clear();
+            }
+            remainingAnswers.Clear();
+            remainingQuestions.Clear();
+            Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+
+            //now build back up
+            addAllAnswers();
+            addQuestions();
+            askQuestion(true);
+            
+        }
+
 
         /// <summary>
         /// Calculate which players still need to responsd.
@@ -526,7 +552,12 @@ namespace Roboto.Modules
                 //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
                 //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
                 //TODO - add messageData types to an enum
-                TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", -1, true, keyboard);
+                long messageID = TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", -1, true, keyboard);
+
+                if (messageID == long.MinValue)
+                {
+                    log("Couldnt send judges message, probably blocked? ", logging.loglevel.warn);
+                }
 
                 //Send the general chat message
                 if (!judgesMessageOnly)
@@ -717,12 +748,12 @@ namespace Roboto.Modules
 
             string kb = TelegramAPI.createKeyboard(new List<string>()
             {
-                "Continue"
+                "Continue", "No Limit"
                 , "1","2", "6", "12", "24", "48"
             }, 2);
 
-            TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to set a throttle? Enter how long (in hours) before a new round can start, or 'Continue' to accept the last value ("
-                + (minWaitTimeHours == 0 ? "No Throttle" : minWaitTimeHours.ToString()) + ")"
+            TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to force a slower game? Enter how long (in hours) before a new round can start, or 'Continue' to accept the last value ("
+                + (minWaitTimeHours == 0 ? "No Limit" : minWaitTimeHours.ToString()) + ")"
                 , true, typeof(mod_xyzzy), "setMinHours", -1, true, kb);
         }
 
@@ -734,7 +765,7 @@ namespace Roboto.Modules
         public bool setMinTimeout(string text_msg)
         {
             if (text_msg == "Continue") { return true; }
-            else if (text_msg == "No Throttle")
+            else if (text_msg == "No Limit")
             {
                 minWaitTimeHours = 0;
                 return true;
@@ -771,7 +802,7 @@ namespace Roboto.Modules
             //find the response that matches
             string possiblematches = "";
             foreach (mod_xyzzy_player p in players)
-            {
+            { 
                 //handle multiple answers for a question 
                 string answer = "";
                 
@@ -801,14 +832,62 @@ namespace Roboto.Modules
             {
                 //give the winning player a point. 
                 winner.wins++;
-                string message = winner.name + " wins a point!\n\rQuestion: " + q.text + "\n\rAnswer:" + chosenAnswer + "\n\rThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
+                string message = winner.name + " wins a point!\n\r";
+                
+                //try and insert the answers into the message. 
+                bool formattedQuestionSuccessfully = false;
+                try
+
+                {
+                    Regex insertPoints = new Regex(@"_+");
+                    MatchCollection mc = insertPoints.Matches(q.text);
+                    string formattedquestion = "";
+                    int origstringpos = 0;
+
+                    if (mc.Count == winner.selectedCards.Count() && mc.Count == q.nrAnswers)
+                    {
+                        int answernr = 0;
+                        foreach (Match m in mc)
+                        {
+                            //add the text up to this point
+                            formattedquestion += q.text.Substring(origstringpos, m.Index - origstringpos);
+                            //add the answer
+                            formattedquestion += "*" + localData.getAnswerCard(winner.selectedCards[answernr]).text + "*";
+
+                            //move our indexes along.
+                            origstringpos = m.Index + m.Length;
+                            answernr++;
+                        }
+                        //spool the end of the string
+                        formattedquestion += q.text.Substring(origstringpos);
+                    }
+                    else
+                    {
+                        log("Nr matches (" + mc.Count + ") != winner selected cards (" + winner.selectedCards.Count() + ") != nr answers on question (" + q.nrAnswers + ")", logging.loglevel.warn);
+                    }
+
+                    message += formattedquestion;
+                    formattedQuestionSuccessfully = true;
+
+                }
+                catch (Exception e)
+                {
+                    log("Error trying to format answer with responses " + e.ToString() + ". Falling back to before/after mode", logging.loglevel.warn);
+                }
+                //fallback - if we cant figure out where, just add them on the end. 
+                if (formattedQuestionSuccessfully == false)
+                {
+                    message += "Question: " + q.text + "\n\rAnswer:" + chosenAnswer + "\n\rThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
+                }
+            
+                //output the current scores    
                 List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
                 foreach (mod_xyzzy_player p in orderedPlayers)
                 {
                     message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
                 }
 
-                TelegramAPI.SendMessage(chatID, message);
+                TelegramAPI.SendMessage(chatID, message, true);
 
                 //ask the next question (will jump to summary if no more questions). 
                 askQuestion(false);
@@ -1179,24 +1258,82 @@ namespace Roboto.Modules
 
         }
 
-        public void sendPackFilterMessage(message m)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="m"></param>
+        /// <param name="pageNr">1-based index of the page to display</param>
+        public void sendPackFilterMessage(message m, int pageNr)
         {
             mod_xyzzy_coredata localData = getLocalData();
-            String response = "The following packs are available, and their current status is as follows:" + "\n\r" + getPackFilterStatus() +
-             "You can toggle the packs using the keyboard below, or click 'Continue' to start the game. You can import packs from CardCast" +
-             "by clicking 'Import CardCast Pack'";
+            String response = "The following packs (and their current status) are available. You can toggle the packs using the keyboard "
+                + "below, or click 'Continue' to start the game. You can import packs from CardCast by clicking 'Import CardCast Pack'";
 
+            
+            int totalPageCount = (localData.getPackFilterList().Count() / maxPacksPerPage) + 1;
+            
+
+            //is our pageNr valid? 
+            if (pageNr > totalPageCount)
+            {
+                log("PageNr of " + pageNr + " is greater than nr of pages " + totalPageCount, logging.loglevel.warn);
+                pageNr = totalPageCount;
+            }
+            if (pageNr <1)
+            {
+                log("PageNr of " + pageNr + " is too low", logging.loglevel.warn);
+                pageNr = 1;
+            }
 
             //Now build up keybaord
             List<String> keyboardResponse = new List<string> { "Continue", "Import CardCast Pack", "All", "None" };
-            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList().Take(50).OrderBy(x => x.name).ToList()) //TODO - replace this with some kind of paging mechanism.
+            if (totalPageCount > 1)
             {
+
+                if (pageNr > 1) { keyboardResponse.Add("Prev"); }
+                if (pageNr < totalPageCount) { keyboardResponse.Add("Next"); }
+            }
+
+            //get an ordered list, starting at the current page. 
+            int startAt = (pageNr - 1) * maxPacksPerPage;
+            string currentStatus = "null";  //can be null, ON or OFF. Used for setting headings as we want to order by status.
+
+            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList().OrderByDescending(x => packEnabled(x.name)).ThenBy(x => x.name).Skip(startAt).Take(maxPacksPerPage).ToList()) 
+            {
+                string packIsEnabled = packEnabled(pack.name).ToString();
+                if (currentStatus != packIsEnabled)
+                {
+                    currentStatus = packIsEnabled;
+                    //write heading
+                    if (currentStatus == "True")
+                    {
+                        response += "\n\r*Active Packs:*\n\r";
+                    }
+                    else
+                    {
+                        response += "\n\r*Inactive Packs:*\n\r";
+                    }
+                }
+
+                //add message to the response
+                if (packEnabled(pack.name)) { response += "ON  "; }
+                else { response += "OFF "; }
+                string cleanPackName = Helpers.common.removeMarkDownChars(pack.name);
+                response += cleanPackName + "\n\r";
+            
+                //add item to the keyboard
                 keyboardResponse.Add(pack.name);
+            }
+
+            //paging
+            if (totalPageCount > 1)
+            {
+                response += "(Page " + pageNr + " of " + totalPageCount + ")";
             }
 
             //now send the new list. 
             string keyboard = TelegramAPI.createKeyboard(keyboardResponse, 2);//todo columns
-            TelegramAPI.GetExpectedReply(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter", -1, false, keyboard);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter " + pageNr, -1, false, keyboard, true);
         }
 
 

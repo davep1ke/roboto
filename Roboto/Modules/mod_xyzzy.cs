@@ -387,7 +387,22 @@ namespace Roboto.Modules
                     TelegramAPI.SendMessage(m.chatID, response, false, m.message_id);
                     processed = true;
                 }
-                
+                //set the filter (inflight)
+                else if (m.text_msg.StartsWith("/xyzzy_setFilter"))
+                {
+                    chatData.sendPackFilterMessage(m, 1);
+                    
+                    processed = true;
+                }
+                //set the filter (inflight)
+                else if (m.text_msg.StartsWith("/xyzzy_reDeal"))
+                {
+                    TelegramAPI.SendMessage(m.chatID, "Resetting everyone's cards, and shuffled the decks", false, m.message_id);
+                    chatData.reDeal();
+                    
+                    processed = true;
+                }
+
                 else if (m.text_msg.StartsWith("/xyzzy_reset"))
                 {
                     chatData.resetScores();
@@ -474,7 +489,19 @@ namespace Roboto.Modules
             if (messageFailed)
             {
                 //TODO - better handling of failed outbound messages. Timeout player or something depending on status? 
-                log("Failed Incoming expected reply for chat " + c.ToString() + " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.high);
+                try
+                {
+                    string message = "Failed Incoming expected reply";
+                    if (c != null) { message += " for chat " + c.ToString(); }
+                    if (m != null) { message += " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID; }
+
+
+                log(message, logging.loglevel.high);
+                }
+                catch (Exception ex)
+                {
+                    log("Error thrown during failed reply processing " + ex.ToString(), logging.loglevel.critical);
+                }
                 return true;
             }
 
@@ -492,7 +519,7 @@ namespace Roboto.Modules
                 {
                     chatData.enteredQuestionCount = questions;
                     //next, ask which packs they want:
-                    chatData.sendPackFilterMessage(m);
+                    chatData.sendPackFilterMessage(m,1);
                     chatData.setStatus(xyzzy_Statuses.setPackFilter);
                 }
                 else
@@ -503,34 +530,63 @@ namespace Roboto.Modules
             }
 
             //Set up the game filter, once we get a reply from the user. 
-            else if (e.messageData == "setPackFilter")
+            else if (e.messageData.StartsWith( "setPackFilter"))
             {
+                //figure out what page we are on. Should be in the message data
+                int currentPage = 1;
+                bool success = int.TryParse(e.messageData.Substring(14), out currentPage);
+                if (!success)
+                {
+                    currentPage = 1;
+                    log("Expected messagedata to contain a page number. Was " + e.messageData, logging.loglevel.high);
+                }
                 //import a cardcast pack
                 if (m.text_msg == "Import CardCast Pack")
                 {
                     TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
                         + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
-                    chatData.setStatus( xyzzy_Statuses.cardCastImport);
+                    if (chatData.status == xyzzy_Statuses.setPackFilter) { chatData.setStatus(xyzzy_Statuses.cardCastImport); }
                 }
+                else if (m.text_msg == "Next")
+                {
+                    currentPage++;
+                    chatData.sendPackFilterMessage(m, currentPage);
+
+                }
+                else if (m.text_msg == "Prev")
+                {
+                    currentPage--;
+                    chatData.sendPackFilterMessage(m, currentPage);
+                }
+
                 //enable/disable an existing pack
                 else if (m.text_msg != "Continue")
                 {
                     chatData.setPackFilter(m);
-                    chatData.sendPackFilterMessage(m);
+                    chatData.sendPackFilterMessage(m,currentPage);
                 }
                 //no packs selected, retry
                 else if (chatData.packFilter.Count == 0)
                 {
-                    chatData.sendPackFilterMessage(m);
+                    chatData.sendPackFilterMessage(m,1);
                 }
                 //This is presumably a continue now...
                 else
                 {
-                    chatData.addQuestions();
-                    chatData.addAllAnswers();
+                    //are we adding this as part of the setup process?
+                    if (chatData.status == xyzzy_Statuses.setPackFilter)
+                    {
+                        chatData.addQuestions();
+                        chatData.addAllAnswers();
 
-                    chatData.askMaxTimeout(m.userID);
-                    chatData.setStatus(xyzzy_Statuses.setMaxHours);
+                        chatData.askMaxTimeout(m.userID);
+                        chatData.setStatus(xyzzy_Statuses.setMaxHours);
+                    }
+                    else
+                    {
+                        //adding as part of a /setFilter
+                        TelegramAPI.SendMessage(chatData.chatID, "Updated the pack list. New cards won't get added to the game until you restart, or /xyzzy_reDeal" );
+                    }
                 }
                 processed = true;
             }
@@ -542,8 +598,8 @@ namespace Roboto.Modules
                 if (m.text_msg == "Cancel")
                 {
                     //return to plugins
-                    chatData.sendPackFilterMessage(m);
-                    chatData.setStatus(xyzzy_Statuses.setPackFilter);
+                    chatData.sendPackFilterMessage(m,1);
+                    if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
                 }
                 else
                 {
@@ -557,8 +613,8 @@ namespace Roboto.Modules
                         //enable the filter
                         chatData.setPackFilter(m, pack.name);
                         //return to plugin selection
-                        chatData.sendPackFilterMessage(m);
-                        chatData.setStatus( xyzzy_Statuses.setPackFilter);
+                        chatData.sendPackFilterMessage(m,1);
+                        if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
                     }
                     else
                     {

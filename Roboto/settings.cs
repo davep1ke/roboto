@@ -152,6 +152,7 @@ namespace Roboto
                 if (c.isPurgable())
                 {
                     Roboto.log.log("Purging all data for chat " + c.chatID);
+                    Roboto.Settings.stats.logStat(new statItem("Chats Purged", typeof(Roboto)));
                     chatData.Remove(c);
                 }
                 else
