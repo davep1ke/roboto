@@ -32,7 +32,7 @@ namespace Roboto.Modules
         public bool remindersSent = false;
 
         //chat settings
-        public List<String> packFilter = new List<string> { "Base" };
+        public List<String> packFilter = new List<string> { "Cards Against Humanity" };
         public int enteredQuestionCount = -1;
         public int maxWaitTimeHours = 0;
         public int minWaitTimeHours = 0;
@@ -272,7 +272,7 @@ namespace Roboto.Modules
 
             }
             //do we have a throttle set? If so, are we within the window? 
-            if (!force && minWaitTimeHours > 0 && lastHandStartedTime.Add(new TimeSpan(minWaitTimeHours, 0, 0)) > DateTime.Now)
+            else if (!force && minWaitTimeHours > 0 && lastHandStartedTime.Add(new TimeSpan(minWaitTimeHours, 0, 0)) > DateTime.Now)
             {
                 log("About to ask question, but we are throttling.", logging.loglevel.warn);
                 setStatus(xyzzy_Statuses.waitingForNextHand);
@@ -403,6 +403,101 @@ namespace Roboto.Modules
 
 
             return true;
+        }
+
+        /// <summary>
+        /// Sends a settings page to a user. 
+        /// </summary>
+        /// <param name="m"></param>
+        public void sendSettingsMessage(message m)
+        {
+            string message = "This allows you to change the game settings for the xyzzy game. Current values are listed below";
+            List<string> keyboardOptions = new List<string>();
+            if (status == xyzzy_Statuses.Stopped)
+            {
+                message += "No game is running. You should probably *Cancel* this, then start a new game by typing /xyzzy_start in your group chat.";
+                if (players.Count > 1) { message += " You can also continue from the last game by selecting *Extend*."; }
+
+            }
+            keyboardOptions.Add("Cancel");
+            //pack filter
+            message += "\n\r- " + packFilter.Count + " packs currently enabled. You can view, enable and disable with *Change Packs*";
+            keyboardOptions.Add("Change Packs");
+            //Reset/redeal
+            message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with 'Re-deal'. If you also want to zero the scores, use 'Reset'";
+            if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*."; }
+            keyboardOptions.Add("Re-deal");
+            keyboardOptions.Add("Reset");
+            keyboardOptions.Add("Extend");
+            //timeouts / throttle
+            message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players. Change with 'Timeout' ";
+            keyboardOptions.Add("Timeout");
+            message += "\n\r- " + minWaitTimeHours + " hours between hands starting (i.e. force a slower game). Change with 'Delay' ";
+            keyboardOptions.Add("Delay");
+            //kick
+            message += "\n\r- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon* ";
+            keyboardOptions.Add("Kick");
+            keyboardOptions.Add("Abandon");
+            //question
+            message += "\n\r- " + "- If the game gets stuck, you can try *Force Question* to move things along.";
+            keyboardOptions.Add("Force Question");
+            //chat settings
+            //message += "\n\rNB: There are also a number of general chat settings that you can change using /settings in the group chat.";
+            
+            TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2));
+
+        }
+
+        public void sendSettingsMsgToChat()
+        {
+
+            string message = "";
+            if (status == xyzzy_Statuses.Stopped)
+            {
+                message += "No game is running. You should probably start a new game by typing /xyzzy_start in your group chat.";
+                if (players.Count > 1) { message += " You can also continue from the last game by typing /xyzzy_settings, and selecting *Extend*."; }
+
+            }
+            else
+            {
+                message += "Current settings are below. You can change with /xyzzy_settings, or use /xyzzy_status to get the current state of the game.";
+                message += "\n\r- " + packFilter.Count + " packs currently enabled.";
+                message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck";
+                message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players.";
+                message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands starting.";
+                
+            }
+            TelegramAPI.SendMessage(chatID, message);
+
+        }
+
+        public  void forceQuestion()
+        {
+            askQuestion(true);
+        }
+
+        public void extend()
+        {
+            addQuestions();
+
+            TelegramAPI.SendMessage(chatID, "Added additional cards to the game!");
+            if (status == xyzzy_Statuses.Stopped && players.Count > 1)
+            {
+                Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
+                askQuestion(true);
+            }
+
+
+        }
+
+        public void askKickMessage(message m)
+        {
+            List<string> playernames = new List<string>();
+            foreach (mod_xyzzy_player p in players ) { playernames.Add(p.name); }
+            playernames.Add("Cancel");
+            string keyboard = TelegramAPI.createKeyboard(playernames, 2);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", -1, true, keyboard);
+
         }
 
         public void reDeal()
@@ -877,6 +972,7 @@ namespace Roboto.Modules
                 //fallback - if we cant figure out where, just add them on the end. 
                 if (formattedQuestionSuccessfully == false)
                 {
+                    log("Fallback mode for winners message", logging.loglevel.normal);
                     message += "Question: " + q.text + "\n\rAnswer:" + chosenAnswer + "\n\rThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
                 }
             

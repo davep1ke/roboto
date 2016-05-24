@@ -20,18 +20,18 @@ namespace Roboto.Helpers
             try
             {
 
-                string matchString = new string(s.Where(c => !char.IsPunctuation(c)).ToArray());
-                matchString = matchString.ToUpper().Trim();
-                if (maxLength != -1 && s.Length > maxLength) { matchString = matchString.Substring(0, maxLength); }
-                return matchString;
+                s = new string(s.Where(c => !char.IsPunctuation(c)).ToArray());
+                s = s.ToUpper().Trim();
+                if (maxLength != -1 && s.Length > maxLength) { s = s.Substring(0, maxLength); }
+                return s;
             }
 
             catch (Exception e)
             {
-               Roboto.log.log("Error cleansing string " + s, logging.loglevel.critical);
+                Roboto.log.log("Error cleansing string '" + s + "' - " + e.ToString(), logging.loglevel.critical);
+                //if we fail for wahtever reason, fall back to the original string.
+                return s;
             }
-            return "";
-
         }
 
 

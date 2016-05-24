@@ -99,6 +99,7 @@ namespace Roboto
         {
             foreach(Modules.RobotoModuleTemplate plugin in plugins )
             {
+                Roboto.log.log("Startup Checks for " + plugin.ToString());
                 plugin.startupChecks();
             }
             stats.startup();
@@ -287,6 +288,7 @@ namespace Roboto
             if (!e.isPrivateMessage)
             {
                 //send, dont queue.
+                //TODO - doesnt handle group PMs
                 messageID = e.sendMessage();
             }
             //this is a PM. Does the user have anything in the queue?                

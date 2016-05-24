@@ -98,11 +98,11 @@ namespace Roboto
                     Thread.Sleep(15000);
                 }*/
 
-                Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(5, 0, 0), new TimeSpan(12, 0, 0), new TimeSpan(5, 0, 0, 0));
-                Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(12, 0, 0), new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0, 0));
-                Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0), new TimeSpan(5, 0, 0, 0));
+                //Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(5, 0, 0), new TimeSpan(12, 0, 0), new TimeSpan(5, 0, 0, 0));
+                //Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(12, 0, 0), new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0, 0));
+                //Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0), new TimeSpan(5, 0, 0, 0));
 
-                if (2 == 2) { }
+                //if (3 == 3) {  }
 
             }
 

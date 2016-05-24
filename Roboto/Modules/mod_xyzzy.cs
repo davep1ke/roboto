@@ -170,14 +170,13 @@ namespace Roboto.Modules
         {
             return
                 "xyzzy_start - Starts a game of xyzzy with the players in the chat" + "\n\r" +
+                "xyzzy_settings - Change the various game settings" + "\n\r" +
+                "xyzzy_get_settings - Get the current game settings" + "\n\r" +
                 "xyzzy_join - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
                 "xyzzy_leave - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
-                "xyzzy_extend - Extends a running game with more cards, or restarts a game that has just stopped" + "\n\r" +
-                "xyzzy_abandon - Abandons the game" + "\n\r" +
-                "xyzzy_kick - Kicks a player from a game" + "\n\r" +
-                "xyzzy_status - Gets the current status of the game" + "\n\r" +
-                "xyzzy_filter - Shows the filters and their current status" + "\n\r" +
-                "xyzzy_reset - Resets the scores";
+                //"xyzzy_extend - Extends a running game with more cards, or restarts a game that has just stopped" + "\n\r" +
+                "xyzzy_status - Gets the current status of the game";
+                //"xyzzy_filter - Shows the filters and their current status" + "\n\r" +
         }
 
         public override void initData()
@@ -327,59 +326,32 @@ namespace Roboto.Modules
                     //else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " isnt part of the game, and can't be removed!"); }
                     processed = true;
                 }
-                //player kicked
-                else if (m.text_msg.StartsWith("/xyzzy_kick"))
-                {
-                    List<string> players = new List<string>();
-                    foreach (mod_xyzzy_player p in chatData.players) { players.Add(p.name); }
-                    players.Add("Cancel");
-                    string keyboard = TelegramAPI.createKeyboard(players, 2);
-                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", -1, true, keyboard);
-                    processed = true;
-                }
-                //abandon game
-                else if (m.text_msg.StartsWith("/xyzzy_abandon") && chatData.status != xyzzy_Statuses.Stopped)
-                {
-                    Roboto.Settings.stats.logStat(new statItem("Games Ended", this.GetType()));
-                    chatData.setStatus( xyzzy_Statuses.Stopped);
-                    Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
-                    TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game.");
-                    processed = true;
-                }
-                //Abandon, but no game in progress
-                else if (m.text_msg.StartsWith("/xyzzy_abandon"))
-                {
-                    chatData.getStatus();
-                    processed = true;
-                }
-
-                //extend a game
-                else if (m.text_msg.StartsWith("/xyzzy_extend"))
-                {
-                    chatData.addQuestions();
-
-                    TelegramAPI.SendMessage(c.chatID, "Added additional cards to the game!");
-                    if (chatData.status == xyzzy_Statuses.Stopped && chatData.players.Count > 1 )
-                    {
-                        Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
-                        chatData.askQuestion(true);
-                    }
-
-                    processed = true;
-                }
-
-                //debug question
-                else if (m.text_msg.StartsWith("/xyzzy_question") && chatData.status != xyzzy_Statuses.Stopped)
-                {
-                    //TODO - DEBUG ONLY
-                    chatData.askQuestion(true);
-                    processed = true;
-                }
+               
                 else if (m.text_msg.StartsWith("/xyzzy_status"))
                 {
                     chatData.getStatus();
                     processed = true;
                 }
+                else if (m.text_msg.StartsWith("/xyzzy_settings"))
+                {
+                    chatData.sendSettingsMessage(m);
+                    processed = true;
+                }
+                else if (m.text_msg.StartsWith("/xyzzy_get_settings"))
+                {
+                    chatData.sendSettingsMsgToChat();
+                    processed = true;
+                }
+
+
+                /*Moved to the /xyzzy_settings command
+                else if (m.text_msg.StartsWith("/xyzzy_setFilter"))
+                {
+                    chatData.sendSettingsMessage(m);
+                    processed = true;
+                }
+
+                
                 else if (m.text_msg.StartsWith("/xyzzy_filter"))
                 {
                     string response = "The following pack filters are currently set. These can be changed when starting a new game : " + "\n\r" +
@@ -419,7 +391,7 @@ namespace Roboto.Modules
                 {
                     chatData.askMinTimeout(m.userID);
                 }
-
+                */
             }
             //has someone tried to do something unexpected in a private chat?
             else if (m.chatID == m.userID && m.text_msg.StartsWith("/xyzzy_"))
@@ -511,7 +483,25 @@ namespace Roboto.Modules
             }
 
             //Set up the game, once we get a reply from the user. 
-            if (e.messageData == "SetGameLength")
+            if (e.messageData == "Settings")
+            {
+                if (m.text_msg == "Cancel") { } //do nothing, should just end and go back
+                else if (m.text_msg == "Change Packs") { chatData.sendPackFilterMessage(m, 1); }
+                else if (m.text_msg == "Re-deal") { chatData.reDeal(); }
+                else if (m.text_msg == "Extend") { chatData.extend(); }
+                else if (m.text_msg == "Reset") { chatData.reset(); }
+                else if (m.text_msg == "Force Question") { chatData.forceQuestion(); }
+                else if (m.text_msg == "Timeout") { chatData.askMaxTimeout(m.userID); }
+                else if (m.text_msg == "Delay") { chatData.askMinTimeout(m.userID); }
+                else if (m.text_msg == "Kick") { chatData.askKickMessage(m); }
+                else if (m.text_msg == "Abandon")
+                {
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" },2));
+                }
+                return true;
+            }
+
+            else if (e.messageData == "SetGameLength")
             {
                 int questions;
 
@@ -584,8 +574,9 @@ namespace Roboto.Modules
                     }
                     else
                     {
-                        //adding as part of a /setFilter
-                        TelegramAPI.SendMessage(chatData.chatID, "Updated the pack list. New cards won't get added to the game until you restart, or /xyzzy_reDeal" );
+                        //adding as part of a /settings. return to main
+                        chatData.sendSettingsMessage(m);
+                        //TelegramAPI.SendMessage(chatData.chatID, "Updated the pack list. New cards won't get added to the game until you restart, or /xyzzy_reDeal" );
                     }
                 }
                 processed = true;
@@ -640,7 +631,9 @@ namespace Roboto.Modules
                 else if (success)
                 {
                     //success, called inflite
-                    TelegramAPI.SendMessage(e.chatID, "Set timeouts to " + (chatData.maxWaitTimeHours == 0 ? "No Timeout" : chatData.maxWaitTimeHours.ToString() + " hours") );
+                    //TelegramAPI.SendMessage(e.chatID, "Set timeouts to " + (chatData.maxWaitTimeHours == 0 ? "No Timeout" : chatData.maxWaitTimeHours.ToString() + " hours") );
+                    //adding as part of a /settings. return to main
+                    chatData.sendSettingsMessage(m);
 
                 }
                 else {
@@ -667,8 +660,10 @@ namespace Roboto.Modules
                 }
                 else if (success)
                 {
+                    //adding as part of a /settings. return to main
+                    chatData.sendSettingsMessage(m);
                     //success, called inflite
-                    TelegramAPI.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
+                    //TelegramAPI.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
                 }
                 
                 else 
@@ -730,6 +725,18 @@ namespace Roboto.Modules
                 processed = true;
             }
 
+
+            //abandon game
+            else if (e.messageData == "Abandon")
+            {
+                chatData.setStatus(xyzzy_Statuses.Stopped);
+                Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
+                TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game");
+                processed = true;
+            }
+
+
+
             //kicking a player
             else if (e.messageData == "kick")
             {
@@ -739,9 +746,14 @@ namespace Roboto.Modules
                     chatData.removePlayer(p.playerID);
                 }
                 chatData.check();
+                //now return to the last settings page
+                chatData.sendSettingsMessage(m);
 
                 processed = true;
             }
+
+
+
 
             return processed;
         }
@@ -780,10 +792,15 @@ namespace Roboto.Modules
         public override void startupChecks()
         {
             //TODO - how does this differ from INIT ???
-            log("Startup Checks");
+            
+            //todo - this should be a general pack remove option
             //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
-            /*foreach (mod_xyzzy_card q in localData.questions) { q.category = pack_replacements(q.category); }
-            foreach (mod_xyzzy_card a in localData.answers) { a.category = pack_replacements(a.category); }*/
+            foreach (mod_xyzzy_card q in localData.questions.Where(x => x.category == " Image1").ToList() ) { q.category = "Image1"; }
+            foreach (mod_xyzzy_card a in localData.answers.Where(x => x.category == " Image1").ToList()) { a.category = "Image1"; }
+            localData.packs.RemoveAll(x => x.name == " Image1");
+
+
+
 
             //make sure our OOTB filters exist. Will be deduped afterwards. Messy as it relies on the new dummy pack being added AFTER the existing one, 
             //then keeping oldest pack first during dedupe.
@@ -801,37 +818,45 @@ namespace Roboto.Modules
             localData.packSyncCheck();
 
 
+
+
+
             //Replace any chat pack filters.
-            /*no longer needed
+            
+
+
+            
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
                 if (chatData != null)
                 {
-                    if (chatData.packFilter.Contains("Base") || chatData.packFilter.Contains(" Base")) { chatData.packFilter.Add("Cards Against Humanity"); }
-                    if (chatData.packFilter.Contains("CAHe1") || chatData.packFilter.Contains(" CAHe1")) { chatData.packFilter.Add("Expansion 1 - CAH"); }
-                    if (chatData.packFilter.Contains("CAHe2") || chatData.packFilter.Contains(" CAHe2")) { chatData.packFilter.Add("Expansion 2 - CAH"); }
-                    if (chatData.packFilter.Contains("CAHe3") || chatData.packFilter.Contains(" CAHe3")) { chatData.packFilter.Add("Expansion 3 - CAH"); }
-                    if (chatData.packFilter.Contains("CAHe4") || chatData.packFilter.Contains(" CAHe4")) { chatData.packFilter.Add("Expansion 4 - CAH"); }
-                    if (chatData.packFilter.Contains("CAHe5") || chatData.packFilter.Contains(" CAHe5")) { chatData.packFilter.Add("CAH Fifth Expansion"); }
-                    if (chatData.packFilter.Contains("CAHe6") || chatData.packFilter.Contains(" CAHe6")) { chatData.packFilter.Add("CAH Sixth Expansion"); }
+                    //if (chatData.packFilter.Contains("Base") || chatData.packFilter.Contains(" Base")) { chatData.packFilter.Add("Cards Against Humanity"); }
+                    //if (chatData.packFilter.Contains("CAHe1") || chatData.packFilter.Contains(" CAHe1")) { chatData.packFilter.Add("Expansion 1 - CAH"); }
+                    //if (chatData.packFilter.Contains("CAHe2") || chatData.packFilter.Contains(" CAHe2")) { chatData.packFilter.Add("Expansion 2 - CAH"); }
+                    //if (chatData.packFilter.Contains("CAHe3") || chatData.packFilter.Contains(" CAHe3")) { chatData.packFilter.Add("Expansion 3 - CAH"); }
+                    //if (chatData.packFilter.Contains("CAHe4") || chatData.packFilter.Contains(" CAHe4")) { chatData.packFilter.Add("Expansion 4 - CAH"); }
+                    //if (chatData.packFilter.Contains("CAHe5") || chatData.packFilter.Contains(" CAHe5")) { chatData.packFilter.Add("CAH Fifth Expansion"); }
+                    //if (chatData.packFilter.Contains("CAHe6") || chatData.packFilter.Contains(" CAHe6")) { chatData.packFilter.Add("CAH Sixth Expansion"); }
+                    if (chatData.packFilter.Contains(" Image1")) { chatData.packFilter.Add("Image1"); }
 
-
-                    chatData.packFilter.RemoveAll(x => x.Trim() == "Base");
-                    chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe1");
-                    chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe2");
-                    chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe3");
-                    chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe4");
-                    chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe5");
-                    chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe6");
+                    chatData.packFilter.RemoveAll(x => x == " Image1");
+                    //chatData.packFilter.RemoveAll(x => x.Trim() == "Base");
+                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe1");
+                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe2");
+                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe3");
+                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe4");
+                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe5");
+                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe6");
 
                     //do a /check on all active chats
                     chatData.check();
                 }
             }
-            */
 
 
+            int i = localData.packs.Where(x => string.IsNullOrEmpty(x.packCode)).Count();
+            if (i > 0) { Roboto.log.log("There are " + i + " packs without pack codes.", logging.loglevel.warn); }
         }
 
         /*private string pack_replacements(string input)

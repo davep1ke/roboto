@@ -98,7 +98,7 @@ namespace Roboto.Modules
                 "stop - Stops listening to the chat, until a START is entered." + "\n\r" +
                 "save - Saves any outstanding in memory stuff to disk." + "\n\r" +
                 "stats - Returns an overview of the currently loaded plugins." + "\n\r" +
-                "setQuietHours - Sets quiet hours for the chat."
+                "setquiethours - Sets quiet hours for the chat."
                 ;
         }
 
@@ -165,7 +165,7 @@ namespace Roboto.Modules
                 Roboto.Settings.backgroundProcessing(true);
             }
 
-            else if (m.text_msg.StartsWith("/setQuietHours"))
+            else if (m.text_msg.StartsWith("/setquiethours"))
             {
                 TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours");
                 processed = true;
