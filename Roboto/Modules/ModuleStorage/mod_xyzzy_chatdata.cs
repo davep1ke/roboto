@@ -424,15 +424,15 @@ namespace Roboto.Modules
             message += "\n\r- " + packFilter.Count + " packs currently enabled. You can view, enable and disable with *Change Packs*";
             keyboardOptions.Add("Change Packs");
             //Reset/redeal
-            message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with 'Re-deal'. If you also want to zero the scores, use 'Reset'";
+            message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. If you also want to zero the scores, use *Reset*";
             if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*."; }
             keyboardOptions.Add("Re-deal");
             keyboardOptions.Add("Reset");
             keyboardOptions.Add("Extend");
             //timeouts / throttle
-            message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players. Change with 'Timeout' ";
+            message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players. Change with *Timeout* ";
             keyboardOptions.Add("Timeout");
-            message += "\n\r- " + minWaitTimeHours + " hours between hands starting (i.e. force a slower game). Change with 'Delay' ";
+            message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands (i.e. force a slower game). Change with *Delay* ";
             keyboardOptions.Add("Delay");
             //kick
             message += "\n\r- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon* ";
@@ -444,7 +444,7 @@ namespace Roboto.Modules
             //chat settings
             //message += "\n\rNB: There are also a number of general chat settings that you can change using /settings in the group chat.";
             
-            TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2));
+            TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
 
         }
 
@@ -909,8 +909,9 @@ namespace Roboto.Modules
                         answer += " >> ";
                     }
                     answer += card.text;
-                    possiblematches += answer + ", ";
+                    
                 }
+                possiblematches += answer + ", ";
 
                 //Keyboard seems to trim the answers at about 110 chars, so ignore anything after that point. 
                 //cleanse text and match

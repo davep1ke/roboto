@@ -22,6 +22,9 @@ namespace Roboto.Helpers
 
                 s = new string(s.Where(c => !char.IsPunctuation(c)).ToArray());
                 s = s.ToUpper().Trim();
+                s = s.Replace(" ", string.Empty);
+                s = s.Replace("\t", string.Empty);
+
                 if (maxLength != -1 && s.Length > maxLength) { s = s.Substring(0, maxLength); }
                 return s;
             }
