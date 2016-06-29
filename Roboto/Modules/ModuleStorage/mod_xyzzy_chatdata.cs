@@ -411,21 +411,21 @@ namespace Roboto.Modules
         /// <param name="m"></param>
         public void sendSettingsMessage(message m)
         {
-            string message = "This allows you to change the game settings for the xyzzy game. Current values are listed below";
+            string message = "This allows you to change the game settings for the xyzzy game. Current values are listed below.";
             List<string> keyboardOptions = new List<string>();
             if (status == xyzzy_Statuses.Stopped)
             {
-                message += "No game is running. You should probably *Cancel* this, then start a new game by typing /xyzzy_start in your group chat.";
-                if (players.Count > 1) { message += " You can also continue from the last game by selecting *Extend*."; }
+                message += " No game is running. You should probably *Cancel* this, then start a new game by typing /xyzzy\\_start in your group chat.";
+                if (players.Count > 1) { message += " You can also continue from the last game by selecting *Extend* ."; }
 
             }
             keyboardOptions.Add("Cancel");
             //pack filter
-            message += "\n\r- " + packFilter.Count + " packs currently enabled. You can view, enable and disable with *Change Packs*";
+            message += "\n\r- " + packFilter.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
             keyboardOptions.Add("Change Packs");
             //Reset/redeal
             message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. If you also want to zero the scores, use *Reset*";
-            if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*."; }
+            if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*"; }
             keyboardOptions.Add("Re-deal");
             keyboardOptions.Add("Reset");
             keyboardOptions.Add("Extend");
@@ -439,7 +439,7 @@ namespace Roboto.Modules
             keyboardOptions.Add("Kick");
             keyboardOptions.Add("Abandon");
             //question
-            message += "\n\r- " + "- If the game gets stuck, you can try *Force Question* to move things along.";
+            message += "\n\r- " + "If the game gets stuck, you can try *Force Question* to move things along.";
             keyboardOptions.Add("Force Question");
             //chat settings
             //message += "\n\rNB: There are also a number of general chat settings that you can change using /settings in the group chat.";
@@ -479,6 +479,7 @@ namespace Roboto.Modules
         public void extend()
         {
             addQuestions();
+            addAllAnswers();
 
             TelegramAPI.SendMessage(chatID, "Added additional cards to the game!");
             if (status == xyzzy_Statuses.Stopped && players.Count > 1)
@@ -547,7 +548,7 @@ namespace Roboto.Modules
             Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
             setStatus(xyzzy_Statuses.Stopped);
             String message = "Game over!";
-            if (players.Count > 1) { message += " You can continue this game with the same players with /xyzzy_extend"; }
+            if (players.Count > 1) { message += " You can continue this game with the same players by selecting Extend in /xyzzy_settings"; }
             message += "\n\rScores are: ";
             foreach (mod_xyzzy_player p in players.OrderByDescending(x => x.wins))
             {
@@ -624,7 +625,18 @@ namespace Roboto.Modules
                         {
                             mod_xyzzy_card card = localData.getAnswerCard(cardUID);
                             if (answer != "") { answer += " >> "; }
-                            answer += card.text;
+
+
+                            if (card != null)
+                            {
+                                answer += card.text;
+                            }
+                            else
+                            {
+                                log("Player selected card with guid " + cardUID + " which was missing!", logging.loglevel.high);
+                                answer += " Error - card missing ";
+                            }
+                            
                         }
                         if (answer != "")
                         {
@@ -1232,7 +1244,7 @@ namespace Roboto.Modules
                     break;
                     
                 case xyzzy_Statuses.Stopped:
-                    reset();
+                    //reset(); --dont want to do this, as if we have reached the end of the game, want to be able to resume with a /extend
                     break;
             }
             
@@ -1476,14 +1488,15 @@ namespace Roboto.Modules
                 if (packEnabled(q.category)) { questions.Add(q); }
             }
             //limit to 500 question's (then redeal)
-            if (enteredQuestionCount > 500) { enteredQuestionCount = 500; }
+            int cardsToAdd = enteredQuestionCount;
+            if (cardsToAdd > 500) { cardsToAdd = 500; }
             //pick n questions and put them in the deck
-            List<int> cardsPositions =  Helpers.common.getUniquePositions(questions.Count, enteredQuestionCount);
+            List<int> cardsPositions =  Helpers.common.getUniquePositions(questions.Count, cardsToAdd);
             foreach (int pos in cardsPositions)
             {
                 remainingQuestions.Add(questions[pos].uniqueID);
             }
-            log("Added up to " + enteredQuestionCount + " question cards to the deck, from a total of " + questions.Count + " choices. There are " + remainingQuestions.Count + " currently in the deck.", logging.loglevel.low);
+            log("Added up to " + cardsToAdd + " question cards to the deck, based on a settings of " + enteredQuestionCount + " from a total of " + questions.Count + " choices. There are " + remainingQuestions.Count + " currently in the deck.", logging.loglevel.low);
 
         }
 
@@ -1503,7 +1516,7 @@ namespace Roboto.Modules
             {
                 remainingAnswers.Add(answers[pos].uniqueID);
             }
-            log("Added answer cards to the deck, from a total of " + answers.Count + " choices. There are " + remainingAnswers.Count + " currently in the deck.", logging.loglevel.low);
+            log("Added " + remainingAnswers.Count + " answer cards to the deck, from a total of " + answers.Count + " choices. There are " + remainingAnswers.Count + " currently in the deck.", logging.loglevel.low);
         }
     }
 }

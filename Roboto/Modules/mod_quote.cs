@@ -394,7 +394,7 @@ namespace Roboto.Modules
 
             else if (e.messageData.StartsWith("TEXT"))
             {
-                string quoteBy = e.messageData.TrimStart("TEXT ".ToCharArray());
+                string quoteBy = e.messageData.Substring(5);    //.TrimStart("TEXT ".ToCharArray());
                 bool success = addQuote(new List<mod_quote_quote_line>() { new mod_quote_quote_line(quoteBy, m.text_msg) }, c);
                 TelegramAPI.SendMessage(e.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
                 return true;
