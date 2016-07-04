@@ -12,7 +12,7 @@ namespace Roboto.Modules
     [Serializable]
     public class mod_standard_data : RobotoModuleDataTemplate
     {
-
+        public DateTime lastSaveToDiskDateTime = DateTime.Now;
     }
 
     [XmlType("mod_standard_chatdata")]
@@ -117,6 +117,14 @@ namespace Roboto.Modules
         /// </summary>
         protected override void backgroundProcessing()
         {
+            //do we need to save? 
+            if (localData.lastSaveToDiskDateTime.AddMinutes(Roboto.Settings.saveXMLeveryXMins) > DateTime.Now)
+            {
+                localData.lastSaveToDiskDateTime = DateTime.Now;
+                Roboto.Settings.save();
+            }
+
+            //do general housekeeping
             Roboto.Settings.stats.houseKeeping();
             Roboto.Settings.expectedReplyBackgroundProcessing();
 

@@ -43,8 +43,7 @@ namespace Roboto
                 initialised = false;
                 try
                 {
-                    log("Saving XML & Rotating Logs", loglevel.warn, ConsoleColor.White, false, true);
-                    Roboto.Settings.save();
+                    log("Rotating Logs", loglevel.warn, ConsoleColor.White, false, true);
                     finalise();
                     initialise();
                 }

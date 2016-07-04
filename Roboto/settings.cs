@@ -19,7 +19,8 @@ namespace Roboto
 
         //logging
         public bool enableFileLogging = true;
-        public int rotateLogsEveryXHours = 6;
+        public int rotateLogsEveryXHours = 12;
+        public int saveXMLeveryXMins = 30;
         public int killInactiveChatsAfterXDays = 30;
         public int purgeInactiveChatsAfterXDays = 100;
         public int chatPresenceExpiresAfterHours = 96;
@@ -652,7 +653,22 @@ namespace Roboto
             {
                 di.Create();
             }
+            else
+            {
+                //use datepart to keep a file for each day. 
+                //TODO - tidy up files older than x days. 
+                string datePart = DateTime.Now.ToString("yyyy-MM-dd") + ".xml";
 
+                //delete our old backup
+                FileInfo fi = new FileInfo(filename + "." + datePart);
+                if (fi.Exists) { fi.Delete(); }
+
+                //replace our current backup
+                FileInfo fi_backup = new FileInfo(filename);
+                if (fi_backup.Exists) { fi_backup.MoveTo(filename + "." + datePart); }
+
+            }
+            
             //write out XML
             XmlSerializer serializer = new XmlSerializer(typeof(settings), getPluginDataTypes());
             TextWriter textWriter = new StreamWriter(filename);

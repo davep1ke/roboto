@@ -337,7 +337,11 @@ namespace Roboto.Modules
                 //find the card, then check the text matches the response.
                 mod_xyzzy_card card = localData.getAnswerCard(cardUID);
                 //cleanse both bits of text, limit to 100 chars as keybaord cuts off sometimes. Try exact match first jsut in case the cleanse does something wierd. 
-                if (card != null && (card.text == answer || Helpers.common.cleanseText(card.text, 100) == Helpers.common.cleanseText(answer, 100)))
+                if (card != null && 
+                    (card.text == answer
+                    || (answer.Length > 100 ? answer.Substring(0, 100) : answer) == (card.text.Length > 100 ? card.text.Substring(0, 100) : card.text)
+                    || Helpers.common.cleanseText(card.text, 100) == Helpers.common.cleanseText(answer, 100))
+                    )
                 {
                     answerCard = card;
                 }
@@ -930,7 +934,13 @@ namespace Roboto.Modules
                 //if ( answer.Substring(0, Math.Min(answer.Length, 100)) == chosenAnswer.Substring(0, Math.Min(chosenAnswer.Length, 100)))
                 //if (answer == chosenAnswer)
 
-                if (answer == chosenAnswer || Helpers.common.cleanseText(answer, 100) == Helpers.common.cleanseText(chosenAnswer, 100))
+                //exact match
+                //OR First 100 match - for lenny faces  ( ͡° ͜ʖ ͡°) 
+                //OR cleansed strings match 
+
+                if (answer == chosenAnswer 
+                    || (answer.Length > 100? answer.Substring(0,100) : answer) == (chosenAnswer.Length > 100? chosenAnswer.Substring(0,100) : chosenAnswer) 
+                    || Helpers.common.cleanseText(answer, 100) == Helpers.common.cleanseText(chosenAnswer, 100))
                 {
                     winner = p;
                 }
@@ -940,7 +950,7 @@ namespace Roboto.Modules
             {
                 //give the winning player a point. 
                 winner.wins++;
-                string message = winner.name + " wins a point!\n\r";
+                string message = winner.name_markdownsafe + " wins a point!\n\r";
                 
                 //try and insert the answers into the message. 
                 bool formattedQuestionSuccessfully = false;
@@ -993,7 +1003,7 @@ namespace Roboto.Modules
                 List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
                 foreach (mod_xyzzy_player p in orderedPlayers)
                 {
-                    message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
+                    message += "\n\r" + p.name_markdownsafe + " - " + p.wins.ToString() + " points";
                 }
 
                 TelegramAPI.SendMessage(chatID, message, true);

@@ -84,7 +84,7 @@ namespace Roboto.Helpers
             
             if (startQuietHours == TimeSpan.MinValue || endQuietHours == TimeSpan.MinValue)
             {
-                Roboto.log.log("Adding " + timeToAdd.ToString("c") + " to " + startTime.ToString("f") + " with no quiet hours set", logging.loglevel.verbose);
+                //Roboto.log.log("Adding " + timeToAdd.ToString("c") + " to " + startTime.ToString("f") + " with no quiet hours set", logging.loglevel.verbose);
                 return startTime.Add(timeToAdd);
             }
 
@@ -132,12 +132,22 @@ namespace Roboto.Helpers
 
          }
 
-        public static string removeMarkDownChars(string name)
+        public static string removeMarkDownChars(string text)
         {
-            name = name.Replace("_", "-");
-            name = name.Replace("*", "x");
+            text = text.Replace("_", "-");
+            text = text.Replace("*", "x");
+            text = text.Replace("'", "\"");
 
-            return name;
+            return text;
+        }
+
+        public static string escapeMarkDownChars(string text)
+        {
+            text = text.Replace("_", "\\_");
+            text = text.Replace("*", "\\*");
+            text = text.Replace("'", "\\'");
+
+            return text;
         }
     }
 }

@@ -38,6 +38,17 @@ namespace Roboto.Modules
     public class mod_xyzzy_player
     {
         public string name;
+
+        public string name_markdownsafe
+        {
+            get
+            {
+                return Helpers.common.removeMarkDownChars(name);
+            }
+        }
+
+       
+
         public string handle = "";
         public long playerID;
         public int wins = 0;
@@ -82,6 +93,8 @@ namespace Roboto.Modules
                 availableAnswers.Remove(cardUID);
             }
         }
+
+
 
         public bool SelectAnswerCard(string cardUID)
         {
