@@ -165,7 +165,7 @@ namespace Roboto
                 string updateURL = Settings.telegramAPIURL + Settings.telegramAPIKey + "/getUpdates" +
                     "?offset=" + Settings.getUpdateID() +
                     "&timeout=" + Settings.waitDuration +
-                    "&limit=5";
+                    "&limit=1";
 
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
                 log.log(".", logging.loglevel.low, ConsoleColor.White, true );
