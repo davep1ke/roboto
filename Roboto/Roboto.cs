@@ -83,6 +83,8 @@ namespace Roboto
             log.log("I am " + Settings.botUserName, logging.loglevel.critical, ConsoleColor.White, false, true);
             Settings.startupChecks();
 
+            //test
+
            
             if (!Settings.isFirstTimeInitialised)
             {
