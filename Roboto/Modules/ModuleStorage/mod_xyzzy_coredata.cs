@@ -115,11 +115,15 @@ namespace Roboto.Modules
                     bool success = importCardCastPack(p.packCode, out outpack, out response);
                     if (!success)
                     {
+                        //this is usually set in the method, but it doesnt happen if the call has failed. Set here to prevent repeatedly hammering. 
+                        p.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
+                        log("Failed to sync pack " + p.packCode + " - " + p.description + ". Next sync "+ p.nextSync.ToString("f"), logging.loglevel.warn);
                         
-                        log("Failed to sync pack " + p.packCode + " - " + p.description);
                     }
-
-                    log("Synced deck " + success.ToString() + ", next sync " + p.nextSync.ToString("f") , logging.loglevel.high);
+                    else
+                    {
+                        log("Synced deck, next sync " + outpack.nextSync.ToString("f"), logging.loglevel.high);
+                    }
 
                 }
 
@@ -145,6 +149,10 @@ namespace Roboto.Modules
             List<Helpers.cardcast_question_card> import_questions = new List<Helpers.cardcast_question_card>();
             List<Helpers.cardcast_answer_card> import_answers = new List<Helpers.cardcast_answer_card>();
             List<mod_xyzzy_chatdata> brokenChats = new List<mod_xyzzy_chatdata>();
+
+            //don't sync again within x days. Add a random duration. 
+            //This line does nothing, as we overwrite the pack. 
+            //pack.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
 
             try
             {
@@ -338,8 +346,7 @@ namespace Roboto.Modules
                             answers.Add(x_answer);
                             nr_as++;
                         }
-                        //don't sync again within x days. Add a random duration. 
-                        pack.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
+                        
                         response += "\n\r" + "Next sync " + pack.nextSync.ToString("f") + ".";
 
                         response += "\n\r" + "Added " + nr_qs.ToString() + " questions and " + nr_as.ToString() + " answers.";

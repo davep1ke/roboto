@@ -419,6 +419,58 @@ namespace Roboto
             return reply;
         }
 
+        /// <summary>
+        /// Checks the members of a group.
+        /// </summary>
+        /// <param name="chatID"></param>
+        /// <returns>the member count. Will also return:
+        /// -1 = failed to call
+        /// </returns>
+        public static int getChatMembersCount(long chatID)
+        {
+            string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/getChatMembersCount";
 
+            var pairs = new NameValueCollection();
+            pairs["chat_id"] = chatID.ToString();
+           
+            try
+            {
+                JObject response = sendPOST(postURL, pairs).Result;
+                //get the message ID
+
+                //TODO - move this error handling somewhere better & use elsewhere
+                bool success = response.SelectToken("ok").Value<Boolean>();
+                if (success)
+                {
+                    int memberCount = response.SelectToken("result").Value<int>();
+                    return memberCount;
+                }
+                else
+                {
+                    int errorCode = response.SelectToken("error_code").Value<int>();
+                    string errorDesc = response.SelectToken("description").Value<string>();
+
+                    if (errorCode == 403 && errorDesc == "Forbidden: bot is not a member of the group chat")
+                    {
+                        //return a -403 for this - we want to signal that the call failed
+                        return -403;
+                    }
+                    else
+                    {
+                        Roboto.log.log("Unmapped error recieved - " + errorCode + " " + errorDesc, logging.loglevel.high);
+                        return -1;
+                    }
+
+                }
+
+            }
+            catch (WebException e)
+            {
+                //log it and carry on
+                Roboto.log.log("Couldnt get member count for " + chatID + "! " + e.ToString(), logging.loglevel.critical);
+            }
+
+            return -1;
+        }
     }
 }

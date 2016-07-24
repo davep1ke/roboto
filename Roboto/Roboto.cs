@@ -27,10 +27,8 @@ namespace Roboto
         public static string context = null;
         public static List<string> pluginFilter = new List<string>();
         
-
         private enum argtype {def, context, plugin };
-        private static bool debugTrigger = false; //trigger to allow quick debug
-
+        
         static void Main(string[] args)
         {
             log.log("ROBOTO", logging.loglevel.critical, ConsoleColor.White, false, true);
@@ -51,9 +49,6 @@ namespace Roboto
                                 break;
                             case "-plugin":
                                 mode = argtype.plugin;
-                                break;
-                            case "-debugtrigger":
-                                debugTrigger = true;
                                 break;
                         }
                         break;
@@ -88,24 +83,7 @@ namespace Roboto
             log.log("I am " + Settings.botUserName, logging.loglevel.critical, ConsoleColor.White, false, true);
             Settings.startupChecks();
 
-            if (debugTrigger)
-            {
-                /*while (true)
-                {
-                    Stream image = Settings.stats.generateImage(new List<string>() { "Roboto.TelegramAPI>Incoming Msgs", "Roboto.Roboto>Startup" });
-                    //TelegramAPI.SendMessage(120498152, "Sending image...");
-                    TelegramAPI.SendPhoto(120498152,"Stats", image, "StatsGraph.jpg", "application/octet-stream", - 1,false );
-                    Thread.Sleep(15000);
-                }*/
-
-                //Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(5, 0, 0), new TimeSpan(12, 0, 0), new TimeSpan(5, 0, 0, 0));
-                //Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(12, 0, 0), new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0, 0));
-                //Helpers.common.addTimeIgnoreQuietHours(DateTime.Now, new TimeSpan(20, 0, 0), new TimeSpan(5, 0, 0), new TimeSpan(5, 0, 0, 0));
-
-                //if (3 == 3) {  }
-
-            }
-
+           
             if (!Settings.isFirstTimeInitialised)
             {
                 log.log( "Starting main thread", logging.loglevel.high);
@@ -151,13 +129,12 @@ namespace Roboto
 
             while (!endLoop)
             {
-                //store the time to prevent hammering the service when its down
-                
+                //store the time to prevent hammering the service when its down. Pause for a couple of seconds if things are getting toasty
                 if (lastUpdate > DateTime.Now.Subtract(TimeSpan.FromSeconds(10)))
                 {
                     Roboto.Settings.stats.logStat(new statItem("Hammering Prevention", typeof(Roboto)));
                     log.log("Too quick, sleeping", logging.loglevel.warn );
-                    Thread.Sleep(10000);
+                    Thread.Sleep(2000);
                 }
                 lastUpdate = DateTime.Now;
 

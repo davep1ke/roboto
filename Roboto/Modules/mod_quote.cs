@@ -293,7 +293,7 @@ namespace Roboto.Modules
             {
                 mod_quote_data localData = c.getPluginData<mod_quote_data>();
                 
-                if (localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.multiquotes.Count > 0)
+                if (localData != null && localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.multiquotes.Count > 0)
                 {
                     TelegramAPI.SendMessage(c.chatID, getQuote(c), true);
                     int maxMins = localData.autoQuoteHours * 60;

@@ -175,7 +175,7 @@ namespace Roboto.Modules
             chatPriority = 3;
 
             backgroundHook = true;
-            backgroundMins = 5;
+            backgroundMins = 1; //every 1 min, check the latest 20 chats
             
         }
 
@@ -425,21 +425,30 @@ namespace Roboto.Modules
 
             //sync packs where needed
             localdata.packSyncCheck();
-
+            
             //Handle background processing per chat (Timeouts / Throttle etc..)
+            //create a temporary list of chatdata so we can pick the oldest X records
+            List<mod_xyzzy_chatdata> dataToCheck = new List<mod_xyzzy_chatdata>();
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
-                if (chatData != null)
+                if (chatData != null && chatData.status != xyzzy_Statuses.Stopped)
                 {
-                    chatData.check();
+                    dataToCheck.Add(chatData);
                 }
-
             }
 
+            log("XYZZY Background processing - there are " + dataToCheck.Count() + " games to check. Checking oldest 10", logging.loglevel.low);
+
+            bool firstrec = true;
+            foreach (mod_xyzzy_chatdata chatData in dataToCheck.OrderBy(x => x.statusCheckedTime).Take(10))
+            {
+                if (firstrec) { log("Oldest chat was last checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low); }
+                chatData.check();
+
+                firstrec = false;
+            }
             
-
-
         }
 
         public override string getStats()

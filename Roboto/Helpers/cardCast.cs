@@ -79,29 +79,37 @@ namespace Roboto.Helpers
             }
             else
             {
-                //call the pack info API
-                JObject packInfoResponse = sendPOST(packCode);
-                //get the various bits we need. 
-                if (packInfoResponse == null)
+                try
+
                 {
-                    Roboto.log.log("Null response from cardcast API - " + packCode, logging.loglevel.high);
-                    return false;
-                }
-                else
-                {
-                    try
+                    //call the pack info API
+                    JObject packInfoResponse = sendPOST(packCode);
+                    //get the various bits we need. 
+                    if (packInfoResponse == null)
                     {
-                        //get the message details
-                        packData.name = packInfoResponse.SelectToken("name").Value<string>();
-                        packData.description = packInfoResponse.SelectToken("description").Value<string>();
-                    }
-                    catch (Exception e)
-                    {
-                        Roboto.log.log("Error parsing message - " + e.ToString(), logging.loglevel.high);
+                        Roboto.log.log("Null response from cardcast API - " + packCode, logging.loglevel.high);
                         return false;
                     }
+                    else
+                    {
+                        try
+                        {
+                            //get the message details
+                            packData.name = packInfoResponse.SelectToken("name").Value<string>();
+                            packData.description = packInfoResponse.SelectToken("description").Value<string>();
+                        }
+                        catch (Exception e)
+                        {
+                            Roboto.log.log("Error parsing message - " + e.ToString(), logging.loglevel.high);
+                            return false;
+                        }
+                    }
                 }
-
+                catch (System.Net.WebException e)
+                {
+                    Roboto.log.log("Exception getting pack info " + e.ToString(), logging.loglevel.high);
+                    return false;
+                }
                 //now get the cards
                 JObject packCardsResponse = sendPOST(packCode + "/cards");
                 if (packCardsResponse == null)
