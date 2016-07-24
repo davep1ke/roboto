@@ -18,22 +18,24 @@ namespace Roboto
     {
         public string name = "";
         public string moduleType = "";
-        public stats.displaymode mode = stats.displaymode.line;
+        public stats.displaymode displayMode = stats.displaymode.line;
+        public stats.statmode statMode = stats.statmode.increment;
         public List<statSlice> statSlices = new List<statSlice>();
         Color c = Color.Blue;
 
         internal statType() { }
-        public statType(string name, string moduleType, Color c, stats.displaymode mode = stats.displaymode.line)
+        public statType(string name, string moduleType, Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
         {
             this.name = name;
             this.moduleType = moduleType;
-            this.mode = mode;
+            this.displayMode = displayMode;
         }
 
-        public void updateDisplaySettings(Color c, stats.displaymode mode = stats.displaymode.line)
+        public void updateDisplaySettings(Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
         {
             this.c = c;
-            this.mode = mode;
+            this.displayMode = displayMode;
+            this.statMode = statMode;
         }
 
         public statSlice getSlice()
@@ -64,7 +66,14 @@ namespace Roboto
         public void logStat(statItem item)
         {
             statSlice slice = getSlice();
-            slice.addCount(item.items);
+            if (statMode == stats.statmode.increment)
+            {
+                slice.addCount(item.items);
+            }
+            else if (statMode == stats.statmode.absolute)
+            {
+                slice.setCount(item.items);
+            }
         }
 
         /// <summary>
@@ -79,7 +88,7 @@ namespace Roboto
             Series s = new Series(title + ">" + this.name);
             s.Color = c;
             
-            if (mode == stats.displaymode.line)
+            if (displayMode == stats.displaymode.line)
             {
                 s.BorderWidth = 2;
                 s.ChartType = SeriesChartType.Line;
@@ -104,6 +113,8 @@ namespace Roboto
             DateTime cutoff = DateTime.Now.Subtract(new TimeSpan(stats.granularity.Ticks * stats.graphYAxisCount));
             statSlices.RemoveAll(x => x.timeSlice < cutoff);
         }
+
+
     }
 
     public class statSlice
@@ -120,6 +131,11 @@ namespace Roboto
         public void addCount(int items)
         {
             count += items;
+        }
+
+        public void setCount(int items)
+        {
+            count = items;
         }
     }
 
@@ -146,6 +162,7 @@ namespace Roboto
         public static TimeSpan granularity = new TimeSpan(0, 15, 0); //15 mins
         public static int graphYAxisCount = 192;
         public enum displaymode { line, bar };
+        public enum statmode { increment, absolute };
 
         //data
         public List<statType> statsList = new List<statType>();
@@ -166,17 +183,17 @@ namespace Roboto
         }
 
 
-        public void registerStatType(string name, Type moduleType, Color c, stats.displaymode mode = stats.displaymode.line)
+        public void registerStatType(string name, Type moduleType, Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = statmode.increment )
         {
             statType existing = getStatType(name, moduleType.ToString());
             if (existing != null)
             {
                 Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + ":  already exists.", logging.loglevel.normal);
-                existing.updateDisplaySettings(c, mode);
+                existing.updateDisplaySettings(c, displayMode, statMode);
             }
             else
             {
-                statType newST = new statType(name, moduleType.ToString(), c, mode);
+                statType newST = new statType(name, moduleType.ToString(), c, displayMode, statMode);
                 statsList.Add(newST);
                 Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + " added.", logging.loglevel.warn);
             }

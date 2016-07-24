@@ -211,6 +211,8 @@ namespace Roboto.Modules
             Roboto.Settings.stats.registerStatType("Hands Played", this.GetType(), System.Drawing.Color.Olive);
             Roboto.Settings.stats.registerStatType("Packs Synced", this.GetType(), System.Drawing.Color.DarkBlue );
             Roboto.Settings.stats.registerStatType("Bad Responses", this.GetType(), System.Drawing.Color.Olive);
+            Roboto.Settings.stats.registerStatType("Active Games", this.GetType(), System.Drawing.Color.Green, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Active Players", this.GetType(), System.Drawing.Color.Blue, stats.displaymode.line, stats.statmode.absolute);
 
             Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
 
@@ -422,6 +424,22 @@ namespace Roboto.Modules
         protected override void backgroundProcessing()
         {
             mod_xyzzy_coredata localdata = (mod_xyzzy_coredata)getPluginData();
+
+            //update stats
+            int activeGames = 0;
+            int activePlayers = 0;
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
+                if (chatData != null && chatData.status != xyzzy_Statuses.Stopped)
+                {
+                    activeGames++;
+                    activePlayers += chatData.players.Count;
+                }
+            }
+            Roboto.Settings.stats.logStat(new statItem("Active Games", this.GetType(), activeGames));
+            Roboto.Settings.stats.logStat(new statItem("Active Players", this.GetType(), activePlayers));
+
 
             //sync packs where needed
             localdata.packSyncCheck();
