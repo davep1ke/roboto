@@ -164,6 +164,7 @@ namespace Roboto.Modules
     public class mod_xyzzy : RobotoModuleTemplate
     {
         private mod_xyzzy_coredata localData;
+        
 
         public override void init()
         {
@@ -213,6 +214,7 @@ namespace Roboto.Modules
             Roboto.Settings.stats.registerStatType("Bad Responses", this.GetType(), System.Drawing.Color.Olive);
             Roboto.Settings.stats.registerStatType("Active Games", this.GetType(), System.Drawing.Color.Green, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Active Players", this.GetType(), System.Drawing.Color.Blue, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Background Wait", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
 
             Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
 
@@ -456,12 +458,16 @@ namespace Roboto.Modules
                 }
             }
 
-            log("XYZZY Background processing - there are " + dataToCheck.Count() + " games to check. Checking oldest 10", logging.loglevel.low);
+            log("XYZZY Background processing - there are " + dataToCheck.Count() + " games to check. Checking oldest " + localdata.backgroundChatsToProcess , logging.loglevel.low);
 
             bool firstrec = true;
-            foreach (mod_xyzzy_chatdata chatData in dataToCheck.OrderBy(x => x.statusCheckedTime).Take(10))
+            foreach (mod_xyzzy_chatdata chatData in dataToCheck.OrderBy(x => x.statusCheckedTime).Take(localdata.backgroundChatsToProcess))
             {
                 if (firstrec) { log("Oldest chat was last checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low); }
+
+                Roboto.Settings.stats.logStat(new statItem("Background Wait", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes)));
+                
+
                 chatData.check();
 
                 firstrec = false;

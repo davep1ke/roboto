@@ -17,6 +17,7 @@ namespace Roboto.Modules
     public class mod_xyzzy_coredata : RobotoModuleDataTemplate
     {
         public DateTime lastDayProcessed = DateTime.MinValue;
+        public int backgroundChatsToProcess = 20;
         public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
         public List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
         public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>();
@@ -234,7 +235,7 @@ namespace Roboto.Modules
                             }
                             catch (Exception e)
                             {
-                                log("Error finding cleansed version of q card", logging.loglevel.critical);
+                                log("Error finding cleansed version of q card - " + e.Message, logging.loglevel.critical);
                             }
 
                             if (match != null && q.text != match.question)
@@ -248,7 +249,7 @@ namespace Roboto.Modules
                                 }
                                 catch (Exception e)
                                 {
-                                    log("Error updating question text on qcard", logging.loglevel.critical);
+                                    log("Error updating question text on qcard - " + e.Message, logging.loglevel.critical);
                                 }
                             }
                             try
@@ -257,7 +258,7 @@ namespace Roboto.Modules
                             }
                             catch (Exception e)
                             {
-                                log("Error removing qcard from importlist ", logging.loglevel.critical);
+                                log("Error removing qcard from importlist - " + e.Message, logging.loglevel.critical);
                             }
                         }
                         //add the rest to the localData
