@@ -620,7 +620,7 @@ namespace Roboto
             //now send it to the plugin (remove first, so any checks can be done)
             if (pluginToCall == null)
             {
-                Roboto.log.log("Expected Reply wasnt on the stack! Couldnt remove it", logging.loglevel.warn);
+                Roboto.log.log("Expected Reply wasnt on the stack - probably sent in immediate-mode! Couldnt remove it", logging.loglevel.normal);
             }
             else
             {

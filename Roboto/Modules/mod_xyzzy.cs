@@ -477,7 +477,7 @@ namespace Roboto.Modules
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
-                if (chatData.status != xyzzy_Statuses.Stopped)
+                if (chatData != null && chatData.status != xyzzy_Statuses.Stopped)
                 {
                     activeGames++;
                     activePlayers += chatData.players.Count;
@@ -890,7 +890,8 @@ namespace Roboto.Modules
                     //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe6");
 
                     //do a /check on all active chats
-                    chatData.check();
+                    //removed - cant do this with all 1k+ chats when we are checking the status of each one by API
+                    //chatData.check();
                 }
             }
 

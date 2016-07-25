@@ -328,10 +328,13 @@ namespace Roboto.Modules
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_steam_chat_data cd = c.getPluginData<mod_steam_chat_data>();
-                playersTracked += cd.players.Count;
-                foreach (mod_steam_player p in cd.players)
+                if (cd != null)
                 {
-                    playerAchieves += p.chievs.Count;
+                    playersTracked += cd.players.Count;
+                    foreach (mod_steam_player p in cd.players)
+                    {
+                        playerAchieves += p.chievs.Count;
+                    }
                 }
             }
 

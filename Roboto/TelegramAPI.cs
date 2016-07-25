@@ -107,7 +107,7 @@ namespace Roboto
         /// Send the message in the expected reply. Should only be called from the expectedReply Class. May or may not expect a reply. 
         /// </summary>
         /// <param name="e"></param>
-        /// <returns>A long specifying the message id. long.MinValue indicates a failure</returns>
+        /// <returns>A long specifying the message id. long.MinValue indicates a failure. Negative values are error codes</returns>
         public static long postExpectedReplyToPlayer(ExpectedReply e)
         {
 
@@ -194,25 +194,60 @@ namespace Roboto
                 Roboto.log.log("Error attaching Reply Message ID to message. " + ex.ToString() , logging.loglevel.high); 
             }
 
-            //TODO - should URLEncode the text.
             try
             {
                 JObject response = sendPOST(postURL, pairs).Result;
 
                 if (response != null)
                 {
-                    JToken response_token = response.SelectToken("result");
-                    if (response_token != null)
+
+                    bool success = response.SelectToken("ok").Value<Boolean>();
+                    if (success)
                     {
-                        JToken messageID_token = response.SelectToken("result.message_id");
-                        if (messageID_token != null)
+                        
+                        JToken response_token = response.SelectToken("result");
+                        if (response_token != null)
                         {
-                            int messageID = messageID_token.Value<int>();
-                            return messageID;
+                            JToken messageID_token = response.SelectToken("result.message_id");
+                            if (messageID_token != null)
+                            {
+                                int messageID = messageID_token.Value<int>();
+                                return messageID;
+                            }
+                            else { Roboto.log.log("MessageID Token was null.", logging.loglevel.high); }
                         }
-                        else { Roboto.log.log("MessageID Token was null.", logging.loglevel.high); }
+
+                        else { Roboto.log.log("Response Token was null.", logging.loglevel.high); }
                     }
-                    else { Roboto.log.log("Response Token was null.", logging.loglevel.high); }
+                    else
+                    {
+                        int errorCode = response.SelectToken("error_code").Value<int>();
+                        string errorDesc = response.SelectToken("description").Value<string>();
+
+                        if (errorCode == 400 && errorDesc == "PEER_ID_INVALID")
+                        {
+                            //return a -403 for this - we want to signal that the call failed
+                            Roboto.Settings.parseFailedReply(e);
+                            return -403;
+                        }
+                        else if (errorCode == 403 && errorDesc == "Bot was blocked by the user")
+                        {
+                            //return a -403 for this - we want to signal that the call failed
+                            Roboto.Settings.parseFailedReply(e);
+                            return -403;
+                        }
+
+                        else
+                        {
+                            Roboto.log.log("Unmapped error recieved - " + errorCode + " " + errorDesc, logging.loglevel.high);
+                            Roboto.Settings.parseFailedReply(e);
+                            return -1;
+                        }
+
+
+                    }
+
+
                 }
                 else { Roboto.log.log("Response was null.", logging.loglevel.high); }
 
@@ -453,6 +488,16 @@ namespace Roboto
                     if (errorCode == 403 && errorDesc == "Forbidden: bot is not a member of the group chat")
                     {
                         //return a -403 for this - we want to signal that the call failed
+                        return -403;
+                    }
+                    if (errorCode == 403 && errorDesc == "Forbidden: bot was kicked from the supergroup chat")
+                    {
+                        //return a -403 for this - we want to signal that the call failed
+                        return -403;
+                    }
+                    if (errorCode == 400 && errorDesc == "Bad Request: chat not found" )
+                    {
+                        //I see this as more of a 403 so suck it. 
                         return -403;
                     }
                     else
