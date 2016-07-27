@@ -28,6 +28,7 @@ namespace Roboto.Modules
         public xyzzy_Statuses status = xyzzy_Statuses.Stopped;
         public DateTime statusChangedTime = DateTime.Now;
         public DateTime statusCheckedTime = DateTime.Now;
+        public DateTime statusMiniCheckedTime = DateTime.Now;
         public DateTime lastHandStartedTime = DateTime.Now;
 
         public bool remindersSent = false;
@@ -1075,10 +1076,13 @@ namespace Roboto.Modules
         /// <summary>
         /// Check consistency of game state
         /// </summary>
-        internal void check()
+        internal void check(bool fullCheck = false)
         {
-            log("Performing status check for " + chatID + " " + getChat().chatTitle + ".", logging.loglevel.low);
-            statusCheckedTime = DateTime.Now;
+            log("Performing " + (fullCheck?"Full":"Quick") + " status check for " + chatID + " " + getChat().chatTitle + ".", logging.loglevel.low);
+
+            statusMiniCheckedTime = DateTime.Now;
+            if (fullCheck) { statusCheckedTime = DateTime.Now; }
+
 
             mod_xyzzy_coredata localData = getLocalData();
             List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
@@ -1095,29 +1099,30 @@ namespace Roboto.Modules
             DateTime reminderTime = Helpers.common.addTimeIgnoreQuietHours(statusChangedTime, quietStartTime, quietEndTime, new TimeSpan(0, Convert.ToInt32(dur * 0.75), 0));  //statusChangedTime.AddMinutes((maxWaitTimeHours * 60) * .75);
             DateTime abandonTime = Helpers.common.addTimeIgnoreQuietHours(statusChangedTime, quietStartTime, quietEndTime, new TimeSpan(0, Convert.ToInt32(dur), 0));
 
-            //does the group still exist? Is the bot still in it?
-            int chatMemberCount = TelegramAPI.getChatMembersCount(chatID);
-            if (chatMemberCount <= 1)
+
+            if (fullCheck)
             {
-                if (chatMemberCount == 1) //everyone but the bot has left
+                //does the group still exist? Is the bot still in it?
+                int chatMemberCount = TelegramAPI.getChatMembersCount(chatID);
+                if (chatMemberCount <= 1)
                 {
-                    log("Everyone has left group " + chatID + " " + getChat().chatTitle + " - abandoning game", logging.loglevel.warn);
-                    //cancel the game, clear any expected replies
-                    reset();
+                    if (chatMemberCount == 1) //everyone but the bot has left
+                    {
+                        log("Everyone has left group " + chatID + " " + getChat().chatTitle + " - abandoning game", logging.loglevel.warn);
+                        //cancel the game, clear any expected replies
+                        reset();
+                    }
+
+                    if (chatMemberCount == -403) //forbidden, i.e. bot kicked from group
+                    {
+                        log("Bot has been kicked from " + chatID + " " + getChat().chatTitle + " - abandoning game", logging.loglevel.warn);
+                        //cancel the game, clear any expected replies
+                        reset();
+                    }
+
+
                 }
-
-                if (chatMemberCount == -403) //forbidden, i.e. bot kicked from group
-                {
-                    log("Bot has been kicked from " + chatID + " " + getChat().chatTitle + " - abandoning game", logging.loglevel.warn);
-                    //cancel the game, clear any expected replies
-                    reset();
-                }
-
-
-
-
             }
-
 
             //is the tzar valid?
             if (lastPlayerAsked >= players.Count)

@@ -17,7 +17,8 @@ namespace Roboto.Modules
     public class mod_xyzzy_coredata : RobotoModuleDataTemplate
     {
         public DateTime lastDayProcessed = DateTime.MinValue;
-        public int backgroundChatsToProcess = 20;
+        public int backgroundChatsToProcess = 5;
+        public int backgroundChatsToMiniProcess = 100;
         public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
         public List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
         public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>();

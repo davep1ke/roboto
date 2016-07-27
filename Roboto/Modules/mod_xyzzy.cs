@@ -215,8 +215,9 @@ namespace Roboto.Modules
             Roboto.Settings.stats.registerStatType("Active Games", this.GetType(), System.Drawing.Color.Green, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Active Players", this.GetType(), System.Drawing.Color.Blue, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Background Wait", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Background Wait (Quickcheck)", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
 
-            Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
+           Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
 
         }
 
@@ -449,36 +450,62 @@ namespace Roboto.Modules
             //Handle background processing per chat (Timeouts / Throttle etc..)
             //create a temporary list of chatdata so we can pick the oldest X records
             List<mod_xyzzy_chatdata> dataToCheck = new List<mod_xyzzy_chatdata>();
+            List<mod_xyzzy_chatdata> dataToMiniCheck = new List<mod_xyzzy_chatdata>();
+
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
                 if (chatData != null && chatData.status != xyzzy_Statuses.Stopped)
-                {
-                    dataToCheck.Add(chatData);
+                { 
+                    //do a full check at most once per day
+                    if (chatData.statusCheckedTime < DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0)))
+                    {
+                        dataToCheck.Add(chatData);
+                    }
+                    //do a mini check at most every 5 mins
+                    if (chatData.statusMiniCheckedTime < DateTime.Now.Subtract(new TimeSpan(0,0,5,0)))
+                    {
+                        dataToMiniCheck.Add(chatData);
+                    }
                 }
             }
 
-            log("XYZZY Background processing - there are " + dataToCheck.Count() + " games to check. Checking oldest " + localdata.backgroundChatsToProcess , logging.loglevel.low);
+            log("There are " + dataToCheck.Count() + " games to check. Checking oldest " + localdata.backgroundChatsToProcess , logging.loglevel.normal);
 
+            //do a full check on the oldest 20 records. Dont check more than once per day. 
             bool firstrec = true;
             foreach (mod_xyzzy_chatdata chatData in dataToCheck.OrderBy(x => x.statusCheckedTime).Take(localdata.backgroundChatsToProcess))
             {
-                if (firstrec) { log("Oldest chat was last checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low); }
-
-                Roboto.Settings.stats.logStat(new statItem("Background Wait", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes)));
-                
-
-                chatData.check();
-
+                if (firstrec)
+                {
+                    log("Oldest chat was last checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low);
+                    Roboto.Settings.stats.logStat(new statItem("Background Wait", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes)));
+                }
+                chatData.check(true);
                 firstrec = false;
             }
+
             
+            //also do a quick check on the oldest 100 ordered by statusMiniCheckTime
+            log("There are " + dataToMiniCheck.Count() + " games to quick-check. Checking oldest " + localdata.backgroundChatsToMiniProcess, logging.loglevel.normal);
+            firstrec = true;
+            foreach (mod_xyzzy_chatdata chatData in dataToMiniCheck.OrderBy(x => x.statusMiniCheckedTime).Take(localdata.backgroundChatsToMiniProcess))
+            {
+                if (firstrec)
+                {
+                    log("Oldest chat was last quick-checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusMiniCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low);
+                    Roboto.Settings.stats.logStat(new statItem("Background Wait (Quickcheck)", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusMiniCheckedTime).TotalMinutes)));
+                }
+                chatData.check();
+                firstrec = false;
+            }
         }
 
         public override string getStats()
         {
             int activePlayers = 0;
             int activeGames = 0;
+            int dormantGames = 0;
 
             foreach (chat c in Roboto.Settings.chatData)
             {
@@ -487,9 +514,15 @@ namespace Roboto.Modules
                 {
                     activeGames++;
                     activePlayers += chatData.players.Count;
+                    if (chatData.statusChangedTime < DateTime.Now.Subtract(new TimeSpan(30,0,0,0)) )
+                    {
+                        dormantGames++;
+                    }
                 }
-                
             }
+
+            log("There are " + dormantGames + " potentially cancelable games", logging.loglevel.normal);
+
             
             string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games";
 
@@ -837,15 +870,8 @@ namespace Roboto.Modules
         /// </summary>
         public override void startupChecks()
         {
-            //TODO - how does this differ from INIT ???
-            
-            //todo - this should be a general pack remove option
-            //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
-            foreach (mod_xyzzy_card q in localData.questions.Where(x => x.category == " Image1").ToList() ) { q.category = "Image1"; }
-            foreach (mod_xyzzy_card a in localData.answers.Where(x => x.category == " Image1").ToList()) { a.category = "Image1"; }
-            localData.packs.RemoveAll(x => x.name == " Image1");
 
-
+          
 
 
             //make sure our OOTB filters exist. Will be deduped afterwards. Messy as it relies on the new dummy pack being added AFTER the existing one, 
@@ -853,12 +879,12 @@ namespace Roboto.Modules
             //TODO Can probably remove this when we have finished migrating everything
             //sampleData();
 
-            //make sure our local pack filter list is fully populated & dupe-free
+            //make sure our local pack filter list is fully populated 
             localData.startupChecks();
 
             //remove any duplicate cards
-            //TODO - definately remove this. Can't dedupe properly as e.g. John Cena pack has multiple cards
-            localData.removeDupeCards();
+            //TODO - some other mechanism for removing duplicate cards if we e.g. merge packs. Can't dedupe properly as e.g. John Cena pack has multiple cards
+            //localData.removeDupeCards();
 
             //sync anything that needs it
             localData.packSyncCheck();
@@ -868,38 +894,42 @@ namespace Roboto.Modules
 
 
             //Replace any chat pack filters.
-            
 
 
-            
-            foreach (chat c in Roboto.Settings.chatData)
-            {
-                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
-                if (chatData != null)
-                {
-                    //if (chatData.packFilter.Contains("Base") || chatData.packFilter.Contains(" Base")) { chatData.packFilter.Add("Cards Against Humanity"); }
-                    //if (chatData.packFilter.Contains("CAHe1") || chatData.packFilter.Contains(" CAHe1")) { chatData.packFilter.Add("Expansion 1 - CAH"); }
-                    //if (chatData.packFilter.Contains("CAHe2") || chatData.packFilter.Contains(" CAHe2")) { chatData.packFilter.Add("Expansion 2 - CAH"); }
-                    //if (chatData.packFilter.Contains("CAHe3") || chatData.packFilter.Contains(" CAHe3")) { chatData.packFilter.Add("Expansion 3 - CAH"); }
-                    //if (chatData.packFilter.Contains("CAHe4") || chatData.packFilter.Contains(" CAHe4")) { chatData.packFilter.Add("Expansion 4 - CAH"); }
-                    //if (chatData.packFilter.Contains("CAHe5") || chatData.packFilter.Contains(" CAHe5")) { chatData.packFilter.Add("CAH Fifth Expansion"); }
-                    //if (chatData.packFilter.Contains("CAHe6") || chatData.packFilter.Contains(" CAHe6")) { chatData.packFilter.Add("CAH Sixth Expansion"); }
-                    if (chatData.packFilter.Contains(" Image1")) { chatData.packFilter.Add("Image1"); }
+            //todo - this should be a general pack remove option
+            //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
+            //foreach (mod_xyzzy_card q in localData.questions.Where(x => x.category == " Image1").ToList()) { q.category = "Image1"; }
+            //foreach (mod_xyzzy_card a in localData.answers.Where(x => x.category == " Image1").ToList()) { a.category = "Image1"; }
+            //localData.packs.RemoveAll(x => x.name == " Image1");
+            //not required now. Need to do a proper migration script at some point for merging / deleting packs. 
+            //foreach (chat c in Roboto.Settings.chatData)
+            //{
+            //    mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
+            //    if (chatData != null)
+            //    {
+            //        //if (chatData.packFilter.Contains("Base") || chatData.packFilter.Contains(" Base")) { chatData.packFilter.Add("Cards Against Humanity"); }
+            //        //if (chatData.packFilter.Contains("CAHe1") || chatData.packFilter.Contains(" CAHe1")) { chatData.packFilter.Add("Expansion 1 - CAH"); }
+            //        //if (chatData.packFilter.Contains("CAHe2") || chatData.packFilter.Contains(" CAHe2")) { chatData.packFilter.Add("Expansion 2 - CAH"); }
+            //        //if (chatData.packFilter.Contains("CAHe3") || chatData.packFilter.Contains(" CAHe3")) { chatData.packFilter.Add("Expansion 3 - CAH"); }
+            //        //if (chatData.packFilter.Contains("CAHe4") || chatData.packFilter.Contains(" CAHe4")) { chatData.packFilter.Add("Expansion 4 - CAH"); }
+            //        //if (chatData.packFilter.Contains("CAHe5") || chatData.packFilter.Contains(" CAHe5")) { chatData.packFilter.Add("CAH Fifth Expansion"); }
+            //        //if (chatData.packFilter.Contains("CAHe6") || chatData.packFilter.Contains(" CAHe6")) { chatData.packFilter.Add("CAH Sixth Expansion"); }
+            //        if (chatData.packFilter.Contains(" Image1")) { chatData.packFilter.Add("Image1"); }
 
-                    chatData.packFilter.RemoveAll(x => x == " Image1");
-                    //chatData.packFilter.RemoveAll(x => x.Trim() == "Base");
-                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe1");
-                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe2");
-                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe3");
-                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe4");
-                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe5");
-                    //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe6");
+            //        chatData.packFilter.RemoveAll(x => x == " Image1");
+            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "Base");
+            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe1");
+            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe2");
+            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe3");
+            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe4");
+            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe5");
+            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe6");
 
-                    //do a /check on all active chats
-                    //removed - cant do this with all 1k+ chats when we are checking the status of each one by API
-                    //chatData.check();
-                }
-            }
+            //        //do a /check on all active chats
+            //        //removed - cant do this with all 1k+ chats when we are checking the status of each one by API
+            //        //chatData.check();
+            //    }
+            //}
 
 
             int i = localData.packs.Where(x => string.IsNullOrEmpty(x.packCode)).Count();

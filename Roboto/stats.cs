@@ -29,6 +29,7 @@ namespace Roboto
             this.name = name;
             this.moduleType = moduleType;
             this.displayMode = displayMode;
+            this.statMode = statMode;
         }
 
         public void updateDisplaySettings(Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
