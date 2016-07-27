@@ -308,7 +308,7 @@ namespace Roboto.Modules
                                 + m.userFullName + " is in, but will need to clear their PMs before they see any questions. ", false, m.message_id);
 
                         }
-                        else if (i == long.MinValue)
+                        else if (i < 0)
                         {
                             TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
                                + m.userFullName + " probably needs to open a chat session with me. "

@@ -236,6 +236,14 @@ namespace Roboto
                             Roboto.Settings.parseFailedReply(e);
                             return -403;
                         }
+                        else if (errorCode == 403 && errorDesc == "Forbidden: bot was kicked from the group chat")
+                        {
+                            //return a -403 for this - we want to signal that the call failed
+                            Roboto.Settings.parseFailedReply(e);
+                            return -403;
+                        }
+
+
 
                         else
                         {
@@ -490,6 +498,7 @@ namespace Roboto
                         //return a -403 for this - we want to signal that the call failed
                         return -403;
                     }
+
                     if (errorCode == 403 && errorDesc == "Forbidden: bot was kicked from the supergroup chat")
                     {
                         //return a -403 for this - we want to signal that the call failed
