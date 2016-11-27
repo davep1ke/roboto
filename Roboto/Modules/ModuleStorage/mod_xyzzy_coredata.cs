@@ -194,7 +194,7 @@ namespace Roboto.Modules
                         foreach (mod_xyzzy_card q in questions.Where(x => x.category == l_packname))
                         {
                             //find existing cards which don't exist in our import pack
-                            if (import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text)).Count() == 0)
+                            if ((import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text))).Count() == 0)
                             {
                                 remove_cards.Add(q);
                             }
@@ -232,7 +232,12 @@ namespace Roboto.Modules
                             cardcast_question_card match = null;
                             try
                             {
-                                 match = import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text)).ToList()[0];
+                                List< cardcast_question_card> matchedCards = import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text)).ToList();
+                                if (matchedCards.Count > 0) { match = matchedCards[0]; } 
+                                else
+                                {
+                                    log("Local card couldnt be found. Tried to match " + q.text , logging.loglevel.normal);
+                                }
                             }
                             catch (Exception e)
                             {
@@ -278,7 +283,7 @@ namespace Roboto.Modules
                         foreach (mod_xyzzy_card a in answers.Where(x => x.category == l_packname))
                         {
                             //find existing cards which don't exist in our import pack
-                            if (import_answers.Where(y => Helpers.common.cleanseText(y.answer) == Helpers.common.cleanseText(a.text)).Count() == 0)
+                            if ((import_answers.Where(y => Helpers.common.cleanseText(y.answer) == Helpers.common.cleanseText(a.text))).Count() == 0)
                             {
                                 remove_cards.Add(a);
                             }

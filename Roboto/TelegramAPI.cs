@@ -230,7 +230,7 @@ namespace Roboto
                             Roboto.Settings.parseFailedReply(e);
                             return -403;
                         }
-                        else if (errorCode == 403 && errorDesc == "Bot was blocked by the user")
+                        else if (errorCode == 403 && (errorDesc == "Bot was blocked by the user" || errorDesc == "Forbidden: Bot can't initiate conversation with a user"))
                         {
                             //return a -403 for this - we want to signal that the call failed
                             Roboto.Settings.parseFailedReply(e);

@@ -10,7 +10,7 @@ using System.Xml.Serialization;
 namespace Roboto.Modules
 {
 
-    public enum xyzzy_Statuses { Stopped, SetGameLength, setPackFilter, setMinHours, setMaxHours, cardCastImport, Invites, Question, Judging, waitingForNextHand }
+    public enum xyzzy_Statuses { Stopped, useDefaults, SetGameLength, setPackFilter, setMinHours, setMaxHours, cardCastImport, Invites, Question, Judging, waitingForNextHand }
 
     
     /// <summary>
@@ -35,7 +35,7 @@ namespace Roboto.Modules
 
         //chat settings
         public List<String> packFilter = new List<string> { "Cards Against Humanity" };
-        public int enteredQuestionCount = -1;
+        public int enteredQuestionCount = 10;
         public int maxWaitTimeHours = 0;
         public int minWaitTimeHours = 0;
 
@@ -1234,9 +1234,9 @@ namespace Roboto.Modules
                                 else { outstandingPlayers += ", " + p.ToString(); }
                             }
                             if (outstanding.Count == 1)
-                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " needs to hurry up! Tick-tock motherfucker..."); }
+                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " needs to hurry up! Tick-tock..."); }
                             else
-                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " need to hurry up! Tick-tock motherfuckers..."); }
+                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " need to hurry up! Tick-tock..."); }
                         }
 
                         remindersSent = true;
@@ -1456,7 +1456,7 @@ namespace Roboto.Modules
         {
             mod_xyzzy_coredata localData = getLocalData();
             String response = "The following packs (and their current status) are available. You can toggle the packs using the keyboard "
-                + "below, or click 'Continue' to start the game. You can import packs from CardCast by clicking 'Import CardCast Pack'";
+                + "below, or click 'Continue' to carry on. You can also import packs from CardCast by clicking 'Import CardCast Pack'";
 
             
             int totalPageCount = (localData.getPackFilterList().Count() / maxPacksPerPage) + 1;

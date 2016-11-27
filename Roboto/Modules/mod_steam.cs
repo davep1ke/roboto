@@ -319,6 +319,12 @@ namespace Roboto.Modules
                 "steam_help - outputs help";
         }
 
+        public override string getWelcomeDescriptions()
+        {
+            return "Steam Achievement announcer - add a player to track with /steam_addplayer";
+
+        }
+
         public override string getStats()
         {
             int playersTracked = 0;

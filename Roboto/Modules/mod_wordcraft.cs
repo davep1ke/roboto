@@ -43,6 +43,12 @@ namespace Roboto.Modules
                 ;
         }
 
+        public override string getWelcomeDescriptions()
+        {
+            return "Nonsense word generator. Try /craft!";
+
+        }
+
         public override void initData()
         {
             try

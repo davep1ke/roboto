@@ -95,6 +95,12 @@ namespace Roboto.Modules
                 "birthday_list - Shows the list of birthdays that have been added";
         }
 
+        public override string getWelcomeDescriptions()
+        {
+            return "Birthday reminder plugin - type /birthday_add to add someones birthday!";
+
+        }
+
         public override void initData()
         {
             try

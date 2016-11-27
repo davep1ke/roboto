@@ -37,6 +37,17 @@ namespace Roboto.Modules
             return "";
         }
         /// <summary>
+        /// Return the list of valid commands for the plugin (returned during /operations, and on startup for sending to BotFather
+        /// </summary>
+        /// <returns></returns>
+        public virtual string getWelcomeDescriptions()
+        {
+            log("No methods set for " + GetType().ToString() + " plugin. You should override getMethodDescriptions", logging.loglevel.high);
+            return null;
+        }
+
+
+        /// <summary>
         /// Return some text indicating the current level of use of the plugin
         /// </summary>
         /// <returns></returns>

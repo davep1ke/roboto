@@ -145,7 +145,10 @@ namespace Roboto.Modules
                 "quote - Picks a random quote from the chat's database" + "\n\r" +
                 "quote_config - Configure how often to add quotes into chat";
         }
-
+        public override string getWelcomeDescriptions()
+        {
+            return "Chat quote database - type /quote_add to add a quote to the db, or /quote_config to change settings";
+        }
         public override void initData()
         {
             try

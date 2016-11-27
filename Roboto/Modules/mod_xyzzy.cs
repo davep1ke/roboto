@@ -183,14 +183,20 @@ namespace Roboto.Modules
         public override string getMethodDescriptions()
         {
             return
-                "xyzzy_start - Starts a game of xyzzy with the players in the chat" + "\n\r" +
+                "xyzzy_start - Starts a new game of xyzzy with the players in the chat" + "\n\r" +
                 "xyzzy_settings - Change the various game settings" + "\n\r" +
                 "xyzzy_get_settings - Get the current game settings" + "\n\r" +
                 "xyzzy_join - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
-                "xyzzy_leave - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
+                "xyzzy_leave - Leave a game of xyzzy" + "\n\r" +
                 //"xyzzy_extend - Extends a running game with more cards, or restarts a game that has just stopped" + "\n\r" +
                 "xyzzy_status - Gets the current status of the game";
                 //"xyzzy_filter - Shows the filters and their current status" + "\n\r" +
+        }
+
+        public override string getWelcomeDescriptions()
+        {
+            return "To start a new game of Chat Against Humanity, type /xyzzy_start in a group chat window. You will also need to open a private message session with the bot as well. Chat Against Humanity is a virtual card game you can play with friends over Telegram!";
+
         }
 
         public override void initData()
@@ -248,7 +254,19 @@ namespace Roboto.Modules
             {
                 //get current game data. 
                 mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
-                
+
+                if (chatData == null)
+                {
+                    log("Chatdata doesnt exist! creating.", logging.loglevel.high);
+                    initChatData(c);
+                    chatData = c.getPluginData<mod_xyzzy_chatdata>();
+
+                    if (chatData == null)
+                    {
+                        log("Chatdata still doesnt exist! creating.", logging.loglevel.critical);
+                    }
+                }
+
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == xyzzy_Statuses.Stopped)
                 {
 
@@ -256,22 +274,25 @@ namespace Roboto.Modules
                     //Start a new game!
 
                     //try and send the opening message
-                    //confirm number of questions
-                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
+
+
+                    //use defaults or configure game
+                    string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
+                    
+                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults",-1,false,kb);
 
                     if (messageID == long.MinValue)
                     {
-                        //send out invites
+                        //no private message session
                         TelegramAPI.SendMessage(m.chatID, m.userFullName + " needs to open a private chat to @" +
                             Roboto.Settings.botUserName + " to be able to start a game", false, -1, true);
-
                     }
                     else
                     {
                         //message went out successfully, start setting it up proper
                         chatData.reset();
                         //Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy)); //Cant do this, as clears the "how many questions" we just asked!
-                        chatData.setStatus(xyzzy_Statuses.SetGameLength);
+                        chatData.setStatus(xyzzy_Statuses.useDefaults);
                         //add the player that started the game
                         chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
 
@@ -312,7 +333,7 @@ namespace Roboto.Modules
                         {
                             TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
                                + m.userFullName + " probably needs to open a chat session with me. "
-                               + "Create a message session, then try /xyzzy_join again. Asshole.", false, m.message_id);
+                               + "Create a message session, then try /xyzzy_join again.", false, m.message_id);
                         }
 
                     }
@@ -578,6 +599,38 @@ namespace Roboto.Modules
                     TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" },2));
                 }
                 return true;
+            }
+
+
+
+            else if (e.messageData == "useDefaults")
+            {
+                if (m.text_msg == "Use Defaults")
+                {
+                    //add all the q's and a's based on the previous settings / defaults if a new game. 
+                    chatData.addQuestions();
+                    chatData.addAllAnswers();
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    chatData.setStatus(xyzzy_Statuses.Invites);
+                }
+                else if (m.text_msg == "Configure Game" )
+                {
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
+                    chatData.setStatus(xyzzy_Statuses.SetGameLength);
+                }
+                else if (m.text_msg == "Cancel")
+                {
+
+                    TelegramAPI.SendMessage(m.userID, "Cancelled setup");
+                    chatData.setStatus(xyzzy_Statuses.Stopped);
+                }
+                else
+                {
+                    string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
+                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", 01,false,kb);
+                }
+                processed = true;
             }
 
             else if (e.messageData == "SetGameLength")

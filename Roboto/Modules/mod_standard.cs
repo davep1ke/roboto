@@ -102,6 +102,12 @@ namespace Roboto.Modules
                 ;
         }
 
+        public override string getWelcomeDescriptions()
+        {
+            return null; //deliberately don't return anything here - it shouldnt show up in the welcome message
+
+        }
+
         public static String getAllMethodDescriptions()
         {
             String methods = "The following commands are available:";
@@ -134,8 +140,7 @@ namespace Roboto.Modules
         {
             bool processed = false;
 
-            if (m.text_msg.StartsWith("/help")
-                || m.text_msg.StartsWith ("/start") && c != null && c.muted == false)
+            if (m.text_msg.StartsWith("/help") && c != null && c.muted == false)
             {
 
                 mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
@@ -144,7 +149,6 @@ namespace Roboto.Modules
                 {
                     openingMessage += "Quiet time set between " + chatData.quietHoursStartTime.ToString("c") + " and " + chatData.quietHoursEndTime.ToString("c") + ". \n\r";
                 }
-
 
                 TelegramAPI.SendMessage(m.chatID, openingMessage +  getAllMethodDescriptions());
                 processed = true;
@@ -158,15 +162,25 @@ namespace Roboto.Modules
             else if (m.text_msg.StartsWith("/stop") && c != null)
             {
                 c.muted = true;
-                TelegramAPI.SendMessage(m.chatID, "OK, I am now ignoring all messages in this chat until I get a /start command. ");
+                TelegramAPI.SendMessage(m.chatID, "I am now ignoring all messages in this chat until I get a /start command. ");
+                //TODO - make sure we abandon any games
+
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/start") && c != null && c.muted == true)
             {
                 c.muted = false;
-                TelegramAPI.SendMessage(m.chatID, "I am back. Type /help for a list of commands.");
+                TelegramAPI.SendMessage(m.chatID, "I am listening for messages again. Type /help for a list of commands." + "\n\r" + getAllWelcomeDescriptions());
                 processed = true;
             }
+            else if (m.text_msg.StartsWith("/start"))
+            {
+                //a default /start message where we arent on pause. Might be in group or private chat. 
+                TelegramAPI.SendMessage(m.chatID, getAllWelcomeDescriptions());
+
+            }
+
+
             else if (m.text_msg.StartsWith("/background"))
             {
                 //kick off the background loop. 
@@ -229,7 +243,18 @@ namespace Roboto.Modules
                 return processed;
         }
 
-
+        public string getAllWelcomeDescriptions()
+        {
+            {
+                String description = "Welcome to " + Roboto.Settings.botUserName + ".";
+                foreach (RobotoModuleTemplate plugin in settings.plugins)
+                {
+                    string moduleDesc = plugin.getWelcomeDescriptions();
+                    if (moduleDesc != null) { description += "\n\r" + moduleDesc; }
+                }
+                return description;
+            }
+        }
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
             chat c = Roboto.Settings.getChat(e.chatID);
