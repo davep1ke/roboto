@@ -195,7 +195,8 @@ namespace Roboto.Modules
 
         public override string getWelcomeDescriptions()
         {
-            return "To start a new game of Chat Against Humanity, type /xyzzy_start in a group chat window. You will also need to open a private message session with the bot as well. Chat Against Humanity is a virtual card game you can play with friends over Telegram!";
+            return "To start a new game of Chat Against Humanity, type /xyzzy_start in a group chat window. You'll need a couple of friends, and you will all need to open a private message session with the bot to play." + "\n\r" + 
+                "Chat Against Humanity is a virtual card game you can play with friends over Telegram! Each round, the dealer will ask a question, players will get a private message where they should pick their best answer card from a list of cards in their hand, and the dealer can judge the best answer from the replies.";
 
         }
 
@@ -610,8 +611,8 @@ namespace Roboto.Modules
                     //add all the q's and a's based on the previous settings / defaults if a new game. 
                     chatData.addQuestions();
                     chatData.addAllAnswers();
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                     chatData.setStatus(xyzzy_Statuses.Invites);
                 }
                 else if (m.text_msg == "Configure Game" )
@@ -785,8 +786,8 @@ namespace Roboto.Modules
                 {
 
                     //Ready to start game - tell the player they can start when they want
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "OK, to start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                     chatData.setStatus(xyzzy_Statuses.Invites);
 
                 }
@@ -816,20 +817,30 @@ namespace Roboto.Modules
                 //as otherwise we would have to do some daft bounds checking 
                 // && m.text_msg == "start")
             {
-                if (m.text_msg == "cancel")
+                if (m.text_msg == "Cancel")
                 {
                     //allow player to cancel, otherwise the message just keeps coming back. 
                     chatData.setStatus(xyzzy_Statuses.Stopped);
-                } 
-                else if (chatData.players.Count > 1)
+                }
+                else if (m.text_msg == "Override" && chatData.players.Count > 1)
                 {
                     chatData.askQuestion(true);
                 }
+                else if (m.text_msg == "Start" && chatData.players.Count > 2)
+                {
+                    chatData.askQuestion(true);
+                }
+                else if (m.text_msg == "Start")
+                {
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                }
                 else
                 {
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "start" }, 1);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. To start the game once enough players have joined click the \"start\" button", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                 }
+
                 processed = true;
             }
 
