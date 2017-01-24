@@ -319,35 +319,39 @@ namespace Roboto.Modules
                 //player joining
                 else if (m.text_msg.StartsWith("/xyzzy_join") && chatData.status != xyzzy_Statuses.Stopped)
                 {
-                    //TODO - try send a test message. If it fails, tell the user to open a 1:1 chat.
+                    //try send a test message. If it fails, tell the user to open a 1:1 chat.
                     long i = -1;
                     try
                     {
                         i = TelegramAPI.SendMessage(m.userID, "You joined the xyzzy game in " + m.chatName);
                         if (i == -1)
                         {
+                            log("Adding user, but the outbound message is still queued", logging.loglevel.verbose);
                             TelegramAPI.SendMessage(m.chatID, "Sent " + m.userFullName + " a message, but I'm waiting for him to reply to another question. "
-                                + m.userFullName + " is in, but will need to clear their PMs before they see any questions. ", false, m.message_id);
+                                + m.userFullName + " is in the game, but will need to clear their PMs before they see any questions. ", false, m.message_id);
 
                         }
                         else if (i < 0)
                         {
+                            log("Adding user, but message blocked, abandoning", logging.loglevel.warn);
                             TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
                                + m.userFullName + " probably needs to open a chat session with me. "
                                + "Create a message session, then try /xyzzy_join again.", false, m.message_id);
                         }
 
+                    
+                        if (i != long.MinValue) //if we didnt get an error sending the message
+                        {
+                            log("Adding user processing", logging.loglevel.verbose);
+                            bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
+                            if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
+                            else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
+                        }
                     }
                     catch
                     {
-                        log("Error sending message!", logging.loglevel.high);
-                    }
-
-                    if (i != long.MinValue) //if we didnt get an error sending the message
-                    {
-                        bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
-                        if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
-                        else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
+                        //shouldnt actually get here. "Normal" errors should result in a -1 (queued) or a minvalue (forbidden)
+                        log("Other excpetion sending add player confirmation message", logging.loglevel.high);
                     }
                     processed = true;
                 }

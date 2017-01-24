@@ -1,13 +1,15 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.23107.0
+VisualStudioVersion = 14.0.24720.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Roboto", "Roboto\Roboto.csproj", "{4E78688D-017E-412B-A7BE-41B7376A145F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug - CAHLive|x86 = Debug - CAHLive|x86
+		Debug - Chat Mangler 2600|x86 = Debug - Chat Mangler 2600|x86
+		Debug - Forest Whitaker|x86 = Debug - Forest Whitaker|x86
 		Debug - RobotoLive|x86 = Debug - RobotoLive|x86
 		Debug (+trigger)|x86 = Debug (+trigger)|x86
 		Debug|x86 = Debug|x86
@@ -17,6 +19,10 @@ Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - CAHLive|x86.ActiveCfg = Debug - CAHLive|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - CAHLive|x86.Build.0 = Debug - CAHLive|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - Chat Mangler 2600|x86.ActiveCfg = Debug - Chat Mangler 2600|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - Chat Mangler 2600|x86.Build.0 = Debug - Chat Mangler 2600|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - Forest Whitaker|x86.ActiveCfg = Debug - Forest Whitaker|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - Forest Whitaker|x86.Build.0 = Debug - Forest Whitaker|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - RobotoLive|x86.ActiveCfg = Debug - RobotoLive|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - RobotoLive|x86.Build.0 = Debug - RobotoLive|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug (+trigger)|x86.ActiveCfg = Debug (+trigger)|x86

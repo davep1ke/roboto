@@ -449,7 +449,7 @@ namespace Roboto.Modules
             message += "\n\r- " + packFilter.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
             keyboardOptions.Add("Change Packs");
             //Reset/redeal
-            message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. If you also want to zero the scores, use *Reset*";
+            message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. To reset everything to default, and stop the game, use *Reset*";
             if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*"; }
             keyboardOptions.Add("Re-deal");
             keyboardOptions.Add("Reset");
@@ -634,6 +634,15 @@ namespace Roboto.Modules
                 mod_xyzzy_player tzar = players[lastPlayerAsked];
 
                 int possibleAnswerCount = 0;
+
+                if (q == null)
+                {
+                    log("Question Card not found - abandoning judging and skipping to next question", logging.loglevel.critical);
+                    askQuestion(true);
+                    return ;
+
+                }
+
 
                 //get all the responses for the keyboard, and the chat message
                 List<string> responses = new List<string>();

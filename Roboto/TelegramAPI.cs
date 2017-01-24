@@ -230,7 +230,7 @@ namespace Roboto
                             Roboto.Settings.parseFailedReply(e);
                             return -403;
                         }
-                        else if (errorCode == 403 && (errorDesc == "Bot was blocked by the user" || errorDesc == "Forbidden: Bot can't initiate conversation with a user"))
+                        else if (errorCode == 403 && (errorDesc == "Bot was blocked by the user" || errorDesc == "Forbidden: Bot was blocked by the user" || errorDesc == "Forbidden: Bot can't initiate conversation with a user"))
                         {
                             //return a -403 for this - we want to signal that the call failed
                             Roboto.Settings.parseFailedReply(e);
@@ -242,7 +242,12 @@ namespace Roboto
                             Roboto.Settings.parseFailedReply(e);
                             return -403;
                         }
-
+                        else if (errorCode == 400 && errorDesc == "Bad Request: group chat was migrated to a supergroup chat")
+                        {
+                            //return a -403 for this - we want to signal that the call failed
+                            Roboto.Settings.parseFailedReply(e);
+                            return -403;
+                        }
 
 
                         else
