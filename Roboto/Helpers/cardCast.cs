@@ -34,6 +34,7 @@ namespace Roboto.Helpers
         public string language = "Unknown";
         public string category = "Unknown";
         public DateTime nextSync = DateTime.MinValue;
+        public int failCount = 0;
 
         internal cardcast_pack() { }
         public cardcast_pack(string name, string packCode, string description)
@@ -42,6 +43,34 @@ namespace Roboto.Helpers
             this.packCode = packCode;
             this.description = description;
         }        
+
+        //set the guid to a specific value
+        public void overrideGUID (Guid newGuid)
+        {
+            packID = newGuid;
+        }
+
+        public void syncFailed()
+        {
+            //this is usually set in the method, but it doesnt happen if the call has failed. Set here to prevent repeatedly hammering. 
+            setNextSync();
+            Roboto.log.log("Failed to sync pack " + this.ToString() + ". Next sync " + nextSync.ToString("f"), logging.loglevel.warn);
+            failCount++;
+        }
+
+        public void syncSuccess()
+        {
+            setNextSync();
+            Roboto.log.log("Synced deck " + ToString() + ", next sync " + nextSync.ToString("f"), logging.loglevel.high);
+            failCount = 0;
+
+        }
+
+        internal void setNextSync()
+        {
+            //don't sync again within x days. Add a random duration. 
+            nextSync = DateTime.Now.Add(new TimeSpan(3 + settings.getRandom(7), settings.getRandom(23), 0, 0)); //3-10 days, random hour
+        }
     }
 
     /// <summary>
@@ -188,7 +217,7 @@ namespace Roboto.Helpers
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
             request.Method = "GET";
             request.ContentType = "application/json";
-            Roboto.log.log("Calling CardCast API:\n\r" + request.RequestUri.ToString(), logging.loglevel.low);
+            Roboto.log.log("Calling CardCast API: " + request.RequestUri.ToString(), logging.loglevel.low);
             try
             {
 

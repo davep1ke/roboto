@@ -509,6 +509,22 @@ namespace Roboto
                         //return a -403 for this - we want to signal that the call failed
                         return -403;
                     }
+
+
+                    if (errorCode == 403 && errorDesc == "Forbidden: bot can't initiate conversation with a user")
+                    {
+                        //return a -403 for this - we want to signal that the call failed
+                        return -403;
+                    }
+
+                    if (errorCode == 403 && errorDesc.StartsWith("Forbidden"))
+                    {
+                        Roboto.log.log("Unmapped '403 Forbidden' error recieved - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
+                        //return a -403 for this - we want to signal that the call failed
+                        return -403;
+                    }
+
+
                     if (errorCode == 400 && errorDesc == "Bad Request: chat not found" )
                     {
                         //I see this as more of a 403 so suck it. 

@@ -52,27 +52,169 @@ namespace Roboto.Modules
         public List<Helpers.cardcast_pack> getPackFilterList()
         {
             return packs;
-            /*
-            //include "all"
-            List<String> packs = new List<string>();
-            foreach (mod_xyzzy_card q in questions)
-            {
-                packs.Add(q.category.Trim());
-            }
-            foreach (mod_xyzzy_card a in answers)
-            {
-                packs.Add(a.category.Trim());
-            }
-            return packs.Distinct().ToList();
-            */
+        }
+
+        public Helpers.cardcast_pack getPack (string packTitle)
+        {
+            List<Helpers.cardcast_pack> matches = getPacks(packTitle);
+            if (matches.Count > 0) { return matches[0]; }
+            return null;
+        }
+
+        public Helpers.cardcast_pack getPack(Guid packID)
+        {
+            List<Helpers.cardcast_pack> matches = getPacks(packID);
+            if (matches.Count > 0) { return matches[0]; }
+            return null;
+        }
+
+        public List<Helpers.cardcast_pack> getPacks(string packTitle)
+        {
+            return packs.Where(x => x.name == packTitle).ToList();
+        }
+
+        public List<Helpers.cardcast_pack> getPacks(Guid packID)
+        {
+            return packs.Where(x => x.packID == packID).ToList();
         }
 
         public void startupChecks()
         {
+            
+            //DATAFIX: allocate any cards without a pack guid the correct guid
+            int success = 0;
+            int fail = 0;
+
+            //Disable warnings for use of deprecated category field - this is a datafix to ensure it is properly wiped. 
+            #pragma warning disable 612, 618
+            foreach (mod_xyzzy_card q in questions.Where(x => x.packID == Guid.Empty) )
+            {
+                cardcast_pack pack = getPack(q.category);
+                if (pack != null) { q.packID = pack.packID; success++; }
+                //log - will be checked every startup
+                else { log("Datafix failed - couldnt find pack for card " + q.text + " from pack " + q.category, logging.loglevel.high); fail++; }
+            }
+            foreach (mod_xyzzy_card a in answers.Where(x => x.packID == Guid.Empty))
+            {
+                cardcast_pack pack = getPack(a.category);
+                if (pack != null) { a.packID = pack.packID; success++; }
+                //log - will be checked every startup
+                else { log("Datafix failed - couldnt find pack for card " + a.text + " from pack " + a.category, logging.loglevel.high); fail++; }
+            }
+            if (success + fail > 0)
+            {
+                log("DATAFIX: " + success + " cards have had packIDs populated, " + fail + " couldn't find pack");
+            }
+
+            //now remove category from all cards that have a guid. 
+            success = 0;
+            
+            foreach (mod_xyzzy_card q in questions.Where(x => x.packID != null)){ q.category = null; q.TempCategory = null; success++; }
+            foreach (mod_xyzzy_card a in answers.Where(x => x.packID != null)) { a.category = null; a.TempCategory = null; success++; }
+            #pragma warning restore 612, 618
+
+            if (success + fail > 0)
+            {
+                log("DATAFIX: Wiped category from " + success + " cards successfully.", logging.loglevel.warn);
+            }
+
+            //lets see if packs with null Cardcast Pack codes can be populated by looking through our other packs
+            foreach (cardcast_pack p in packs.Where(x => string.IsNullOrEmpty(x.packCode)))
+            {
+                List<cardcast_pack> matchingPacks = getPacks(p.name).Where(x => x.packID != p.packID).ToList();
+                if (matchingPacks.Count >0 )
+                {
+                    p.packCode = matchingPacks[0].packCode;
+                    log("DATAFIX: Orphaned pack " + p.name + " has been matched against an existing pack, and packcode set to " + p.packCode, logging.loglevel.warn);
+                }
+
+            }
+
+
+            //now find any packs where the pack ID exists more than once. Start by getting unique list of packs
+            List<string> uniqueCodes = new List<string>();
+            foreach (cardcast_pack p in packs) { if (!uniqueCodes.Contains(p.packCode) && p.packCode != "") { uniqueCodes.Add(p.packCode); } }
+            log("Found " + uniqueCodes.Count() + " unique pack codes against " + packs.Count() + " packs");
+
+            //loop through. Find the master pack
+            foreach (string packCode in uniqueCodes)
+            {
+                List<cardcast_pack> matchingPacks = packs.Where(x => (! string.IsNullOrEmpty(x.packCode)) && (  x.packCode == packCode)).ToList();
+
+
+                if (matchingPacks.Count() == 0)
+                {
+                    log("Couldnt find any packs matching '" + packCode + "' for some reason!", logging.loglevel.critical);
+                }
+                else if (matchingPacks.Count() == 1)
+                {
+                    log("One valid pack for " + packCode, logging.loglevel.verbose);
+                }
+                else
+                {
+                    int cardsUpdated = 0;
+                    int packsMerged = 0;
+                    cardcast_pack masterPack = matchingPacks[0];
+
+                    //need to merge the other packs into the first one.
+                    foreach (cardcast_pack p in matchingPacks.Where(x => x != masterPack))
+                    {
+                        log("Merging pack " + p.name + "(" + p.packID + ") into " + masterPack.name + "(" + masterPack.packID + ")", logging.loglevel.high);
+                        //overwrite the guids on the child cards. Note that we will now be left with a huge amount of duplicate cards - should be sorted by the pack sync.
+                        foreach (mod_xyzzy_card c in answers.Where(y => y.packID == p.packID )) { c.packID = masterPack.packID; cardsUpdated++; }
+                        foreach (mod_xyzzy_card c in questions.Where(y => y.packID == p.packID)) { c.packID = masterPack.packID; cardsUpdated++; }
+                        
+                        //update any pack filters
+                        foreach (chat c in  Roboto.Settings.chatData)
+                        {
+                            mod_xyzzy_chatdata cd = c.getPluginData<mod_xyzzy_chatdata>();
+                            if (cd != null)
+                            {
+                                //remove old packs from filter
+                                int recsUpdated = cd.setPackFilter(p.packID, mod_xyzzy_chatdata.packAction.remove);
+                                //add new if we removed
+                                if (recsUpdated > 0)
+                                {
+                                    log("Removed pack " + p.name + "(" + p.packID + ") from chat " + c.ToString() + " filter");
+                                    recsUpdated = cd.setPackFilter(masterPack.packID, mod_xyzzy_chatdata.packAction.add);
+                                    log("Added master pack " + p.name + "(" + p.packID + ") - " + recsUpdated + "records updated");
+                                }
+                            }
+                        }
+
+                        //remove the child packs from the main list
+                        packs.Remove(p);
+
+                        packsMerged++;
+                    }
+                    
+                    log("Finished merging " + packsMerged + " into master pack " + masterPack.name + ". " + cardsUpdated + " cards moved to master pack", logging.loglevel.high);
+
+                }
+
+
+
+
+
+
+
+            }
+
+
+
+
+
+
+
+
+            /* 
+            ==========
+            Should never get into this scenario any more - checking above
+            ==========
             //check that a pack exists for each card in Q / A
             foreach (mod_xyzzy_card q in questions)
             {
-                if (packs.Where(x => x.name == q.category).Count() == 0)
+                if (packs.Where(x => x.packID == q.packID).Count() == 0)
                 {
                     log("Creating dummy pack for " + q.category, logging.loglevel.high);
                     packs.Add(new Helpers.cardcast_pack(q.category, "", q.category));
@@ -97,7 +239,7 @@ namespace Roboto.Modules
             {
                 log("Deduped global packlist, was " + packs.Count() + " now " + newPackList.Count(), logging.loglevel.high);
                 packs = newPackList;
-            }
+            }*/
         }
 
         /// <summary>
@@ -115,28 +257,25 @@ namespace Roboto.Modules
                     Helpers.cardcast_pack outpack;
                     string response;
                     bool success = importCardCastPack(p.packCode, out outpack, out response);
-                    if (!success)
-                    {
-                        //this is usually set in the method, but it doesnt happen if the call has failed. Set here to prevent repeatedly hammering. 
-                        p.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
-                        log("Failed to sync pack " + p.packCode + " - " + p.description + ". Next sync "+ p.nextSync.ToString("f"), logging.loglevel.warn);
-                        
-                    }
-                    else
-                    {
-                        log("Synced deck, next sync " + outpack.nextSync.ToString("f"), logging.loglevel.high);
-                    }
-
+                    log("Pack sync complete - returned " + response, logging.loglevel.warn);
+                    if (!success) { p.syncFailed(); }
+                    else { p.syncSuccess(); }
                 }
-
             }
+            foreach (Helpers.cardcast_pack p in packs.Where(x => x.failCount > 5).ToList())
+            {
+                //TODO - lets remove the pack!
+
+    
+            }
+
 
         }
 
 
 
         /// <summary>
-        /// Import a cardcast pack into the xyzzy localdata
+        /// Import / Sync a cardcast pack into the xyzzy localdata
         /// </summary>
         /// <param name="packFilter"></param>
         /// <returns>String containing details of the pack and cards added. String will be empty if import failed.</returns>
@@ -152,14 +291,12 @@ namespace Roboto.Modules
             List<Helpers.cardcast_answer_card> import_answers = new List<Helpers.cardcast_answer_card>();
             List<mod_xyzzy_chatdata> brokenChats = new List<mod_xyzzy_chatdata>();
 
-            //don't sync again within x days. Add a random duration. 
-            //This line does nothing, as we overwrite the pack. 
-            //pack.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
-
+            
             try
             {
                 log("Attempting to sync/import " + packCode);
                 //Call the cardcast API. We should get an array of cards back (but in the wrong format)
+                //note that this directly updates the pack object we are going to return - so need to shuffle around later if we sync a pack
                 success = Helpers.cardCast.getPackCards(ref packCode, out pack, ref import_questions, ref import_answers);
 
                 if (!success)
@@ -170,12 +307,12 @@ namespace Roboto.Modules
                 {
                     //lets just check if the pack already exists? 
                     log("Retrieved " + import_questions.Count() + " questions and " + import_answers.Count() + " answers from Cardcast");
-                    string l_packname = pack.name;
-                    List<cardcast_pack> matchingPacks = getPackFilterList().Where(x => x.name == l_packname).ToList();
+                    Guid l_packID = pack.packID;
+                    List<cardcast_pack> matchingPacks = getPackFilterList().Where(x => x.packCode == packCode).ToList();
 
                     if (matchingPacks.Count > 1)  // .Contains(pack.name))
                     {
-                        log("Multiple packs found for " + l_packname + " - aborting!", logging.loglevel.critical);
+                        log("Multiple packs found for " + l_packID + " - aborting!", logging.loglevel.critical);
                         response += "/n/r" + "Aborting sync!";
 
                     }
@@ -188,25 +325,43 @@ namespace Roboto.Modules
                         log("Pack " + pack.name + "(" + packCode + ") exists, syncing cards", logging.loglevel.normal);
 
                         //remove any cached questions that no longer exist. Add them to a list first to allow us to loop;
-                        List<mod_xyzzy_card> remove_cards = new List<mod_xyzzy_card>();
-                        //ignore any cards that already exist in the cache. Adde them to a list first to allow us to loop;
-                        List<mod_xyzzy_card> exist_cards = new List<mod_xyzzy_card>();
-                        foreach (mod_xyzzy_card q in questions.Where(x => x.category == l_packname))
+                        //List<mod_xyzzy_card> remove_cards = new List<mod_xyzzy_card>();
+                        //ignore any cards that already exist in the cache. Add them to a list first to allow us to loop;
+                        //List<mod_xyzzy_card> exist_cards = new List<mod_xyzzy_card>();
+
+                        int pos = 0;
+                        while (pos < import_questions.Count()-1)
+                        {
+
+
+
+
+                        }
+
+
+
+
+
+
+                        foreach (mod_xyzzy_card q in questions.Where(x => x.packID == l_packID))
                         {
                             //find existing cards which don't exist in our import pack
                             if ((import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text))).Count() == 0)
                             {
                                 remove_cards.Add(q);
+                                log("Card EXTRA: " + q.text, logging.loglevel.low);
                             }
                             //if they do already exist, remove them from the import list (because they exist!)
                             else
                             {
                                 exist_cards.Add(q);
+                                log("Card EXISTS: " + q.text, logging.loglevel.verbose);
                             }
                         }
                         //now remove them from the localdata
                         foreach (mod_xyzzy_card q in remove_cards)
                         {
+                            log("Question " + q.text + " no longer exists in cardcast, removing", logging.loglevel.warn);
                             questions.Remove(q);
                             //remove any cached questions
                             foreach(chat c in Roboto.Settings.chatData)
@@ -225,10 +380,10 @@ namespace Roboto.Modules
                                 }
                             }
                         }
-                        //or from the import list 
+                        //or remove from the import list (they should exist locally already, so we dont need to porcess further). 
                         foreach (mod_xyzzy_card q in exist_cards)
                         {
-                            //update the local text if it was a match-
+                            //try find a match. 
                             cardcast_question_card match = null;
                             try
                             {
@@ -236,7 +391,8 @@ namespace Roboto.Modules
                                 if (matchedCards.Count > 0) { match = matchedCards[0]; } 
                                 else
                                 {
-                                    log("Local card couldnt be found. Tried to match " + q.text , logging.loglevel.normal);
+                                    //if we get down here, we probably removed a duplicate
+                                    log("Local card couldnt be found (duplicate removed?) Tried to match " + q.text , logging.loglevel.normal);
                                 }
                             }
                             catch (Exception e)
@@ -244,6 +400,7 @@ namespace Roboto.Modules
                                 log("Error finding cleansed version of q card - " + e.Message, logging.loglevel.critical);
                             }
 
+                            //assuming we found the card, update the card (if needed) so it exactly matches the one from cardcast. 
                             if (match != null && q.text != match.question)
                             {
                                 try
@@ -258,9 +415,11 @@ namespace Roboto.Modules
                                     log("Error updating question text on qcard - " + e.Message, logging.loglevel.critical);
                                 }
                             }
+                            //remove the card from the import list (as we have processed it now)
                             try
                             {
                                 int removed = import_questions.RemoveAll(x => x.question == q.text); //swallow this. 
+                                log("Removed : " + removed + " cards with text " + q.text, removed != 1 ? logging.loglevel.high : logging.loglevel.verbose);
                             }
                             catch (Exception e)
                             {
@@ -270,72 +429,110 @@ namespace Roboto.Modules
                         //add the rest to the localData
                         foreach (Helpers.cardcast_question_card q in import_questions)
                         {
-                            mod_xyzzy_card x_question = new mod_xyzzy_card(q.question, pack.name, q.nrAnswers);
+                            mod_xyzzy_card x_question = new mod_xyzzy_card(q.question, pack.packID, q.nrAnswers);
                             questions.Add(x_question);
                         }
                         response += "\n\r" + "Qs: Removed " + remove_cards.Count() + " from local. Skipped " + exist_cards.Count() + " as already exist. Updated " + nr_rep + ". Added " + import_questions.Count() + " new / replacement cards";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
                         //do the same for the answer cards
                         nr_rep = 0;
                         remove_cards.Clear();
                         exist_cards.Clear();
-                        foreach (mod_xyzzy_card a in answers.Where(x => x.category == l_packname))
+                        foreach (mod_xyzzy_card a in answers.Where(x => x.packID == l_packID))
                         {
                             //find existing cards which don't exist in our import pack
                             if ((import_answers.Where(y => Helpers.common.cleanseText(y.answer) == Helpers.common.cleanseText(a.text))).Count() == 0)
                             {
                                 remove_cards.Add(a);
+                                log("Card EXTRA: " + a.text, logging.loglevel.low);
                             }
                             //if they do already exist, remove them from the import list (because they exist!)
                             else
                             {
                                 exist_cards.Add(a);
+                                log("Card EXISTS: " + a.text, logging.loglevel.verbose);
                             }
                         }
-                        //now remove them from the localdata
-                        foreach (mod_xyzzy_card a in remove_cards) { answers.Remove(a); }
-                        //or from the import list
+                        //now remove them from the localdata (NB: Dont need to do all the stuff we do for Qs, as missing answers are less of a problem). 
+                        foreach (mod_xyzzy_card a in remove_cards)
+                        {
+                            answers.Remove(a);
+                            log("Answer " + a.text + " no longer exists in cardcast, removing", logging.loglevel.warn);
+                        }
+
+                        //or remove from the import list (they should exist locally already, so we dont need to porcess further). 
                         foreach (mod_xyzzy_card a in exist_cards)
                         {
                             //update the local text if it was a match-ish
+                            cardcast_answer_card matcha = null;
                             List<cardcast_answer_card> amatches = import_answers.Where(y => Helpers.common.cleanseText(y.answer) == Helpers.common.cleanseText(a.text)).ToList();
                             if (amatches.Count > 0)
                             {
-                                cardcast_answer_card matcha = amatches[0];
-                                if (a.text != matcha.answer)
-                                {
-                                    log("Answer text updated from " + a.text + " to " + matcha.answer);
-                                    a.text = matcha.answer;
-                                    nr_rep++;
-                                }
+                                matcha = amatches[0];
                             }
                             else
                             {
-                                log("Couldnt find card to update! " + a.text, logging.loglevel.high);
+                                //if we get down here, we probably removed a duplicate
+                                log("Local card couldnt be found (duplicate removed?) Tried to match " + a.text, logging.loglevel.normal);
                             }
 
-                            int removed = import_answers.RemoveAll(x => x.answer == a.text);
+                            //assuming we found the card, update the card (if needed) so it exactly matches the one from cardcast. 
+                            if (matcha != null && a.text != matcha.answer)
+                            {
+                                log("Answer text updated from " + a.text + " to " + matcha.answer);
+                                a.text = matcha.answer;
+                                nr_rep++;
+                            }
+                            
+                            //remove the card from the import list  (as we have processed it now)
+                            try
+                            {
+                                int aremoved = import_answers.RemoveAll(x => x.answer == a.text); //swallow this. 
+                                log("Removed : " + aremoved + " cards with text " + a.text, aremoved != 1 ? logging.loglevel.high : logging.loglevel.verbose);
+                            }
+                            catch (Exception e)
+                            {
+                                log("Error removing acard from importlist - " + e.Message, logging.loglevel.critical);
+                            }
+
                         }
+                        
+
                         //add the rest to the localData
                         foreach (Helpers.cardcast_answer_card a in import_answers)
                         {
-                            mod_xyzzy_card x_answer = new mod_xyzzy_card(a.answer, pack.name);
+                            mod_xyzzy_card x_answer = new mod_xyzzy_card(a.answer, pack.packID);
                             answers.Add(x_answer);
                         }
 
                         
                         response += "\n\r" + "As: Removed " + remove_cards.Count() + " from local. Skipped " + exist_cards.Count() + " as already exist. Updated " + nr_rep + ". Added " + import_answers.Count() + " new / replacement cards";
 
+                        //Update the updatePack with the values from the imported pack
                         updatePack.description = pack.description;
-                        //don't sync again within x days. Add a random duration. 
-                        updatePack.nextSync = DateTime.Now.Add(new TimeSpan(5, settings.getRandom(23), 0, 0));
-                        response += "\n\r" + "Next sync " + updatePack.nextSync.ToString("f") + ".";
-                        //pack.description = outpack.description;
-
+                        updatePack.name = pack.name;
+                                                
+                        //swap over our return objet to the one returned from CC. 
+                        pack = updatePack;
+                        
                         Roboto.Settings.stats.logStat(new statItem("Packs Synced", typeof(mod_xyzzy)));
                         
-
                         success = true;
                     }
                     else
@@ -343,13 +540,13 @@ namespace Roboto.Modules
                         response += "Importing fresh pack " + pack.packCode + " - " + pack.name + " - " + pack.description;
                         foreach (Helpers.cardcast_question_card q in import_questions)
                         {
-                            mod_xyzzy_card x_question = new mod_xyzzy_card(q.question, pack.name, q.nrAnswers);
+                            mod_xyzzy_card x_question = new mod_xyzzy_card(q.question, pack.packID, q.nrAnswers);
                             questions.Add(x_question);
                             nr_qs++;
                         }
                         foreach (Helpers.cardcast_answer_card a in import_answers)
                         {
-                            mod_xyzzy_card x_answer = new mod_xyzzy_card(a.answer, pack.name);
+                            mod_xyzzy_card x_answer = new mod_xyzzy_card(a.answer, pack.packID);
                             answers.Add(x_answer);
                             nr_as++;
                         }
@@ -382,6 +579,8 @@ namespace Roboto.Modules
             return success;
 
         }
+
+        /* - Dont do this as it will remove valid duplicate cards. Rely on the regular Sync instead,
 
         public void removeDupeCards()
         {
@@ -438,9 +637,7 @@ namespace Roboto.Modules
 
 
             }
-
-
-        }
+        }*/
 
         private void replaceCardReferences(mod_xyzzy_card old, mod_xyzzy_card newcard, string cardType)
         {

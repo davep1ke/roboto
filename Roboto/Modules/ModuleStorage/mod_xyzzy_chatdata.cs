@@ -34,7 +34,11 @@ namespace Roboto.Modules
         public bool remindersSent = false;
 
         //chat settings
-        public List<String> packFilter = new List<string> { "Cards Against Humanity" };
+        [System.Obsolete("usepackFilterIDs")]
+        public List<String> packFilter = new List<string> { };// { "Cards Against Humanity" };
+
+        public List<Guid> packFilterIDs = new List<Guid> { mod_xyzzy.primaryPackID }; //add the default CAH pack
+
         public int enteredQuestionCount = 10;
         public int maxWaitTimeHours = 0;
         public int minWaitTimeHours = 0;
@@ -446,7 +450,7 @@ namespace Roboto.Modules
             }
             keyboardOptions.Add("Cancel");
             //pack filter
-            message += "\n\r- " + packFilter.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
+            message += "\n\r- " + packFilterIDs.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
             keyboardOptions.Add("Change Packs");
             //Reset/redeal
             message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. To reset everything to default, and stop the game, use *Reset*";
@@ -486,7 +490,7 @@ namespace Roboto.Modules
             else
             {
                 message += "Current settings are below. You can change with /xyzzy_settings, or use /xyzzy_status to get the current state of the game.";
-                message += "\n\r- " + packFilter.Count + " packs currently enabled.";
+                message += "\n\r- " + packFilterIDs.Count + " packs currently enabled.";
                 message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck";
                 message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players.";
                 message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands starting.";
@@ -1175,7 +1179,7 @@ namespace Roboto.Modules
             remainingAnswers = remainingAnswers.Distinct().ToList();
 
             //duplicate strings in packfilter?
-            packFilter = packFilter.Distinct().ToList();
+            packFilterIDs = packFilterIDs.Distinct().ToList();
 
             //current status
             //TODO - pad this out more
@@ -1407,9 +1411,9 @@ namespace Roboto.Modules
         /// By default, assume that the message contains the packname. Can be overwridden by the overload. 
         /// </summary>
         /// <param name="m"></param>
-        internal void setPackFilter(message m)
+        internal void processPackFilterMessage(message m)
         {
-            setPackFilter(m, m.text_msg);
+            processPackFilterMessage(m, m.text_msg);
         }
 
         /// <summary>
@@ -1417,44 +1421,79 @@ namespace Roboto.Modules
         /// </summary>
         /// <param name="m"></param>
         /// <param name="packName"></param>
-        internal void setPackFilter (message m, string packName )
+        internal void processPackFilterMessage (message m, string packName )
         { 
             mod_xyzzy_coredata localData = getLocalData();
+
+            List<Helpers.cardcast_pack> matchingPatcks = localData.getPackFilterList().Where(x => x.name == packName).ToList();
 
             //did they actually give us an answer? 
             if (m.text_msg == "All")
             {
-                packFilter.Clear();
+                packFilterIDs.Clear();
 
                 foreach(Helpers.cardcast_pack pack in localData.getPackFilterList())
                 {
-                    packFilter.Add(pack.name);
+                    packFilterIDs.Add(pack.packID);
                 }
 
                 //packFilter.AddRange(localData.getPackFilterList());
             }
             else if (m.text_msg == "None")
             {
-                packFilter.Clear();
+                packFilterIDs.Clear();
             }
-            else if (localData.getPackFilterList().Where(x => x.name == packName).Count() == 0 )//      .Contains(packName))
+            else if (matchingPatcks.Count == 0 )//      .Contains(packName))
             {
                 TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", false, m.message_id);
             }
             else
             {
+                //get the pack 
+                Helpers.cardcast_pack chosenPack = matchingPatcks[0];
+
                 //toggle the pack
-                if (packFilter.Contains(packName))
+                if (packFilterIDs.Contains(chosenPack.packID))
                 {
-                    packFilter.Remove(packName);
+                    packFilterIDs.Remove(chosenPack.packID);
                 }
                 else
                 {
-                    packFilter.Add(packName);
+                    packFilterIDs.Add(chosenPack.packID);
                 }
             }
 
         }
+
+        public enum packAction {add, remove, toggle };
+
+        /// <summary>
+        /// set or toggle a pack filter in the current chat
+        /// </summary>
+        /// <param name="packID"></param>
+        /// <param name="action"></param>
+        /// <returns></returns>
+        public int setPackFilter(Guid packID, packAction action)
+        {
+            switch (action)
+            {
+                //slightly iffy syntax. No "break" line as the case lines are returning the values directly. 
+                case packAction.add:
+                    if (packFilterIDs.Contains(packID)) { return 0; }
+                    else { packFilterIDs.Add(packID); return 1; }
+                    //break;
+                case packAction.remove:
+                    return packFilterIDs.RemoveAll(x => x == packID);
+                    //break;
+                case packAction.toggle:
+                    if (packFilterIDs.Contains(packID)) { return packFilterIDs.RemoveAll(x => x == packID); }
+                    else { packFilterIDs.Add(packID); return 1; }
+                    //break;
+
+            }
+            return -1;
+        }
+
 
         /// <summary>
         /// 
@@ -1496,9 +1535,9 @@ namespace Roboto.Modules
             int startAt = (pageNr - 1) * maxPacksPerPage;
             string currentStatus = "null";  //can be null, ON or OFF. Used for setting headings as we want to order by status.
 
-            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList().OrderByDescending(x => packEnabled(x.name)).ThenBy(x => x.name).Skip(startAt).Take(maxPacksPerPage).ToList()) 
+            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList().OrderByDescending(x => packEnabled(x.packID)).ThenBy(x => x.name).Skip(startAt).Take(maxPacksPerPage).ToList()) 
             {
-                string packIsEnabled = packEnabled(pack.name).ToString();
+                string packIsEnabled = packEnabled(pack.packID).ToString();
                 if (currentStatus != packIsEnabled)
                 {
                     currentStatus = packIsEnabled;
@@ -1514,7 +1553,7 @@ namespace Roboto.Modules
                 }
 
                 //add message to the response
-                if (packEnabled(pack.name)) { response += "ON  "; }
+                if (packEnabled(pack.packID)) { response += "ON  "; }
                 else { response += "OFF "; }
                 string cleanPackName = Helpers.common.removeMarkDownChars(pack.name);
                 response += cleanPackName + "\n\r";
@@ -1535,9 +1574,9 @@ namespace Roboto.Modules
         }
 
 
-        public bool packEnabled(string packName)
+        public bool packEnabled(Guid packID)
         {
-            if (packFilter.Contains("*") || packFilter.Contains(packName.Trim()))
+            if (packFilterIDs.Contains(mod_xyzzy.AllPacksEnabledID) || packFilterIDs.Contains(packID))
             {
                 return true;
             }
@@ -1553,7 +1592,7 @@ namespace Roboto.Modules
             foreach (Helpers.cardcast_pack pack in localData.getPackFilterList())
             {
                 //is it currently enabled
-                if (packEnabled(pack.name))
+                if (packEnabled(pack.packID))
                 {
                     response += "ON  ";
                 }
@@ -1574,7 +1613,7 @@ namespace Roboto.Modules
             List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
             foreach (mod_xyzzy_card q in localData.questions)
             {
-                if (packEnabled(q.category)) { questions.Add(q); }
+                if (packEnabled(q.packID)) { questions.Add(q); }
             }
             //limit to 500 question's (then redeal)
             int cardsToAdd = enteredQuestionCount;
@@ -1595,7 +1634,7 @@ namespace Roboto.Modules
             
             foreach (mod_xyzzy_card a in getLocalData().answers)
             {
-                if (packEnabled(a.category)) { answers.Add(a); }
+                if (packEnabled(a.packID)) { answers.Add(a); }
             }
 
             //pick n questions and put them in the deck

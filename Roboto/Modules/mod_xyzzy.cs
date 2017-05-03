@@ -144,14 +144,27 @@ namespace Roboto.Modules
     {
         public string uniqueID = Guid.NewGuid().ToString();
         public String text;
+        [System.Obsolete("use Pack (Guid)")]
         public String category; //what pack did the card come from
+
+        //shitty workaround to allow us to load in the cateogry info temporarily. - http://stackoverflow.com/questions/5096926/what-is-the-get-set-syntax-in-c
+        [XmlElement("category")]
+        public string TempCategory
+        {
+            #pragma warning disable 612, 618
+            get { return category; }
+            set { category = value; }
+            #pragma warning restore 612, 618
+        }
+
+        public Guid packID;
         public int nrAnswers = -1; 
 
         internal mod_xyzzy_card() { }
-        public mod_xyzzy_card(String text, string category, int nrAnswers = -1)
+        public mod_xyzzy_card(String text, Guid packID, int nrAnswers = -1)
         {
             this.text = text;
-            this.category = category;
+            this.packID = packID;
             this.nrAnswers = nrAnswers;
         }
 
@@ -163,6 +176,9 @@ namespace Roboto.Modules
     /// </summary>
     public class mod_xyzzy : RobotoModuleTemplate
     {
+        public static Guid primaryPackID = new Guid("FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE");
+        public static Guid AllPacksEnabledID = Guid.Empty;
+
         private mod_xyzzy_coredata localData;
         
 
@@ -327,8 +343,8 @@ namespace Roboto.Modules
                         if (i == -1)
                         {
                             log("Adding user, but the outbound message is still queued", logging.loglevel.verbose);
-                            TelegramAPI.SendMessage(m.chatID, "Sent " + m.userFullName + " a message, but I'm waiting for him to reply to another question. "
-                                + m.userFullName + " is in the game, but will need to clear their PMs before they see any questions. ", false, m.message_id);
+                            TelegramAPI.SendMessage(m.chatID, "Sent " + m.userFullName + " a message, but I'm waiting for them to reply to another question. "
+                                + m.userFullName + " is in the game, but will need to clear their other PMs before they see any questions. ", false, m.message_id);
 
                         }
                         else if (i < 0)
@@ -689,11 +705,11 @@ namespace Roboto.Modules
                 //enable/disable an existing pack
                 else if (m.text_msg != "Continue")
                 {
-                    chatData.setPackFilter(m);
+                    chatData.processPackFilterMessage(m);
                     chatData.sendPackFilterMessage(m,currentPage);
                 }
                 //no packs selected, retry
-                else if (chatData.packFilter.Count == 0)
+                else if (chatData.packFilterIDs.Count == 0)
                 {
                     chatData.sendPackFilterMessage(m,1);
                 }
@@ -739,7 +755,7 @@ namespace Roboto.Modules
                         //reply to user
                         TelegramAPI.SendMessage(m.userID, importMessage);
                         //enable the filter
-                        chatData.setPackFilter(m, pack.name);
+                        chatData.processPackFilterMessage(m, pack.name);
                         //return to plugin selection
                         chatData.sendPackFilterMessage(m,1);
                         if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
@@ -922,8 +938,12 @@ namespace Roboto.Modules
         public override void sampleData()
         {
             log("Adding stub sample packs");
+
             //Add packs for the standard CaH packs. These should be synced when we do startupChecks()
-            localData.packs.Add(new Helpers.cardcast_pack("Cards Against Humanity", "CAHBS", "Cards Against Humanity"));
+            Helpers.cardcast_pack primaryPack = new Helpers.cardcast_pack("Cards Against Humanity", "CAHBS", "Cards Against Humanity");
+            primaryPack.overrideGUID(mod_xyzzy.primaryPackID); //override this one's guid so we can add it by default to new poacks. 
+
+            localData.packs.Add(primaryPack);
             localData.packs.Add(new Helpers.cardcast_pack("Expansion 1 - CAH", "CAHE1", "Expansion 1 - CAH"));
             localData.packs.Add(new Helpers.cardcast_pack("Expansion 2 - CAH", "CAHE2", "Expansion 2 - CAH"));
             localData.packs.Add(new Helpers.cardcast_pack("Expansion 3 - CAH", "CAHE3", "Expansion 3 - CAH"));
@@ -939,30 +959,11 @@ namespace Roboto.Modules
         public override void startupChecks()
         {
 
-          
-
-
-            //make sure our OOTB filters exist. Will be deduped afterwards. Messy as it relies on the new dummy pack being added AFTER the existing one, 
-            //then keeping oldest pack first during dedupe.
-            //TODO Can probably remove this when we have finished migrating everything
-            //sampleData();
-
             //make sure our local pack filter list is fully populated 
             localData.startupChecks();
 
-            //remove any duplicate cards
+
             //TODO - some other mechanism for removing duplicate cards if we e.g. merge packs. Can't dedupe properly as e.g. John Cena pack has multiple cards
-            //localData.removeDupeCards();
-
-            //sync anything that needs it
-            localData.packSyncCheck();
-
-
-
-
-
-            //Replace any chat pack filters.
-
 
             //todo - this should be a general pack remove option
             //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
@@ -992,47 +993,17 @@ namespace Roboto.Modules
             //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe4");
             //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe5");
             //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe6");
-
-            //        //do a /check on all active chats
-            //        //removed - cant do this with all 1k+ chats when we are checking the status of each one by API
-            //        //chatData.check();
             //    }
             //}
+
+
+            //sync anything that needs it
+            localData.packSyncCheck();
 
 
             int i = localData.packs.Where(x => string.IsNullOrEmpty(x.packCode)).Count();
             if (i > 0) { Roboto.log.log("There are " + i + " packs without pack codes.", logging.loglevel.warn); }
         }
 
-        /*private string pack_replacements(string input)
-        {
-            string result = input;
-            switch (input.Trim())
-            {
-                case "Base":
-                    result = "Cards Against Humanity";
-                    break;
-                case "CAHe1":
-                    result = "Expansion 1 - CAH";
-                    break;
-                case "CAHe2":
-                    result = "Expansion 2 - CAH";
-                    break;
-                case "CAHe3":
-                    result = "Expansion 3 - CAH";
-                    break;
-                case "CAHe4":
-                    result = "Expansion 4 - CAH";
-                    break;
-                case "CAHe5":
-                    result = "CAH Fifth Expansion";
-                    break;
-                case "CAHe6":
-                    result = "CAH Sixth Expansion";
-                    break;
-
-            }
-            return result;
-        }*/
     }
 }
