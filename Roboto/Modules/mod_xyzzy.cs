@@ -239,8 +239,9 @@ namespace Roboto.Modules
             Roboto.Settings.stats.registerStatType("Active Players", this.GetType(), System.Drawing.Color.Blue, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Background Wait", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Background Wait (Quickcheck)", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Background Wait (Pack Sync)", this.GetType(), System.Drawing.Color.Cyan, stats.displaymode.line, stats.statmode.absolute);
 
-           Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
+            Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
 
         }
 
@@ -1000,9 +1001,23 @@ namespace Roboto.Modules
             //sync anything that needs it
             localData.packSyncCheck();
 
+            //Check for null-IDd packs and report
+            List<Helpers.cardcast_pack> nullIDPacks = localData.packs.Where(x => string.IsNullOrEmpty(x.packCode)).ToList();
+            Roboto.log.log("There are " + nullIDPacks.Count() + " packs without pack codes." +
+                (nullIDPacks.Count() == 0 ? "": " Try rename an existing pack in the XML file to the same name, or add the pack code to this pack - should merge in next time a Sync is called. " )
+                , nullIDPacks.Count() > 0?logging.loglevel.critical:  logging.loglevel.normal);
+            foreach (Helpers.cardcast_pack pack in nullIDPacks)
+            {
+                Roboto.log.log("Pack " + pack.name + " has no pack code ", logging.loglevel.critical);
+            }
 
-            int i = localData.packs.Where(x => string.IsNullOrEmpty(x.packCode)).Count();
-            if (i > 0) { Roboto.log.log("There are " + i + " packs without pack codes.", logging.loglevel.warn); }
+            //AT THIS POINT THE GAME WILL START PROCESSING INSTRUCTIONS!!!
+            //DONT GO PAST IN STARTUP TEST MODE
+            //----------------------------
+            int ABANDONALLHOPE = 1;
+            ABANDONALLHOPE++;
+            //----------------------------
+
         }
 
     }

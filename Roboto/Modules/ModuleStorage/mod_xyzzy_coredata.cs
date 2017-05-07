@@ -17,6 +17,7 @@ namespace Roboto.Modules
     public class mod_xyzzy_coredata : RobotoModuleDataTemplate
     {
         public DateTime lastDayProcessed = DateTime.MinValue;
+        public int maxPacksToSyncInOneGo = 5;
         public int backgroundChatsToProcess = 5;
         public int backgroundChatsToMiniProcess = 100;
         public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
@@ -136,9 +137,10 @@ namespace Roboto.Modules
             foreach (cardcast_pack p in packs) { if (!uniqueCodes.Contains(p.packCode) && p.packCode != "") { uniqueCodes.Add(p.packCode); } }
             log("Found " + uniqueCodes.Count() + " unique pack codes against " + packs.Count() + " packs");
 
-            //loop through. Find the master pack
+            //loop through. 
             foreach (string packCode in uniqueCodes)
             {
+                //Find the master pack
                 List<cardcast_pack> matchingPacks = packs.Where(x => (! string.IsNullOrEmpty(x.packCode)) && (  x.packCode == packCode)).ToList();
 
 
@@ -152,9 +154,12 @@ namespace Roboto.Modules
                 }
                 else
                 {
+                    
                     int cardsUpdated = 0;
                     int packsMerged = 0;
                     cardcast_pack masterPack = matchingPacks[0];
+
+                    log("Found " + matchingPacks.Count() + " packs for " + packCode + " - merging into " + masterPack.ToString(), logging.loglevel.critical);
 
                     //need to merge the other packs into the first one.
                     foreach (cardcast_pack p in matchingPacks.Where(x => x != masterPack))
@@ -189,7 +194,7 @@ namespace Roboto.Modules
                     }
                     
                     log("Finished merging " + packsMerged + " into master pack " + masterPack.name + ". " + cardsUpdated + " cards moved to master pack", logging.loglevel.high);
-
+                    //1=1
                 }
 
 
@@ -247,20 +252,25 @@ namespace Roboto.Modules
         /// </summary>
         public void packSyncCheck()
         {
+            
+            int backlog = packs.Where(p => (p.packCode != null && p.packCode != "" && p.nextSync < DateTime.Now)).Count();
+            log("There are " + backlog + " packs outstanding to sync. Picking first 15", logging.loglevel.normal );
+            Roboto.Settings.stats.logStat(new statItem("Background Wait (Pack Sync)", typeof(mod_xyzzy), backlog));
+
+            //take a subset of packs for now. 
             //Packs is already a list, but there is a chance that the importCardCast will update / remove it - so re-list it to prevent mutation errors
-            foreach (Helpers.cardcast_pack p in packs.ToList())
+            foreach (Helpers.cardcast_pack p in packs.Where (p => ( p.packCode  != null && p.packCode != "" 
+            //&& p.nextSync < DateTime.Now
+            )).OrderBy(x => x.nextSync).Take(maxPacksToSyncInOneGo).ToList())
             {
-                if (p.packCode != null && p.packCode != "" && p.nextSync < DateTime.Now)
-                {
-                    log("Syncing " + p.name);
-                    Roboto.Settings.stats.logStat(new statItem("Packs Synced", typeof(mod_xyzzy)));
-                    Helpers.cardcast_pack outpack;
-                    string response;
-                    bool success = importCardCastPack(p.packCode, out outpack, out response);
-                    log("Pack sync complete - returned " + response, logging.loglevel.warn);
-                    if (!success) { p.syncFailed(); }
-                    else { p.syncSuccess(); }
-                }
+                log("Syncing " + p.name + " - Sync target was " + p.nextSync.ToString() );
+                Roboto.Settings.stats.logStat(new statItem("Packs Synced", typeof(mod_xyzzy)));
+                Helpers.cardcast_pack outpack;
+                string response;
+                bool success = importCardCastPack(p.packCode, out outpack, out response);
+                log("Pack sync complete - returned " + response, logging.loglevel.warn);
+                if (!success) { p.syncFailed(); }
+                else { p.syncSuccess(); }
             }
             foreach (Helpers.cardcast_pack p in packs.Where(x => x.failCount > 5).ToList())
             {
@@ -268,6 +278,8 @@ namespace Roboto.Modules
 
     
             }
+
+
 
 
         }
@@ -329,28 +341,213 @@ namespace Roboto.Modules
                         //ignore any cards that already exist in the cache. Add them to a list first to allow us to loop;
                         //List<mod_xyzzy_card> exist_cards = new List<mod_xyzzy_card>();
 
-                        int pos = 0;
-                        while (pos < import_questions.Count()-1)
+
+                        //===================
+                        //QUESTIONS
+                        //===================
+
+                        //NB: Used to do a first pass to remove any matching cards from the import list. This WONT work as it will remove the ability
+                        //to find out how many copies of a card we should have! Instead, take a backup copy, remove items from that, and then delete 
+                        //anything that is remaining at the end. 
+                        List<mod_xyzzy_card> questionCache = questions.Where(x => (x.packID == updatePack.packID)).ToList();
+                        log("=============================", logging.loglevel.high);
+                        log("Procesing " + questionCache.Count() + " QUESTION cards", logging.loglevel.high);
+                        log("=============================", logging.loglevel.high);
+
+                        //Loop through everything that is in the import list, removing items as we go. 
+                        while (import_questions.Count() > 0)
                         {
+                            cardcast_question_card currentCard = import_questions[0];
+                            //find how many other matches in the import list we have. 
+                            List<cardcast_question_card> matchingImportCards = import_questions.Where(x => Helpers.common.cleanseText(x.question) == Helpers.common.cleanseText(currentCard.question)).ToList();
+                            if (matchingImportCards.Count() == 0)
+                            {
+                                log("Error! No matches found for card '" + currentCard.question + "' - expect at least 1", logging.loglevel.critical);
+                            }
+                            else
+                            {
+                                log("Processing " + matchingImportCards.Count() + " cards matching " + currentCard.question, logging.loglevel.verbose);
+                                List<mod_xyzzy_card> matchingLocalCards = questions.Where(x => (x.packID == updatePack.packID) && (Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.question))).ToList();
+                                log("Found " + matchingLocalCards.Count() + " local cards", logging.loglevel.verbose);
+
+                                //assume the first cards should match the cards coming from CardCast. Update so we have exact text
+                                int j = 0;
+                                while (j < matchingLocalCards.Count() && j < matchingImportCards.Count())
+                                {
+                                    if (matchingLocalCards[j].text != matchingImportCards[j].question || matchingLocalCards[j].nrAnswers != matchingImportCards[j].nrAnswers)
+                                    {
+                                        try
+                                        {
+                                            log("Local question card updated from " + matchingLocalCards[j].text + "(" + matchingLocalCards[j].nrAnswers  +  ") to " + matchingImportCards[j].question + " (" + matchingImportCards[j].nrAnswers + ")", logging.loglevel.high);
+                                            matchingLocalCards[j].text = matchingImportCards[j].question;
+                                            matchingLocalCards[j].nrAnswers = matchingImportCards[j].nrAnswers;
+                                            nr_rep++;
+                                        }
+                                        catch (Exception e)
+                                        {
+                                            log("Error updating question text on qcard - " + e.Message, logging.loglevel.critical);
+                                        }
+                                    }
+                                    j++;
+                                }
+
+                                //for the remainder, decide how to progress:
+                                if (matchingLocalCards.Count() == matchingImportCards.Count())
+                                {
+                                    //log("Count matches, nothing more to do!", logging.loglevel.verbose);
+                                }
+                                //Need to add some new cards
+                                else if (matchingLocalCards.Count() < matchingImportCards.Count())
+                                {
+                                    log("Not enough local cards, adding " + (matchingLocalCards.Count() - matchingImportCards.Count()) + " extra", logging.loglevel.verbose);
+                                    for (int i = matchingLocalCards.Count(); i < matchingImportCards.Count(); i++)
+                                    {
+                                        log("Adding card " + i + " " + matchingImportCards[0].question, logging.loglevel.verbose);
+                                        mod_xyzzy_card x_question = new mod_xyzzy_card(matchingImportCards[0].question, pack.packID, matchingImportCards[0].nrAnswers);
+                                        questions.Add(x_question);
+                                    }
+                                }
+                                //need to remove some existing cards. Retire cards by merging data into the first card
+                                else
+                                {
+                                    for (int i = matchingImportCards.Count(); i < matchingLocalCards.Count(); i++)
+                                    {
+                                        List<mod_xyzzy_chatdata> newBrokenChats = removeQCard(matchingLocalCards[i],  matchingLocalCards[0].uniqueID);
+                                        if (newBrokenChats.Count() > 0 )
+                                        {
+                                            log("Marking " + newBrokenChats.Count() + " chats as requiring checking", logging.loglevel.high);
+                                        }
+                                        brokenChats.AddRange(newBrokenChats);
+                                    }
+                                }
+                                
+                            }
+                            //now remove all the processed import cards from our import list, and our cache
+                            foreach (cardcast_question_card c in matchingImportCards)
+                            {
+                                import_questions.Remove(c);
+                                log("Removed card from import list: " + c.question, logging.loglevel.verbose);
+                            }
+                            int matches = questionCache.RemoveAll(x => Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.question));
+                            log("Removed " + matches + " from temporary local cache", logging.loglevel.verbose);
+                        }
+
+                        //now remove anything left in the cache from the master question list. 
+                        foreach (mod_xyzzy_card c in questionCache)
+                        {
+                            log("Card wasnt processed - disposing of " + c.text, logging.loglevel.warn);
+                            List<mod_xyzzy_chatdata> addnBrokenChats = removeQCard(c, null);
+                            brokenChats.AddRange(addnBrokenChats);
+                        }
+
+                        //===================
+                        //ANSWERS
+                        //===================
+
+                        //NB: Used to do a first pass to remove any matching cards from the import list. This WONT work as it will remove the ability
+                        //to find out how many copies of a card we should have! Instead, take a backup copy, remove items from that, and then delete 
+                        //anything that is remaining at the end. 
+
+                        List<mod_xyzzy_card> answerCache = answers.Where(x => (x.packID == updatePack.packID)).ToList();
+                        log("=============================", logging.loglevel.high);
+                        log("Procesing " + answerCache.Count() + " ANSWER cards", logging.loglevel.high);
+                        log("=============================", logging.loglevel.high);
 
 
 
 
+                        //Loop through everything that is in the import list, removing items as we go. 
+                        while (import_answers.Count() > 0)
+                        {
+                            cardcast_answer_card currentCard = import_answers[0];
+                            //find how many other matches in the import list we have. 
+                            List<cardcast_answer_card> matchingImportCards = import_answers.Where(x => Helpers.common.cleanseText(x.answer) == Helpers.common.cleanseText(currentCard.answer)).ToList();
+                            if (matchingImportCards.Count() == 0)
+                            {
+                                log("Error! No matches found for card '" + currentCard.answer + "' - expect at least 1", logging.loglevel.critical);
+                            }
+                            else
+                            {
+                                log("Processing " + matchingImportCards.Count() + " cards matching " + currentCard.answer, logging.loglevel.verbose);
+                                List<mod_xyzzy_card> matchingLocalCards = answers.Where(x => (x.packID == updatePack.packID) && (Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.answer))).ToList();
+                                log("Found " + matchingLocalCards.Count() + " local cards", logging.loglevel.verbose);
+
+                                //assume the first cards should match the cards coming from CardCast. Update so we have exact text
+                                int j = 0;
+                                while (j < matchingLocalCards.Count() && j < matchingImportCards.Count())
+                                {
+                                    if (matchingLocalCards[j].text != matchingImportCards[j].answer)
+                                    {
+                                        try
+                                        {
+                                            log("Local answer card updated from " + matchingLocalCards[j].text + " to " + matchingImportCards[j].answer , logging.loglevel.high);
+                                            matchingLocalCards[j].text = matchingImportCards[j].answer;
+                                            // matchingLocalCards[j].nrAnswers = matchingImportCards[j].nrAnswers; <- automatically set to -1 for an answer card. 
+                                            nr_rep++;
+                                        }
+                                        catch (Exception e)
+                                        {
+                                            log("Error updating answer text on acard - " + e.Message, logging.loglevel.critical);
+                                        }
+                                    }
+                                    j++;
+                                }
+
+                                //for the remainder, decide how to progress:
+                                if (matchingLocalCards.Count() == matchingImportCards.Count())
+                                {
+                                    //log("Count matches, nothing more to do!", logging.loglevel.verbose);
+                                }
+                                //Need to add some new cards (either doesnt exist locally - new card - or they have added another copy remotely)
+                                else if (matchingLocalCards.Count() < matchingImportCards.Count())
+                                {
+                                    log("Not enough local cards, adding " + (matchingImportCards.Count() - matchingLocalCards.Count()) + " extra", logging.loglevel.verbose);
+                                    for (int i = matchingLocalCards.Count(); i < matchingImportCards.Count(); i++)
+                                    {
+                                        log("Adding card " + i + " - " + matchingImportCards[0].answer, logging.loglevel.verbose);
+                                        mod_xyzzy_card x_answer = new mod_xyzzy_card(matchingImportCards[0].answer, pack.packID, matchingImportCards[0].nrAnswers);
+                                        answers.Add(x_answer);
+                                    }
+                                }
+                                //need to remove some existing cards. Retire cards by merging data into the first card
+                                else
+                                {
+                                    for (int i = matchingImportCards.Count(); i < matchingLocalCards.Count(); i++)
+                                    {
+                                        List<mod_xyzzy_chatdata> newBrokenChats = removeACard(matchingLocalCards[i], matchingLocalCards[0].uniqueID);
+                                        if (newBrokenChats.Count() > 0)
+                                        {
+                                            log("Marking " + newBrokenChats.Count() + " chats as requiring checking", logging.loglevel.high);
+                                        }
+                                        brokenChats.AddRange(newBrokenChats);
+                                    }
+                                }
+
+                            }
+                            //now remove all the processed import cards from our import list, and our cache
+                            foreach (cardcast_answer_card c in matchingImportCards)
+                            {
+                                import_answers.Remove(c);
+                                log("Removed card from import list: " + c.answer, logging.loglevel.verbose);
+                            }
+                            int matches = answerCache.RemoveAll(x => Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.answer));
+                            log("Removed " + matches + " from temporary local cache", logging.loglevel.verbose);
+                        }
+
+                        //now remove anything left in the cache from the master answer list. 
+                        foreach (mod_xyzzy_card c in answerCache)
+                        {
+                            log("Card wasnt processed - suggests it was removed from the cardcast pack. Disposing of " + c.text, logging.loglevel.warn);
+                            List<mod_xyzzy_chatdata> addnBrokenChats = removeQCard(c, null);
+                            brokenChats.AddRange(addnBrokenChats);
                         }
 
 
 
 
 
-
-                        foreach (mod_xyzzy_card q in questions.Where(x => x.packID == l_packID))
-                        {
-                            //find existing cards which don't exist in our import pack
-                            if ((import_questions.Where(y => Helpers.common.cleanseText(y.question) == Helpers.common.cleanseText(q.text))).Count() == 0)
-                            {
-                                remove_cards.Add(q);
-                                log("Card EXTRA: " + q.text, logging.loglevel.low);
-                            }
+                        /*
+                       
                             //if they do already exist, remove them from the import list (because they exist!)
                             else
                             {
@@ -435,6 +632,7 @@ namespace Roboto.Modules
                         response += "\n\r" + "Qs: Removed " + remove_cards.Count() + " from local. Skipped " + exist_cards.Count() + " as already exist. Updated " + nr_rep + ". Added " + import_questions.Count() + " new / replacement cards";
 
 
+            */
 
 
 
@@ -447,9 +645,7 @@ namespace Roboto.Modules
 
 
 
-
-
-
+                        /*
                         //do the same for the answer cards
                         nr_rep = 0;
                         remove_cards.Clear();
@@ -524,6 +720,8 @@ namespace Roboto.Modules
                         
                         response += "\n\r" + "As: Removed " + remove_cards.Count() + " from local. Skipped " + exist_cards.Count() + " as already exist. Updated " + nr_rep + ". Added " + import_answers.Count() + " new / replacement cards";
 
+            */
+
                         //Update the updatePack with the values from the imported pack
                         updatePack.description = pack.description;
                         updatePack.name = pack.name;
@@ -569,7 +767,7 @@ namespace Roboto.Modules
                 success = false;
             }
 
-            foreach (mod_xyzzy_chatdata c in brokenChats)
+            foreach (mod_xyzzy_chatdata c in brokenChats.Distinct())
             {
                 c.askQuestion(false);
             }
@@ -578,6 +776,112 @@ namespace Roboto.Modules
 
             return success;
 
+        }
+
+        private List<mod_xyzzy_chatdata> removeACard(mod_xyzzy_card cardToRemove, string replacementGuid)
+        {
+            List<mod_xyzzy_chatdata> result = new List<mod_xyzzy_chatdata>();
+            log("Answer " + cardToRemove.text + " no longer exists in cardcast, removing", logging.loglevel.warn);
+
+            //remove any cached answers / cards in hand
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
+                if (chatData != null)
+                {
+                    //remove any cached answers
+                    chatData.remainingAnswers.RemoveAll(x => x == cardToRemove.uniqueID);
+
+                    //remove answers from player hands. 
+                    foreach (mod_xyzzy_player p in chatData.players )
+                    {
+                        int i = p.cardsInHand.RemoveAll(x => x == cardToRemove.uniqueID);
+                        if (i > 0 )
+                        {
+                            log("Removed " + i + " copies of card " + cardToRemove.text + " from player " + p.name + "'s hand", logging.loglevel.high);
+                            if (replacementGuid != null)
+                            {
+                                p.cardsInHand.Add(replacementGuid);
+                                log("Added " + replacementGuid + " to replace removed card", logging.loglevel.high);
+                            }
+
+                        }
+
+                        //check if they have played the card. 
+                        i = p.selectedCards.RemoveAll(x => x == cardToRemove.uniqueID);
+                        if (i > 0)
+                        {
+                            log("Removed " + i + " copies of card " + cardToRemove.text + " from player " + p.name + "'s selected cards", logging.loglevel.high);
+                            if (replacementGuid != null)
+                            {
+                                p.cardsInHand.Add(replacementGuid);
+                                log("Added " + replacementGuid + " to replace removed selected card", logging.loglevel.high);
+                            }
+                            else
+                            {
+                                //removed a played card without a replacement guid - likely to all end in failure. 
+                                result.Add(chatData);
+                            }
+
+                        }
+
+
+                    }
+
+
+                    //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
+
+
+
+                    //if (chatData.currentQuestion == cardToRemove.uniqueID)
+                    //{
+                    //    result.Add(chatData);
+                    //    if (replacementGuid != null)
+                    //    {
+                    //        chatData.currentQuestion = replacementGuid;
+                    //        log("The current question " + chatData.currentQuestion + " guid for chat " + c.chatID + " has been replaced.", logging.loglevel.high);
+                    //    }
+                    //    else
+                    //    {
+                    //        log("The current question " + chatData.currentQuestion + " for chat " + c.chatID + " has been removed!", logging.loglevel.warn);
+                    //    }
+                    //}
+                }
+            }
+            return result;
+
+
+        }
+
+        private List<mod_xyzzy_chatdata> removeQCard(mod_xyzzy_card cardToRemove, string replacementGuid)
+        {
+            List<mod_xyzzy_chatdata> result = new List<mod_xyzzy_chatdata>();
+            log("Question " + cardToRemove.text + " no longer exists in cardcast, removing", logging.loglevel.warn);
+            //remove any cached questions
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
+                if (chatData != null)
+                {
+                    chatData.remainingQuestions.RemoveAll(x => x == cardToRemove.uniqueID);
+                    //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
+                    if (chatData.currentQuestion == cardToRemove.uniqueID)
+                    {
+                        result.Add(chatData);
+                        if (replacementGuid != null)
+                        {
+                            chatData.currentQuestion = replacementGuid;
+                            log("The current question " + chatData.currentQuestion + " guid for chat " + c.chatID + " has been replaced.", logging.loglevel.high);
+                        }
+                        else
+                        {
+
+                            log("The current question " + chatData.currentQuestion + " for chat " + c.chatID + " has been removed!", logging.loglevel.warn);
+                        }
+                    }
+                }
+            }
+            return result;
         }
 
         /* - Dont do this as it will remove valid duplicate cards. Rely on the regular Sync instead,

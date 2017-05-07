@@ -73,7 +73,7 @@ namespace Roboto
                         colour = ConsoleColor.DarkGreen;
                         break;
                     case loglevel.normal:
-                        colour = ConsoleColor.Blue;
+                        colour = ConsoleColor.Cyan;
                         break;
                     case loglevel.warn:
                         colour = ConsoleColor.Magenta;

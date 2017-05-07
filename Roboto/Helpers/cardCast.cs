@@ -42,7 +42,14 @@ namespace Roboto.Helpers
             this.name = name;
             this.packCode = packCode;
             this.description = description;
-        }        
+        }
+
+
+        public override string ToString()
+        {
+            return name + "(" + packCode + ")";
+        }
+
 
         //set the guid to a specific value
         public void overrideGUID (Guid newGuid)
@@ -54,8 +61,9 @@ namespace Roboto.Helpers
         {
             //this is usually set in the method, but it doesnt happen if the call has failed. Set here to prevent repeatedly hammering. 
             setNextSync();
-            Roboto.log.log("Failed to sync pack " + this.ToString() + ". Next sync " + nextSync.ToString("f"), logging.loglevel.warn);
+            Roboto.log.log("Failed to sync pack " + this.ToString() + ". Sync has previously failed " + failCount + " times. Next sync " + nextSync.ToString("f"), logging.loglevel.critical);
             failCount++;
+            //TODO: At some point, we should really remove the pack. 
         }
 
         public void syncSuccess()
