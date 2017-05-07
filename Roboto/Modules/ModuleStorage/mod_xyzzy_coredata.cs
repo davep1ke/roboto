@@ -260,7 +260,7 @@ namespace Roboto.Modules
             //take a subset of packs for now. 
             //Packs is already a list, but there is a chance that the importCardCast will update / remove it - so re-list it to prevent mutation errors
             foreach (Helpers.cardcast_pack p in packs.Where (p => ( p.packCode  != null && p.packCode != "" 
-            //&& p.nextSync < DateTime.Now
+            && p.nextSync < DateTime.Now
             )).OrderBy(x => x.nextSync).Take(maxPacksToSyncInOneGo).ToList())
             {
                 log("Syncing " + p.name + " - Sync target was " + p.nextSync.ToString() );
