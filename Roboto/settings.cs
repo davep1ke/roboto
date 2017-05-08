@@ -7,6 +7,7 @@ using System.Text;
 using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
+using Roboto.Modules;
 
 namespace Roboto
 {
@@ -365,6 +366,20 @@ namespace Roboto
             }
             
             return customTypes.ToArray();
+        }
+
+        public static RobotoModuleTemplate getPlugin(Type type)
+        {
+            foreach(RobotoModuleTemplate t in plugins)
+            {
+                if (t.GetType() == type)
+                {
+                    return t;
+                }
+            }
+
+            return null;
+            
         }
 
 

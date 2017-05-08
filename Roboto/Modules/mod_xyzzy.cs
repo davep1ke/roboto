@@ -47,8 +47,8 @@ namespace Roboto.Modules
             }
         }
 
-       
 
+        public bool fuckedWith = false;
         public string handle = "";
         public long playerID;
         public int wins = 0;
@@ -132,9 +132,32 @@ namespace Roboto.Modules
             return (TelegramAPI.createKeyboard(answers,1));
          }
 
+        public void toggleFuckWith()
+        {
 
-        
-   }
+            if (fuckedWith == true) { fuckedWith = false; }
+            else { fuckedWith = true; }
+        }
+
+        public string getPointsMessage()
+        {
+            
+            string response = "\n\r" + name_markdownsafe + " - ";
+            if (!fuckedWith) { return response + wins + " points."; }
+            else
+            {
+                string[] suffixes = { "INT", "XP", "Points", "Sq. Ft.", "ft, 6 inches", "mm", " out of 10. Must try harder." };
+
+                //want a multipler between -1 and 0.5.
+                float multiplier = (50 - settings.getRandom(150))/100f ;
+                int randomSuffix = settings.getRandom(suffixes.Count() - 1);
+                int newscore = Convert.ToInt32(wins * multiplier);
+                response += newscore.ToString() + " " + suffixes[randomSuffix];
+                
+            }
+            return response;
+        }
+    }
 
 
     /// <summary>
@@ -616,9 +639,11 @@ namespace Roboto.Modules
                 else if (m.text_msg == "Timeout") { chatData.askMaxTimeout(m.userID); }
                 else if (m.text_msg == "Delay") { chatData.askMinTimeout(m.userID); }
                 else if (m.text_msg == "Kick") { chatData.askKickMessage(m); }
+                else if (m.text_msg == "Mess With") { chatData.askFuckWithMessage(m); }
+
                 else if (m.text_msg == "Abandon")
                 {
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" },2));
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
                 }
                 return true;
             }
@@ -636,7 +661,7 @@ namespace Roboto.Modules
                     TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
                     chatData.setStatus(xyzzy_Statuses.Invites);
                 }
-                else if (m.text_msg == "Configure Game" )
+                else if (m.text_msg == "Configure Game")
                 {
                     TelegramAPI.GetExpectedReply(c.chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
                     chatData.setStatus(xyzzy_Statuses.SetGameLength);
@@ -650,7 +675,7 @@ namespace Roboto.Modules
                 else
                 {
                     string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
-                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", 01,false,kb);
+                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", -1, false, kb);
                 }
                 processed = true;
             }
@@ -663,7 +688,7 @@ namespace Roboto.Modules
                 {
                     chatData.enteredQuestionCount = questions;
                     //next, ask which packs they want:
-                    chatData.sendPackFilterMessage(m,1);
+                    chatData.sendPackFilterMessage(m, 1);
                     chatData.setStatus(xyzzy_Statuses.setPackFilter);
                 }
                 else
@@ -674,7 +699,7 @@ namespace Roboto.Modules
             }
 
             //Set up the game filter, once we get a reply from the user. 
-            else if (e.messageData.StartsWith( "setPackFilter"))
+            else if (e.messageData.StartsWith("setPackFilter"))
             {
                 //figure out what page we are on. Should be in the message data
                 int currentPage = 1;
@@ -707,12 +732,12 @@ namespace Roboto.Modules
                 else if (m.text_msg != "Continue")
                 {
                     chatData.processPackFilterMessage(m);
-                    chatData.sendPackFilterMessage(m,currentPage);
+                    chatData.sendPackFilterMessage(m, currentPage);
                 }
                 //no packs selected, retry
                 else if (chatData.packFilterIDs.Count == 0)
                 {
-                    chatData.sendPackFilterMessage(m,1);
+                    chatData.sendPackFilterMessage(m, 1);
                 }
                 //This is presumably a continue now...
                 else
@@ -736,14 +761,14 @@ namespace Roboto.Modules
                 processed = true;
             }
 
-            
+
             //Cardcast importing
             else if (e.messageData == "cardCastImport")
             {
                 if (m.text_msg == "Cancel")
                 {
                     //return to plugins
-                    chatData.sendPackFilterMessage(m,1);
+                    chatData.sendPackFilterMessage(m, 1);
                     if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
                 }
                 else
@@ -758,7 +783,7 @@ namespace Roboto.Modules
                         //enable the filter
                         chatData.processPackFilterMessage(m, pack.name);
                         //return to plugin selection
-                        chatData.sendPackFilterMessage(m,1);
+                        chatData.sendPackFilterMessage(m, 1);
                         if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
                     }
                     else
@@ -775,7 +800,7 @@ namespace Roboto.Modules
             {
                 //try parse
                 bool success = chatData.setMaxTimeout(m.text_msg);
-                if (success && chatData.status == xyzzy_Statuses.setMaxHours ) //could be at another status if being set mid-game
+                if (success && chatData.status == xyzzy_Statuses.setMaxHours) //could be at another status if being set mid-game
                 {
                     //move to the throttle
                     chatData.setStatus(xyzzy_Statuses.setMinHours);
@@ -819,8 +844,8 @@ namespace Roboto.Modules
                     //success, called inflite
                     //TelegramAPI.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
                 }
-                
-                else 
+
+                else
                 {
                     //send message, and retry
                     TelegramAPI.SendMessage(m.userID, "Not a valid number!");
@@ -829,14 +854,14 @@ namespace Roboto.Modules
                 processed = true;
             }
 
-            
+
 
 
             //start the game proper
-            else if (chatData.status == xyzzy_Statuses.Invites && e.messageData == "Invites") 
-                // TBH, dont care what they reply with. Its probably "start" as thats whats on the keyboard, but lets not bother checking, 
-                //as otherwise we would have to do some daft bounds checking 
-                // && m.text_msg == "start")
+            else if (chatData.status == xyzzy_Statuses.Invites && e.messageData == "Invites")
+            // TBH, dont care what they reply with. Its probably "start" as thats whats on the keyboard, but lets not bother checking, 
+            //as otherwise we would have to do some daft bounds checking 
+            // && m.text_msg == "start")
             {
                 if (m.text_msg == "Cancel")
                 {
@@ -845,6 +870,7 @@ namespace Roboto.Modules
                 }
                 else if (m.text_msg == "Override" && chatData.players.Count > 1)
                 {
+                    log("Overriding player limit and starting game", logging.loglevel.critical);
                     chatData.askQuestion(true);
                 }
                 else if (m.text_msg == "Start" && chatData.players.Count > 2)
@@ -916,7 +942,20 @@ namespace Roboto.Modules
                 processed = true;
             }
 
+            else if (e.messageData == "fuckwith")
+            {
+                mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
+                if (p != null)
+                {
+                    chatData.toggleFuckWith(p.playerID);
+                }
+                chatData.check();
+                //now return to the last settings page
+                chatData.sendSettingsMessage(m);
 
+                processed = true;
+            }
+                
 
 
             return processed;

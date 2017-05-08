@@ -26,14 +26,36 @@ namespace Roboto.Modules
         [XmlIgnore]
         public TimeSpan quietHoursStartTime
         {
-            get { return new TimeSpan(x_quietHoursStartTime); }
+            get
+            {
+                try
+                {
+                    return new TimeSpan(x_quietHoursStartTime);
+                }
+                catch (NullReferenceException)
+                {
+                    x_quietHoursStartTime = TimeSpan.MinValue.Ticks;
+                    return new TimeSpan(x_quietHoursStartTime);
+                }
+            }
             set { x_quietHoursStartTime = value.Ticks; }
 
         }
         [XmlIgnore]
         public TimeSpan quietHoursEndTime
         {
-            get { return new TimeSpan(x_quietHoursEndTime); }
+            get
+            {
+                try
+                {
+                    return new TimeSpan(x_quietHoursEndTime);
+                }
+                catch (NullReferenceException)
+                {
+                    x_quietHoursEndTime = TimeSpan.MinValue.Ticks;
+                    return new TimeSpan(x_quietHoursEndTime);
+                }
+            }
             set { x_quietHoursEndTime = value.Ticks; }
         }
 
@@ -329,9 +351,18 @@ namespace Roboto.Modules
             chat c = Roboto.Settings.getChat(chatID);
             mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
 
+            if (chatData == null)
+            {
+                //create the chat data. Get the plugin instance (we are in a static method). 
+                RobotoModuleTemplate plugin = settings.getPlugin(typeof(mod_standard));
+                plugin.initChatData(c);
+                chatData = c.getPluginData<mod_standard_chatdata>();
+
+            }
+
             startQuietHours = chatData.quietHoursStartTime;
             endQuietHours = chatData.quietHoursEndTime;
-            
+           
         }
 
         public static bool isTimeInQuietPeriod (long chatID, DateTime time )

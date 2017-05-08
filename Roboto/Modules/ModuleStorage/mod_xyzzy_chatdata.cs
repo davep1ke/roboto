@@ -464,9 +464,10 @@ namespace Roboto.Modules
             message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands (i.e. force a slower game). Change with *Delay* ";
             keyboardOptions.Add("Delay");
             //kick
-            message += "\n\r- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon* ";
+            message += "\n\r- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon*. *Mess With* will fuck around with a player's score";
             keyboardOptions.Add("Kick");
             keyboardOptions.Add("Abandon");
+            keyboardOptions.Add("Mess With");
             //question
             message += "\n\r- " + "If the game gets stuck, you can try *Force Question* to move things along.";
             keyboardOptions.Add("Force Question");
@@ -513,7 +514,7 @@ namespace Roboto.Modules
             TelegramAPI.SendMessage(chatID, "Added additional cards to the game!");
             if (status == xyzzy_Statuses.Stopped && players.Count > 1)
             {
-                Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
+                Roboto.Settings.stats.logStat(new statItem("New Games Started",typeof(mod_xyzzy) ));
                 askQuestion(true);
             }
 
@@ -731,6 +732,15 @@ namespace Roboto.Modules
             }
         }
 
+        public void askFuckWithMessage(message m)
+        {
+            List< string > playernames = new List<string>();
+            foreach (mod_xyzzy_player p in players) { playernames.Add(p.name); }
+            playernames.Add("Cancel");
+            string keyboard = TelegramAPI.createKeyboard(playernames, 2);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", -1, true, keyboard);
+        }
+
 
 
 
@@ -777,7 +787,7 @@ namespace Roboto.Modules
             response += " The current status of the game is " + status.ToString() + ".";
             if (status == xyzzy_Statuses.Stopped)
             {
-                response += " Type /xyzzy_start to begin setting up a new game.";
+                response += " Type [/xyzzy_start](/xyzzy_start) to begin setting up a new game.";
 
             }
             else
@@ -798,15 +808,12 @@ namespace Roboto.Modules
                 {
                     response += " There are " + remainingQuestions.Count.ToString() + " questions remaining";
 
-                    response += " Say /xyzzy_join to join.";
+                    response += " Say [/xyzzy_join](/xyzzy_join) to join.";
                     response += " The following players are currently playing: \n\r";
                     //order the list of players
                     List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
 
-                    foreach (mod_xyzzy_player p in orderedPlayers)
-                    {
-                        response += p.name + " - " + p.wins.ToString() + " points. \n\r";
-                    }
+                    foreach (mod_xyzzy_player p in orderedPlayers) { response += p.getPointsMessage(); }
                 }
 
                 switch (status)
@@ -835,7 +842,7 @@ namespace Roboto.Modules
                                 }
                             }
                         }
-                        if (unsentMessages) { response += "\n\r" + "(*) These messages have not yet been sent, as I am waiting for a reply to another question!"; }
+                        if (unsentMessages) { response += "\n\r" + "(\\*) These messages have not yet been sent, as I am waiting for a reply to another question!"; }
 
                         break;
 
@@ -848,13 +855,13 @@ namespace Roboto.Modules
                     case xyzzy_Statuses.setPackFilter:
                     case xyzzy_Statuses.setMaxHours:
                     case xyzzy_Statuses.setMinHours:
-                        response += "\n\r" + players[0].name + " is currently setting the game up - type /xyzzy_join to join in!";
+                        response += "\n\r" + players[0].name_markdownsafe + " is currently setting the game up - type [/xyzzy_join](/xyzzy_join) to join in!";
 
                         break;
                 }
             }
 
-            TelegramAPI.SendMessage(chatID, response, false, -1 , true);
+            TelegramAPI.SendMessage(chatID, response, true, -1 , true);
             check();
 
         }
@@ -945,6 +952,15 @@ namespace Roboto.Modules
                     return true;
                 }
 
+            }
+        }
+
+        internal void toggleFuckWith(long playerID)
+        {
+            mod_xyzzy_player p =  getPlayer(playerID);
+            if (p != null)
+            {
+                p.toggleFuckWith();
             }
         }
 
@@ -1058,7 +1074,8 @@ namespace Roboto.Modules
                 List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
                 foreach (mod_xyzzy_player p in orderedPlayers)
                 {
-                    message += "\n\r" + p.name_markdownsafe + " - " + p.wins.ToString() + " points";
+                    message += p.getPointsMessage();
+                    //message += "\n\r" + p.name_markdownsafe + " - " + p.wins.ToString() + " points";
                 }
 
                 TelegramAPI.SendMessage(chatID, message, true);
