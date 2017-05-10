@@ -192,7 +192,7 @@ namespace Roboto.Modules
 
                         packsMerged++;
                     }
-                    
+                    masterPack.nextSync = DateTime.MinValue;  //flag these for an immediateish sync.
                     log("Finished merging " + packsMerged + " into master pack " + masterPack.name + ". " + cardsUpdated + " cards moved to master pack", logging.loglevel.high);
                     //1=1
                 }
@@ -769,7 +769,7 @@ namespace Roboto.Modules
 
             foreach (mod_xyzzy_chatdata c in brokenChats.Distinct())
             {
-                c.askQuestion(false);
+                c.check(true);
             }
 
             log(response, logging.loglevel.normal);
@@ -814,7 +814,7 @@ namespace Roboto.Modules
                             log("Removed " + i + " copies of card " + cardToRemove.text + " from player " + p.name + "'s selected cards", logging.loglevel.high);
                             if (replacementGuid != null)
                             {
-                                p.cardsInHand.Add(replacementGuid);
+                                p.selectedCards.Add(replacementGuid);
                                 log("Added " + replacementGuid + " to replace removed selected card", logging.loglevel.high);
                             }
                             else
@@ -863,7 +863,11 @@ namespace Roboto.Modules
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
                 if (chatData != null)
                 {
-                    chatData.remainingQuestions.RemoveAll(x => x == cardToRemove.uniqueID);
+                    int recsRemoved = chatData.remainingQuestions.RemoveAll(x => x == cardToRemove.uniqueID);
+                    if (recsRemoved >0 )
+                    {
+                        log("Removed question card from remaining question " + recsRemoved + " times from " + c.ToString(), logging.loglevel.warn);
+                    }
                     //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
                     if (chatData.currentQuestion == cardToRemove.uniqueID)
                     {
@@ -871,12 +875,12 @@ namespace Roboto.Modules
                         if (replacementGuid != null)
                         {
                             chatData.currentQuestion = replacementGuid;
-                            log("The current question " + chatData.currentQuestion + " guid for chat " + c.chatID + " has been replaced.", logging.loglevel.high);
+                            log("The current question " + chatData.currentQuestion + " guid for chat " + c.ToString() + " has been replaced.", logging.loglevel.high);
                         }
                         else
                         {
 
-                            log("The current question " + chatData.currentQuestion + " for chat " + c.chatID + " has been removed!", logging.loglevel.warn);
+                            log("The current question " + chatData.currentQuestion + " for " + chatData.status + " chat " + c.ToString() + " has been removed!", chatData.status == xyzzy_Statuses.Stopped? logging.loglevel.normal: logging.loglevel.high);
                         }
                     }
                 }

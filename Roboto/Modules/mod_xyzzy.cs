@@ -146,7 +146,7 @@ namespace Roboto.Modules
             if (!fuckedWith) { return response + wins + " points."; }
             else
             {
-                string[] suffixes = { "INT", "XP", "Points", "Sq. Ft.", "ft, 6 inches", "mm", " out of 10. Must try harder." };
+                string[] suffixes = { "INT", "XP", "Points", "Sq. Ft.", "ft, 6 inches", "mm", "out of 10. Must try harder." };
 
                 //want a multipler between -1 and 0.5.
                 float multiplier = (50 - settings.getRandom(150))/100f ;
@@ -955,8 +955,11 @@ namespace Roboto.Modules
 
                 processed = true;
             }
-                
 
+            else
+            {
+                log("Didnt process incoming expected reply! Status=" + chatData.status + ", msg=" + e.text + " msgdata=" + e.messageData, logging.loglevel.critical);
+            }
 
             return processed;
         }

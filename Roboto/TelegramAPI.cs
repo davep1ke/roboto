@@ -230,26 +230,25 @@ namespace Roboto
                             Roboto.Settings.parseFailedReply(e);
                             return -403;
                         }
-                        else if (errorCode == 403 && (errorDesc == "Bot was blocked by the user" || errorDesc == "Forbidden: Bot was blocked by the user" || errorDesc == "Forbidden: Bot can't initiate conversation with a user"))
+                        else if (errorCode == 403 && (errorDesc == "Bot was blocked by the user" 
+                            || errorDesc == "Forbidden: bot was blocked by the user" 
+                            || errorDesc == "Forbidden: Bot was blocked by the user" 
+                            || errorDesc == "Forbidden: Bot can't initiate conversation with a user"
+                            || errorDesc == "Forbidden: bot was kicked from the group chat"
+                            ))
                         {
                             //return a -403 for this - we want to signal that the call failed
                             Roboto.Settings.parseFailedReply(e);
                             return -403;
                         }
-                        else if (errorCode == 403 && errorDesc == "Forbidden: bot was kicked from the group chat")
-                        {
-                            //return a -403 for this - we want to signal that the call failed
-                            Roboto.Settings.parseFailedReply(e);
-                            return -403;
-                        }
+                       
                         else if (errorCode == 400 && errorDesc == "Bad Request: group chat was migrated to a supergroup chat")
                         {
                             //return a -403 for this - we want to signal that the call failed
                             Roboto.Settings.parseFailedReply(e);
                             return -403;
                         }
-
-
+                       
                         else
                         {
                             Roboto.log.log("Unmapped error recieved - " + errorCode + " " + errorDesc, logging.loglevel.high);

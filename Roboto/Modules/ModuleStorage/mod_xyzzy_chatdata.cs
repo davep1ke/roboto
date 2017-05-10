@@ -258,7 +258,7 @@ namespace Roboto.Modules
 
 
 
-            //check that the question card still exists. 
+            //check that the question card still exists. Remove any dead cards
             mod_xyzzy_card question = null;
             while (question == null && remainingQuestions.Count > 0)
             {
@@ -1134,6 +1134,7 @@ namespace Roboto.Modules
             {
                 //does the group still exist? Is the bot still in it?
                 int chatMemberCount = TelegramAPI.getChatMembersCount(chatID);
+                log("There are " + chatMemberCount + " people in current group", logging.loglevel.verbose);
                 if (chatMemberCount <= 1)
                 {
                     if (chatMemberCount == 1) //everyone but the bot has left
