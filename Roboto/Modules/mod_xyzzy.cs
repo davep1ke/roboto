@@ -146,7 +146,7 @@ namespace Roboto.Modules
             if (!fuckedWith) { return response + wins + " points."; }
             else
             {
-                string[] suffixes = { "INT", "XP", "Points", "Sq. Ft.", "ft, 6 inches", "mm", "out of 10. Must try harder." };
+                string[] suffixes = { "INT", "XP", "Points", "Sq. Ft.", "ft, 6 inches", "mm", "out of 10. Must try harder.", "Buzzards", "Buzzards/m/s²", "m/s²" };
 
                 //want a multipler between -1 and 0.5.
                 float multiplier = (50 - settings.getRandom(150))/100f ;
