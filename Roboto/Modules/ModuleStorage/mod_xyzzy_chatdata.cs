@@ -814,6 +814,7 @@ namespace Roboto.Modules
                     List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
 
                     foreach (mod_xyzzy_player p in orderedPlayers) { response += p.getPointsMessage(); }
+                    response += " \n\r";
                 }
 
                 switch (status)
@@ -841,8 +842,9 @@ namespace Roboto.Modules
                                     
                                 }
                             }
+                            response += "\n\r";
                         }
-                        if (unsentMessages) { response += "\n\r" + "(\\*) These messages have not yet been sent, as I am waiting for a reply to another question!"; }
+                        if (unsentMessages) { response += "(\\*) These messages have not yet been sent, as I am waiting for a reply to another question!"; }
 
                         break;
 
@@ -855,7 +857,7 @@ namespace Roboto.Modules
                     case xyzzy_Statuses.setPackFilter:
                     case xyzzy_Statuses.setMaxHours:
                     case xyzzy_Statuses.setMinHours:
-                        response += "\n\r" + players[0].name_markdownsafe + " is currently setting the game up - type [/xyzzy_join](/xyzzy_join) to join in!";
+                        response += players[0].name_markdownsafe + " is currently setting the game up - type [/xyzzy_join](/xyzzy_join) to join in!";
 
                         break;
                 }

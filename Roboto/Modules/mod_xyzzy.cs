@@ -191,6 +191,11 @@ namespace Roboto.Modules
             this.nrAnswers = nrAnswers;
         }
 
+        public override string ToString()
+        {
+            return text;
+        }
+
     }
 
 
@@ -1001,7 +1006,50 @@ namespace Roboto.Modules
         /// </summary>
         public override void startupChecks()
         {
+            //check that our primary pack has the correct guid
+            //does it exist? 
+            if (localData.getPack(primaryPackID) != null)
+            {
+                log("OK - Primary pack exists", logging.loglevel.verbose);
+            }
+            else
+            {
+                Helpers.cardcast_pack primaryPack = localData.getPack("Cards Against Humanity");
+                if (primaryPack != null)
+                {
+                    //swap all guids over to the correct one
+                    Guid masterID = primaryPack.packID;
 
+                    foreach(mod_xyzzy_card qc in localData.questions.Where(x => x.packID == masterID )) { qc.packID = primaryPackID; log(qc.ToString() + " has been shuffled", logging.loglevel.high); }
+                    foreach (mod_xyzzy_card qa in localData.answers.Where(x => x.packID == masterID)) { qa.packID = primaryPackID; log(qa.ToString() + " has been shuffled", logging.loglevel.high); }
+
+                    //swap any filters
+                    foreach (chat c in Roboto.Settings.chatData)
+                    {
+                        mod_xyzzy_chatdata cd = c.getPluginData<mod_xyzzy_chatdata>();
+                        if (cd != null)
+                        {
+                            int filtercopies = cd.packFilterIDs.RemoveAll(x => x == masterID);
+                            if (filtercopies > 0)
+                            {
+                                log("Chat " + c.ToString() + " filter updated with correct guid", logging.loglevel.warn);
+                                cd.packFilterIDs.Add(primaryPackID);
+                            }
+                        }
+
+                    }
+
+                    //replace the pack ID
+                    primaryPack.packID = primaryPackID;
+
+                }
+                else
+                {
+                    log("No copy of the primary CAH pack could be found!", logging.loglevel.critical);
+                }
+
+
+            }
             //make sure our local pack filter list is fully populated 
             localData.startupChecks();
 
