@@ -120,7 +120,9 @@ namespace Roboto.Modules
                 "stop - Stops listening to the chat, until a START is entered." + "\n\r" +
                 "save - Saves any outstanding in memory stuff to disk." + "\n\r" +
                 "stats - Returns an overview of the currently loaded plugins." + "\n\r" +
-                "setquiethours - Sets quiet hours for the chat."
+                "setquiethours - Sets quiet hours for the chat." + "\n\r" +
+                "addadmin - adds an chat administrator" + "\n\r" +
+                "removeadmin - removes a chat administrator"
                 ;
         }
 
@@ -209,7 +211,7 @@ namespace Roboto.Modules
                 Roboto.Settings.backgroundProcessing(true);
             }
 
-            else if (m.text_msg.StartsWith("/setquiethours"))
+            else if (m.text_msg.StartsWith("/setquiethours") && c != null)
             {
                 TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours");
                 processed = true;
@@ -230,9 +232,46 @@ namespace Roboto.Modules
                     statstxt += plugin.getStats() + "\n\r";
                 }
 
-                TelegramAPI.SendMessage(m.chatID, statstxt, true);
+                TelegramAPI.SendMessage(m.chatID, statstxt, m.userFullName, true);
                 processed = true;
             }
+            else if (m.text_msg.StartsWith("/addadmin") && c != null)
+            {
+                //check if we have privs. This will send a fail if not.
+                if (c.checkAdminPrivs(m.userID, c.chatID))
+                {
+                    //if there is no admin, add player
+                    if (!c.chatHasAdmins())
+                    {
+                        bool added = c.addAdmin(m.userID, m.userID);
+                        if (added)
+                        {
+                            TelegramAPI.SendMessage(m.chatID, "Added " + m.userFullName + " as admin.");
+                        }
+                        else
+                        {
+                            TelegramAPI.SendMessage(m.chatID, "Something went wrong! ");
+                            log("Error adding user as an admin", logging.loglevel.high);
+                        }
+                    }
+                    else
+                    {
+                        //create a keyboard with the recent chat members
+                        List<string> members = new List<string>();
+                        foreach (chatPresence p in c.getRecentChatUsers()) { members.Add(p.ToString()); }
+                        //send keyboard to player requesting admin. 
+                        TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Who do you want to add as admin?", true, typeof(mod_standard), "ADDADMIN", m.userFullName, -1, false, TelegramAPI.createKeyboard(members, 2));
+                    }
+
+                }
+                else
+                {
+                    log("User tried to add admin, but insufficient privs", logging.loglevel.high);
+                }
+                processed = true;
+            }
+
+
             else if (m.text_msg.StartsWith("/statgraph"))
             {
                 string[] argsList = m.text_msg.Split(" ".ToCharArray(), 2);
@@ -302,11 +341,11 @@ namespace Roboto.Modules
                     if (success && s > TimeSpan.Zero && s.TotalDays < 1)
                     {
                         chatData.quietHoursStartTime = s;
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the wake time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setWakeHours", -1, false, "", false, false, true);
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the wake time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setWakeHours", m.userFullName, -1, false, "", false, false, true);
                     }
                     else
                     {
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", -1, false, "", false, false, true);
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID,  "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
                     }
 
 
@@ -338,11 +377,42 @@ namespace Roboto.Modules
                     }
                     else
                     {
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", -1, false, "", false, false, true);
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID,"Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
                     }
                 }
                 return true;
             }
+            else if (e.messageData == "ADDADMIN")
+            {
+                //try match against out presence list to get the userID
+                List<chatPresence> members = c.getRecentChatUsers().Where(x => x.ToString() == m.text_msg).ToList();
+                if (members.Count > 0)
+                {
+                    bool success = c.addAdmin(members[0].userID, m.userID);
+                    TelegramAPI.SendMessage(m.chatID, success ? "Successfully added admin" : "Failed to add admin");
+                }
+                else
+                {
+                    TelegramAPI.SendMessage(m.chatID, "Failed to add admin");
+                }
+                return true;
+            }
+            else if (e.messageData == "REMOVEADMIN")
+            {
+                //try match against out presence list to get the userID
+                List<chatPresence> members = c.getRecentChatUsers().Where(x => x.ToString() == m.text_msg).ToList();
+                if (members.Count > 0)
+                {
+                    bool success = c.removeAdmin(members[0].userID, m.userID);
+                    TelegramAPI.SendMessage(m.chatID, success ? "Successfully removed admin" : "Failed to remove admin");
+                }
+                else
+                {
+                    TelegramAPI.SendMessage(m.chatID, "Failed to remove admin");
+                }
+                return true;
+            }
+
             return false;
         }
 

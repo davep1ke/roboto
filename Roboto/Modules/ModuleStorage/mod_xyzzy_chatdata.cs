@@ -308,14 +308,14 @@ namespace Roboto.Modules
                         long messageID = long.MaxValue;
                         if (player == tzar)
                         {
-                            messageID =  TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, false, -1, true);
+                            messageID =  TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, player.name,  false, -1, true);
                         }
                         else
                         {
                             /*int questionMsg = TelegramAPI.GetReply(player.playerID,, -1, true, player.getAnswerKeyboard(localData));*/
                             string questionText = tzar.name + " asks: " + "\n\r" + question.text;
                             //we are expecting a reply to this:
-                            messageID = TelegramAPI.GetExpectedReply(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData));
+                            messageID = TelegramAPI.GetExpectedReply(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData));
                         }
 
                         if (messageID == -403) //bot doesnt have access to send message. Probably blocked 
@@ -385,7 +385,7 @@ namespace Roboto.Modules
                 //couldnt find answer, reask
                 string questionText = players[lastPlayerAsked].name + " asks: " + "\n\r" + question.text;
                 //we are expecting a reply to this:
-                TelegramAPI.GetExpectedReply(chatID, player.playerID, "Not a valid answer! Try again. " + questionText, true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData));
+                TelegramAPI.GetExpectedReply(chatID, player.playerID, "Not a valid answer! Try again. " + questionText, true, typeof(mod_xyzzy), "Question", null,  -1, true, player.getAnswerKeyboard(localData));
 
                 //TelegramAPI.SendMessage(playerID, "Not a valid answer! Reply to the original message again, using the keyboard");
                 return false;
@@ -404,7 +404,7 @@ namespace Roboto.Modules
                     //just check if this needs more responses:
                     if (player.selectedCards.Count != question.nrAnswers)
                     {
-                        TelegramAPI.GetExpectedReply(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", -1, true, player.getAnswerKeyboard(localData),false,false,true);
+                        TelegramAPI.GetExpectedReply(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData),false,false,true);
                     }
                 }
             }
@@ -474,7 +474,7 @@ namespace Roboto.Modules
             //chat settings
             //message += "\n\rNB: There are also a number of general chat settings that you can change using /settings in the group chat.";
             
-            TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", null, -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
 
         }
 
@@ -527,7 +527,7 @@ namespace Roboto.Modules
             foreach (mod_xyzzy_player p in players ) { playernames.Add(p.name); }
             playernames.Add("Cancel");
             string keyboard = TelegramAPI.createKeyboard(playernames, 2);
-            TelegramAPI.GetExpectedReply(chatID, m.userID, "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", -1, true, keyboard);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", m.userFullName, -1, true, keyboard);
 
         }
 
@@ -704,7 +704,7 @@ namespace Roboto.Modules
                 if (possibleAnswerCount > 0)
                 {
 
-                    long messageID = TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", -1, true, keyboard);
+                    long messageID = TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", null, -1, true, keyboard);
 
                     if (messageID == long.MinValue)
                     {
@@ -738,7 +738,7 @@ namespace Roboto.Modules
             foreach (mod_xyzzy_player p in players) { playernames.Add(p.name); }
             playernames.Add("Cancel");
             string keyboard = TelegramAPI.createKeyboard(playernames, 2);
-            TelegramAPI.GetExpectedReply(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", -1, true, keyboard);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", m.userFullName, -1, true, keyboard);
         }
 
 
@@ -863,7 +863,7 @@ namespace Roboto.Modules
                 }
             }
 
-            TelegramAPI.SendMessage(chatID, response, true, -1 , true);
+            TelegramAPI.SendMessage(chatID, response, null, true, -1 , true);
             check();
 
         }
@@ -909,7 +909,7 @@ namespace Roboto.Modules
 
             TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to set a timeout? Enter how long (in hours) before someone is skipped, or 'Continue' to accept the last value ("
                 + (maxWaitTimeHours == 0 ? "No Timeout" : maxWaitTimeHours.ToString()) + ")"
-                , true, typeof(mod_xyzzy), "setMaxHours", -1, true, kb );
+                , true, typeof(mod_xyzzy), "setMaxHours", null, -1, true, kb );
         }
 
         /// <summary>
@@ -927,7 +927,7 @@ namespace Roboto.Modules
 
             TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to force a slower game? Enter how long (in hours) before a new round can start, or 'Continue' to accept the last value ("
                 + (minWaitTimeHours == 0 ? "No Limit" : minWaitTimeHours.ToString()) + ")"
-                , true, typeof(mod_xyzzy), "setMinHours", -1, true, kb);
+                , true, typeof(mod_xyzzy), "setMinHours", null, -1, true, kb);
         }
 
         /// <summary>
@@ -1080,7 +1080,7 @@ namespace Roboto.Modules
                     //message += "\n\r" + p.name_markdownsafe + " - " + p.wins.ToString() + " points";
                 }
 
-                TelegramAPI.SendMessage(chatID, message, true);
+                TelegramAPI.SendMessage(chatID, message, null ,  true);
 
                 //ask the next question (will jump to summary if no more questions). 
                 askQuestion(false);
@@ -1465,7 +1465,7 @@ namespace Roboto.Modules
             }
             else if (matchingPatcks.Count == 0 )//      .Contains(packName))
             {
-                TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", false, m.message_id);
+                TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", m.userFullName,  false, m.message_id);
             }
             else
             {
@@ -1590,7 +1590,7 @@ namespace Roboto.Modules
 
             //now send the new list. 
             string keyboard = TelegramAPI.createKeyboard(keyboardResponse, 2);//todo columns
-            TelegramAPI.GetExpectedReply(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter " + pageNr, -1, false, keyboard, true);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter " + pageNr, m.userFullName,  -1, false, keyboard, true);
         }
 
 

@@ -243,19 +243,19 @@ namespace Roboto
         }
 
         /// <summary>
-        /// Mark someone as having participated in a chat in some way. Used for determining wether to stamp outgoing messages or not. 
+        /// Mark someone as having participated in a chat in some way. Used for determining wether to stamp outgoing messages or not, and for building up a recent picture of the chat members 
         /// </summary>
         /// <param name="userID"></param>
         /// <param name="chatID"></param>
-        public void markPresence(long userID, long chatID)
+        public void markPresence(long userID, long chatID, string userName)
         {
             if (chatID < 0) //only mark group chats, not private chats. 
             {
                 foreach (chatPresence p in RecentChatMembers)
                 {
-                    if (p.userID == userID && p.chatID == chatID) { p.touch(); return; }
+                    if (p.userID == userID && p.chatID == chatID) { p.touch(userName); return; }
                 }
-                RecentChatMembers.Add(new chatPresence(userID, chatID));
+                RecentChatMembers.Add(new chatPresence(userID, chatID, userName));
             }
         }
 
@@ -270,6 +270,12 @@ namespace Roboto
 
         }
 
+        public List<chatPresence> getChatRecentMembers(long chatID)
+        {
+            return RecentChatMembers.Where(x => x.chatID == chatID).ToList();
+        }
+
+
         /// <summary>
         /// Add a new expected reply to the stack. Should be called internally only - New messages should be sent via TelegramAPI.GetExpectedReply
         /// </summary>
@@ -281,7 +287,7 @@ namespace Roboto
             //flag the user as present in the chat
             if (e.isPrivateMessage)
             {
-                markPresence(e.userID, e.chatID);
+                markPresence(e.userID, e.chatID, e.userName);
             }
 
             //check if we can send it? Get the messageID back
@@ -841,14 +847,21 @@ namespace Roboto
     {
         public long userID;
         public long chatID;
+        public string userName = "";
         public DateTime lastSeen = DateTime.Now;
 
         internal chatPresence() { }
-        public chatPresence(long userID, long chatID)
+        public chatPresence(long userID, long chatID, string userName)
         {
             this.userID = userID;
             this.chatID = chatID;
+            this.userName = userName;
         }
-        public void touch() { lastSeen = DateTime.Now; }
+        public void touch(string userName) { lastSeen = DateTime.Now; if (!string.IsNullOrEmpty(userName)){ this.userName = userName; } }
+
+        public override string ToString()
+        {
+            return this.userName + "(" + this.userID + ")";
+        }
     }
 }

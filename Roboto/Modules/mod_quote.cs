@@ -256,12 +256,12 @@ namespace Roboto.Modules
 
                 if (m.text_msg.StartsWith("/quote_add"))
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Who is the quote by? Or enter 'cancel'", true, typeof(mod_quote), "WHO", -1, true);
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID,  "Who is the quote by? Or enter 'cancel'", true, typeof(mod_quote), "WHO", m.userFullName, -1, true);
                     processed = true;
                 }
                 else if (m.text_msg.StartsWith("/quote_conv"))
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Enter the first speaker's name, a \\, then the text (e.g. Bob\\I like Bees).\n\rOr enter 'cancel' to cancel", true, typeof(mod_quote), "WHO_M", -1, true);
+                    TelegramAPI.GetExpectedReply(c.chatID, m.userID,  "Enter the first speaker's name, a \\, then the text (e.g. Bob\\I like Bees).\n\rOr enter 'cancel' to cancel", true, typeof(mod_quote), "WHO_M", m.userFullName, -1, true);
                     processed = true;
                 }
 
@@ -274,11 +274,11 @@ namespace Roboto.Modules
                     TelegramAPI.GetExpectedReply(c.chatID, m.userID,
                         "Quotes are currently " + (chatData.autoQuoteEnabled == true? "enabled" : "disabled") 
                         + " and set to announce every " + chatData.autoQuoteHours.ToString() + " hours"
-                        , false, typeof(mod_quote), "CONFIG", m.message_id, true, keyboard);
+                        , false, typeof(mod_quote), "CONFIG", m.userFullName, m.message_id, true, keyboard);
                 }
                 else if (m.text_msg.StartsWith("/quote"))
                 {
-                    TelegramAPI.SendMessage(m.chatID, getQuote(c), true, m.message_id);
+                    TelegramAPI.SendMessage(m.chatID, getQuote(c), m.userFullName, true, m.message_id);
                     processed = true;
                 }
             }
@@ -298,7 +298,7 @@ namespace Roboto.Modules
                 
                 if (localData != null && localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.multiquotes.Count > 0)
                 {
-                    TelegramAPI.SendMessage(c.chatID, getQuote(c), true);
+                    TelegramAPI.SendMessage(c.chatID, getQuote(c), null, true);
                     int maxMins = localData.autoQuoteHours * 60;
                     //go back 1/8, then add rand 1/4 on
                     int randomMins = settings.getRandom((localData.autoQuoteHours * 60) /4);
@@ -347,7 +347,7 @@ namespace Roboto.Modules
                     {
                         mod_quote_multiquote q = new mod_quote_multiquote(lines);
                         chatData.multiquotes.Add(q);
-                        TelegramAPI.SendMessage(e.chatID, "Added quote \n\r" + q.getText(),true);
+                        TelegramAPI.SendMessage(e.chatID, "Added quote \n\r" + q.getText(), m.userFullName, true);
 
                     }
                     else
@@ -368,7 +368,7 @@ namespace Roboto.Modules
                         //replace the "\" with something less likely to come up accidentally
                         newMsgData = newMsgData + m.text_msg.Substring(0, pos) + "<<#::#>>" + m.text_msg.Substring(pos+1) + "<<#::#>>";
 
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the next line, 'cancel' or 'done'", true, typeof(mod_quote), newMsgData, m.message_id, true);
+                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the next line, 'cancel' or 'done'", true, typeof(mod_quote), newMsgData, m.userFullName, m.message_id, true);
 
 
                     }
@@ -387,7 +387,7 @@ namespace Roboto.Modules
                 }
                 else
                 {
-                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.message_id, true, "", false,false,true);
+                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.userFullName, m.message_id, true, "", false,false,true);
                 }
                 return true;
             }
@@ -408,13 +408,13 @@ namespace Roboto.Modules
             {
                 if (m.text_msg == "Set Duration")
                 {
-                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "How long between updates?" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.message_id, true);
+                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "How long between updates?" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
                     return true;
                 }
                 else if (m.text_msg == "Toggle automatic quotes")
                 {
                     chatData.autoQuoteEnabled = !chatData.autoQuoteEnabled;
-                    TelegramAPI.SendMessage(c.chatID, "Quotes are now " + (chatData.autoQuoteEnabled == true ? "enabled" : "disabled"), false, -1, true);
+                    TelegramAPI.SendMessage(c.chatID, "Quotes are now " + (chatData.autoQuoteEnabled == true ? "enabled" : "disabled"), m.userFullName, false, -1, true);
                     return true;
                 }
             }
@@ -426,11 +426,11 @@ namespace Roboto.Modules
                 if (int.TryParse(m.text_msg, out hours) && hours >= -1)
                 {
                     chatData.autoQuoteHours = hours;
-                    TelegramAPI.SendMessage(c.chatID, "Quote schedule set to every " + hours.ToString() + " hours.", false, -1, true);
+                    TelegramAPI.SendMessage(c.chatID, "Quote schedule set to every " + hours.ToString() + " hours.", m.userFullName, false, -1, true);
                 }
                 else if (m.text_msg != "Cancel")
                 {
-                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Not a number. How many hours between updates, or 'Cancel' to cancel" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.message_id, true);
+                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Not a number. How many hours between updates, or 'Cancel' to cancel" + m.text_msg ,false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
                 }
                 return true;
 

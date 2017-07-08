@@ -15,6 +15,7 @@ namespace Roboto
         public DateTime lastupdate = DateTime.Now; //track when our last message was. Discard idle chats.
         public string chatTitle = "";
         public List<Modules.RobotoModuleChatDataTemplate> chatData = new List<Modules.RobotoModuleChatDataTemplate>();
+        public List<long> chatAdmins = new List<long>();
         public bool muted = false;
 
         internal chat() { }
@@ -143,6 +144,57 @@ namespace Roboto
             string text = "";
             if (chatTitle != null) { text = chatTitle; }
             return text + "(" + chatID + ")";
+        }
+
+        public bool addAdmin(long userID, long callerID)
+        {
+            if (isChatAdmin(callerID))
+            {
+                if (!chatAdmins.Contains(userID)) { chatAdmins.Add(userID); }
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+
+        public bool isChatAdmin(long userID)
+        {
+            if (!chatHasAdmins() || chatAdmins.Contains(userID)) { return true; } else { return false;}
+        }
+
+        public bool removeAdmin(long userID, long callerID)
+        {
+            if (isChatAdmin(callerID))
+            {
+                return chatAdmins.Remove(userID);
+                 }
+            else
+            {
+                return false;
+            }
+        }
+        public bool chatHasAdmins()
+        {
+            if (chatAdmins.Count() > 0) { return true; } else { return false; }
+        }
+
+        public List<chatPresence> getRecentChatUsers()
+        {
+            return Roboto.Settings.getChatRecentMembers(this.chatID);
+        }
+
+        public bool checkAdminPrivs(long userID, long chatID)
+        {
+            Roboto.log.log("Checking admin privs for " + userID + " in " + chatID);
+            if (isChatAdmin(userID)) { return true; }
+            else
+            {
+                //send fail message
+                TelegramAPI.SendMessage(chatID, @"https://www.youtube.com/watch?v=YEwlW5sHQ4Q");
+                return false;
+            }
         }
     }
 }

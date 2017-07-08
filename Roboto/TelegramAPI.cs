@@ -27,11 +27,11 @@ namespace Roboto
         /// <param name="markDown"></param>
         /// <param name="replyToMessageID"></param>
         /// <returns>An integer specifying the message id. -1 indicates it is queued, int.MinValue indicates a failure</returns>
-        public static long SendMessage(long chatID, string text, bool markDown = false, long replyToMessageID = -1, bool clearKeyboard = false, bool trySendImmediately = false)
+        public static long SendMessage(long chatID, string text, string userName = null, bool markDown = false, long replyToMessageID = -1, bool clearKeyboard = false, bool trySendImmediately = false)
         {
             
             bool isPM = (chatID < 0 ? false : true);
-            ExpectedReply e = new ExpectedReply(chatID, chatID, text, isPM , null, null, replyToMessageID, false, "", markDown, clearKeyboard, false);
+            ExpectedReply e = new ExpectedReply(chatID, chatID, userName, text, isPM , null, null, replyToMessageID, false, "", markDown, clearKeyboard, false);
             
             //add the message to the stack. If it is sent, get the messageID back.
             long messageID = Roboto.Settings.newExpectedReply(e, trySendImmediately);
@@ -92,9 +92,9 @@ namespace Roboto
         /// <param name="selective"></param>
         /// <param name="answerKeyboard"></param>
         /// <returns>An integer specifying the message id. -1 indicates it is queueed, long.MinValue indicates a failure</returns>
-        public static long GetExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "", bool useMarkdown = false, bool clearKeyboard = false, bool trySendImmediately = false)
+        public static long GetExpectedReply(long chatID, long userID, string text,  bool isPrivateMessage, Type pluginType, string messageData, string userName = null, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "", bool useMarkdown = false, bool clearKeyboard = false, bool trySendImmediately = false)
         {
-            ExpectedReply e = new ExpectedReply(chatID, userID, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard, useMarkdown, clearKeyboard, true );
+            ExpectedReply e = new ExpectedReply(chatID, userID, userName, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard, useMarkdown, clearKeyboard, true );
        
             //add the message to the stack. If it is sent, get the messageID back.
             long messageID = Roboto.Settings.newExpectedReply(e, trySendImmediately);

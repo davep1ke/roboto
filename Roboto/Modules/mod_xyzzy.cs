@@ -325,13 +325,13 @@ namespace Roboto.Modules
                     //use defaults or configure game
                     string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
                     
-                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults",-1,false,kb);
+                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1,false,kb);
 
                     if (messageID == long.MinValue)
                     {
                         //no private message session
                         TelegramAPI.SendMessage(m.chatID, m.userFullName + " needs to open a private chat to @" +
-                            Roboto.Settings.botUserName + " to be able to start a game", false, -1, true);
+                            Roboto.Settings.botUserName + " to be able to start a game", m.userFullName, false, -1, true);
                     }
                     else
                     {
@@ -347,7 +347,7 @@ namespace Roboto.Modules
                         TelegramAPI.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
                             "at any time - you will be included next time a question is asked. You will need to open a private chat to @" +
                             Roboto.Settings.botUserName + " if you haven't got one yet - unfortunately I am a stupid bot and can't do it myself :("
-                            , false, -1, true);
+                            , m.userFullName, false, -1, true);
                     }
                     
                     //TODO - wrap the TelegramAPI calls into methods in the plugin and pluginData classes.                    
@@ -373,7 +373,7 @@ namespace Roboto.Modules
                         {
                             log("Adding user, but the outbound message is still queued", logging.loglevel.verbose);
                             TelegramAPI.SendMessage(m.chatID, "Sent " + m.userFullName + " a message, but I'm waiting for them to reply to another question. "
-                                + m.userFullName + " is in the game, but will need to clear their other PMs before they see any questions. ", false, m.message_id);
+                                + m.userFullName + " is in the game, but will need to clear their other PMs before they see any questions. ", m.userFullName, false, m.message_id);
 
                         }
                         else if (i < 0)
@@ -381,7 +381,7 @@ namespace Roboto.Modules
                             log("Adding user, but message blocked, abandoning", logging.loglevel.warn);
                             TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
                                + m.userFullName + " probably needs to open a chat session with me. "
-                               + "Create a message session, then try /xyzzy_join again.", false, m.message_id);
+                               + "Create a message session, then try /xyzzy_join again.", m.userFullName, false, m.message_id);
                         }
 
                     
@@ -648,7 +648,7 @@ namespace Roboto.Modules
 
                 else if (m.text_msg == "Abandon")
                 {
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", m.userFullName, -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
                 }
                 return true;
             }
@@ -663,7 +663,7 @@ namespace Roboto.Modules
                     chatData.addQuestions();
                     chatData.addAllAnswers();
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     chatData.setStatus(xyzzy_Statuses.Invites);
                 }
                 else if (m.text_msg == "Configure Game")
@@ -680,7 +680,7 @@ namespace Roboto.Modules
                 else
                 {
                     string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
-                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", -1, false, kb);
+                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1, false, kb);
                 }
                 processed = true;
             }
@@ -838,7 +838,7 @@ namespace Roboto.Modules
 
                     //Ready to start game - tell the player they can start when they want
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     chatData.setStatus(xyzzy_Statuses.Invites);
 
                 }
@@ -885,12 +885,12 @@ namespace Roboto.Modules
                 else if (m.text_msg == "Start")
                 {
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                 }
                 else
                 {
                     string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", -1, true, keyboard);
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                 }
 
                 processed = true;

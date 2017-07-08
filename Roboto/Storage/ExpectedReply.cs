@@ -23,6 +23,7 @@ namespace Roboto
         public bool expectsReply = true;
         public bool markDown = false;
         public bool clearKeyboard = false;
+        public string userName = "";
 
         /// <summary>
         /// Internal data that can be returned to the plugin after the response is recieved
@@ -43,11 +44,12 @@ namespace Roboto
         /// <param name="isPrivateMessage"></param>
         /// <param name="pluginType"></param>
         /// <param name="messageData"></param>
-        public ExpectedReply(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID, bool selective, string keyboard, bool  markDown, bool clearKeyboard, bool expectsReply)
+        public ExpectedReply(long chatID, long userID, string userName, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID, bool selective, string keyboard, bool  markDown, bool clearKeyboard, bool expectsReply)
         {
             
             this.chatID = chatID;
             this.userID = userID;
+            this.userName = userName;
             this.text = text;
             this.isPrivateMessage = isPrivateMessage;
             this.messageData = messageData;
@@ -98,7 +100,7 @@ namespace Roboto
         public long sendMessage()
         {
             //lets restamp the users chat Presence (in case it took a long time on the queue)
-            Roboto.Settings.markPresence(userID, chatID);
+            Roboto.Settings.markPresence(userID, chatID, userName);
             outboundMessageID = TelegramAPI.postExpectedReplyToPlayer(this);
 
             timeSentToUser = DateTime.Now;

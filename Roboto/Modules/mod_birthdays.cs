@@ -37,7 +37,7 @@ namespace Roboto.Modules
             {
                 message += b.birthday.ToString("\n\r" + "yyyy-MM-dd") + "\t\t - *" + b.name + "*";
             }
-            TelegramAPI.SendMessage(chatID, message, true);
+            TelegramAPI.SendMessage(chatID, message, null, true);
         }
 
         /// <summary>
