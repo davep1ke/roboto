@@ -157,6 +157,13 @@ namespace Roboto.Modules
             }
             return response;
         }
+
+        public bool setScore(int playerScore)
+        {
+            Roboto.log.log("Overwrote " + this.ToString() + "'s points with " + playerScore, logging.loglevel.warn);
+            wins = playerScore;
+            return true;
+        }
     }
 
 
@@ -638,6 +645,7 @@ namespace Roboto.Modules
                 if (m.text_msg == "Cancel") { } //do nothing, should just end and go back
                 else if (m.text_msg == "Change Packs") { chatData.sendPackFilterMessage(m, 1); }
                 else if (m.text_msg == "Re-deal") { chatData.reDeal(); }
+                else if (m.text_msg == "Game Length") { chatData.askGameLength(m); }
                 else if (m.text_msg == "Extend") { chatData.extend(); }
                 else if (m.text_msg == "Reset") { chatData.reset(); }
                 else if (m.text_msg == "Force Question") { chatData.forceQuestion(); }
@@ -645,7 +653,7 @@ namespace Roboto.Modules
                 else if (m.text_msg == "Delay") { chatData.askMinTimeout(m.userID); }
                 else if (m.text_msg == "Kick") { chatData.askKickMessage(m); }
                 else if (m.text_msg == "Mess With") { chatData.askFuckWithMessage(m); }
-
+                else if (m.text_msg == "Change Score") { chatData.askChangeScoreMessage(m); }
                 else if (m.text_msg == "Abandon")
                 {
                     TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", m.userFullName, -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
@@ -654,6 +662,7 @@ namespace Roboto.Modules
             }
 
 
+            //TODO - think we can remove all of the checks here for if it is being called during the settings window. Should be handled by the neater code above? 
 
             else if (e.messageData == "useDefaults")
             {
@@ -668,7 +677,7 @@ namespace Roboto.Modules
                 }
                 else if (m.text_msg == "Configure Game")
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
+                    chatData.askGameLength(m);
                     chatData.setStatus(xyzzy_Statuses.SetGameLength);
                 }
                 else if (m.text_msg == "Cancel")
@@ -684,17 +693,27 @@ namespace Roboto.Modules
                 }
                 processed = true;
             }
-
+            
             else if (e.messageData == "SetGameLength")
             {
                 int questions;
-
                 if (int.TryParse(m.text_msg, out questions) && questions >= -1)
                 {
+                    //set the value
                     chatData.enteredQuestionCount = questions;
-                    //next, ask which packs they want:
-                    chatData.sendPackFilterMessage(m, 1);
-                    chatData.setStatus(xyzzy_Statuses.setPackFilter);
+                    
+                    if (chatData.status == xyzzy_Statuses.SetGameLength)
+                    {
+                        //adding as part of the game setup
+                        //next, ask which packs they want:
+                        chatData.sendPackFilterMessage(m, 1);
+                        chatData.setStatus(xyzzy_Statuses.setPackFilter);
+                    }
+                    else
+                    {
+                        //adding as part of a /settings. return to main
+                        chatData.sendSettingsMessage(m);
+                    }
                 }
                 else
                 {
@@ -702,6 +721,12 @@ namespace Roboto.Modules
                 }
                 processed = true;
             }
+
+
+            
+
+
+
 
             //Set up the game filter, once we get a reply from the user. 
             else if (e.messageData.StartsWith("setPackFilter"))
@@ -954,12 +979,70 @@ namespace Roboto.Modules
                 {
                     chatData.toggleFuckWith(p.playerID);
                 }
+                else
+                {
+                    log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
+                    TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
+                }
                 chatData.check();
                 //now return to the last settings page
                 chatData.sendSettingsMessage(m);
 
                 processed = true;
             }
+
+            else if (e.messageData == "changescore")
+            {
+                mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
+                if (p != null)
+                {                    
+                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "What should their new score be?", true, typeof(mod_xyzzy), "changescorepoints " + p.playerID.ToString(), m.userFullName, -1, true, "", false, true, true);
+                }
+                else
+                {
+                    log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
+                    TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
+                    //now return to the last settings page
+                    chatData.sendSettingsMessage(m);
+                }
+                
+                processed = true;
+            }
+
+            //reply to the change points question
+            else if (e.messageData.StartsWith("changescorepoints"))
+            {
+                //find the player from the messagedata
+                long playerID = -1;
+                bool success = long.TryParse(e.messageData.Substring(18), out playerID);
+                if (success && playerID != -1)
+                {
+                    //get the desired score
+                    int playerScore = -1;
+                    success = int.TryParse(m.text_msg, out playerScore);
+
+                    //NB: we should only be able to get here as admin, so no need to check. 
+                    success = chatData.setPlayerScore(playerID, playerScore);
+                    
+                    if (!success)
+                    {
+                        log("Error changing points value", logging.loglevel.high);
+                        TelegramAPI.SendMessage(m.userID, "Sorry, something went wrong.");
+                        chatData.sendSettingsMessage(m);
+                    }
+                }
+
+
+
+                chatData.check();
+
+
+                processed = true;
+            }
+
+
+
+
 
             else
             {

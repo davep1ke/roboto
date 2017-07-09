@@ -270,6 +270,34 @@ namespace Roboto.Modules
                 }
                 processed = true;
             }
+            else if (m.text_msg.StartsWith("/removeadmin") && c != null)
+            {
+                //check if we have privs. This will send a fail if not.
+                if (c.checkAdminPrivs(m.userID, c.chatID))
+                {
+                    //if there is no admin, add player
+                    if (!c.chatHasAdmins())
+                    {
+                        TelegramAPI.SendMessage(m.chatID, "Group currently doesnt have any admins!");
+                    }
+                    else
+                    {
+                        //create a keyboard with the recent chat members
+                        List<string> members = new List<string>();
+                        foreach (long userID in c.chatAdmins) { members.Add(userID.ToString()); }
+                        //send keyboard to player requesting admin. 
+                        TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Who do you want to remove as admin?", true, typeof(mod_standard), "REMOVEADMIN", m.userFullName, -1, false, TelegramAPI.createKeyboard(members, 2));
+                    }
+
+                }
+                else
+                {
+                    log("User tried to remove admin, but insufficient privs", logging.loglevel.high);
+                }
+                processed = true;
+            }
+
+
 
 
             else if (m.text_msg.StartsWith("/statgraph"))
@@ -400,16 +428,11 @@ namespace Roboto.Modules
             else if (e.messageData == "REMOVEADMIN")
             {
                 //try match against out presence list to get the userID
-                List<chatPresence> members = c.getRecentChatUsers().Where(x => x.ToString() == m.text_msg).ToList();
-                if (members.Count > 0)
-                {
-                    bool success = c.removeAdmin(members[0].userID, m.userID);
-                    TelegramAPI.SendMessage(m.chatID, success ? "Successfully removed admin" : "Failed to remove admin");
-                }
-                else
-                {
-                    TelegramAPI.SendMessage(m.chatID, "Failed to remove admin");
-                }
+                long playerID = -1;
+                bool success = long.TryParse(m.text_msg, out playerID);
+                if (success) { success = c.removeAdmin(playerID, m.userID); }
+                
+                TelegramAPI.SendMessage(m.chatID, success ? "Successfully removed admin" : "Failed to remove admin");
                 return true;
             }
 

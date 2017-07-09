@@ -185,14 +185,19 @@ namespace Roboto
             return Roboto.Settings.getChatRecentMembers(this.chatID);
         }
 
-        public bool checkAdminPrivs(long userID, long chatID)
+        /// <summary>
+        /// Check if a player has admin privs. Send a message to the group chat if the user isnt an admin. 
+        /// </summary>
+        /// <param name="userID"></param>
+        /// <returns></returns>
+        public bool checkAdminPrivs(long userID, long sendFailMessageTo)
         {
             Roboto.log.log("Checking admin privs for " + userID + " in " + chatID);
             if (isChatAdmin(userID)) { return true; }
             else
             {
                 //send fail message
-                TelegramAPI.SendMessage(chatID, @"https://www.youtube.com/watch?v=YEwlW5sHQ4Q");
+                TelegramAPI.SendMessage(sendFailMessageTo, @"https://www.youtube.com/watch?v=YEwlW5sHQ4Q");
                 return false;
             }
         }

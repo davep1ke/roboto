@@ -440,6 +440,8 @@ namespace Roboto.Modules
         /// <param name="m"></param>
         public void sendSettingsMessage(message m)
         {
+            bool isAdmin = getChat().isChatAdmin(m.userID);
+
             string message = "This allows you to change the game settings for the xyzzy game. Current values are listed below.";
             List<string> keyboardOptions = new List<string>();
             if (status == xyzzy_Statuses.Stopped)
@@ -449,32 +451,53 @@ namespace Roboto.Modules
 
             }
             keyboardOptions.Add("Cancel");
-            //pack filter
-            message += "\n\r- " + packFilterIDs.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
-            keyboardOptions.Add("Change Packs");
-            //Reset/redeal
-            message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. To reset everything to default, and stop the game, use *Reset*";
-            if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*"; }
-            keyboardOptions.Add("Re-deal");
-            keyboardOptions.Add("Reset");
-            keyboardOptions.Add("Extend");
-            //timeouts / throttle
-            message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players. Change with *Timeout* ";
-            keyboardOptions.Add("Timeout");
-            message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands (i.e. force a slower game). Change with *Delay* ";
-            keyboardOptions.Add("Delay");
-            //kick
-            message += "\n\r- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon*. *Mess With* will fuck around with a player's score";
-            keyboardOptions.Add("Kick");
-            keyboardOptions.Add("Abandon");
-            keyboardOptions.Add("Mess With");
-            //question
-            message += "\n\r- " + "If the game gets stuck, you can try *Force Question* to move things along.";
-            keyboardOptions.Add("Force Question");
+            //check for admin
+
+            if (isAdmin)
+            {
+
+                //pack filter
+                message += "\n\r- " + packFilterIDs.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
+                keyboardOptions.Add("Change Packs");
+                //length
+                message += "\n\r- " + "Game will " + (this.enteredQuestionCount == -1? "not end." :( "last " + this.enteredQuestionCount + " questions.")) + " You can change with *Game Length* ";
+                keyboardOptions.Add("Game Length");
+
+                //Reset/redeal
+                message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. To reset everything to default, and stop the game, use *Reset*";
+                if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*"; }
+                keyboardOptions.Add("Re-deal");
+                keyboardOptions.Add("Reset");
+                keyboardOptions.Add("Extend");
+                //timeouts / throttle
+                message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players. Change with *Timeout* ";
+                keyboardOptions.Add("Timeout");
+                message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands (i.e. force a slower game). Change with *Delay* ";
+                keyboardOptions.Add("Delay");
+                //kick
+                message += "\n\r- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon*. *Mess With* will mess with a player's score, where as *Change Score* will change it permanantly";
+                keyboardOptions.Add("Kick");
+                keyboardOptions.Add("Abandon");
+                keyboardOptions.Add("Mess With");
+                keyboardOptions.Add("Change Score");
+                //question
+                message += "\n\r- " + "If the game gets stuck, you can try *Force Question* to move things along.";
+                keyboardOptions.Add("Force Question");
+
+                //NB: this needs to be done inside the admin message, to prevent non-admin users getting past this point. Any other messages should be a normal sendMessage.
+                TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", null, -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
+            }
+            else
+            {
+                message += "\n\r You are not an admin in this group, so you'll need to get someone else to change the game settings. An admin can add you by typing /addadmin in the main group chat.";
+                TelegramAPI.SendMessage(m.userID, message, m.userFullName, true);
+            }
+
+
             //chat settings
             //message += "\n\rNB: There are also a number of general chat settings that you can change using /settings in the group chat.";
             
-            TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", null, -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
+            
 
         }
 
@@ -617,6 +640,11 @@ namespace Roboto.Modules
 
         }
 
+        public void askGameLength(message m)
+        {
+            TelegramAPI.GetExpectedReply(chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
+        }
+
         internal void beginJudging(bool judgesMessageOnly = false)
         {
 
@@ -730,6 +758,15 @@ namespace Roboto.Modules
                     askQuestion(true);
                 }
             }
+        }
+
+        public void askChangeScoreMessage(message m)
+        {
+            List<string> playernames = new List<string>();
+            foreach (mod_xyzzy_player p in players) { playernames.Add(p.name); }
+            playernames.Add("Cancel");
+            string keyboard = TelegramAPI.createKeyboard(playernames, 2);
+            TelegramAPI.GetExpectedReply(chatID, m.userID, "Whose score do you want to alter?", true, typeof(mod_xyzzy), "changescore", m.userFullName, -1, true, keyboard);
         }
 
         public void askFuckWithMessage(message m)
@@ -849,7 +886,7 @@ namespace Roboto.Modules
                         break;
 
                     case xyzzy_Statuses.Judging:
-                        response += "Waiting for " + players[lastPlayerAsked].ToString() +  " to judge";
+                        response += "Waiting for " + players[lastPlayerAsked].name_markdownsafe +  " to judge";
                         break;
                     case xyzzy_Statuses.cardCastImport:
                     case xyzzy_Statuses.Invites:
@@ -1104,6 +1141,23 @@ namespace Roboto.Modules
             return true;
         }
 
+        public bool setPlayerScore(long playerID, int playerScore)
+        {
+            mod_xyzzy_player p = getPlayer(playerID);
+            bool success = p.setScore(playerScore);
+            if (success)
+            {
+                TelegramAPI.SendMessage(chatID, "Player " + p.ToString() + "'s score has been changed to " + playerScore);
+            }
+            else
+            {
+                log("Score change failed for some reason", logging.loglevel.high);
+            }
+            return success;
+
+
+
+        }
 
         /// <summary>
         /// Check consistency of game state
