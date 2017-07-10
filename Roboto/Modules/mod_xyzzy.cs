@@ -900,11 +900,12 @@ namespace Roboto.Modules
                 }
                 else if (m.text_msg == "Override" && chatData.players.Count > 1)
                 {
-                    log("Overriding player limit and starting game", logging.loglevel.critical);
+                    log("Overriding player limit and starting game", logging.loglevel.high);
                     chatData.askQuestion(true);
                 }
                 else if (m.text_msg == "Start" && chatData.players.Count > 2)
                 {
+                    log("Starting game", logging.loglevel.verbose);
                     chatData.askQuestion(true);
                 }
                 else if (m.text_msg == "Start")

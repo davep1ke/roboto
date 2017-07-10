@@ -256,8 +256,7 @@ namespace Roboto.Modules
             //TODO - this causes issues if someone is changing settings in the middle of a round. 
             Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy)  ); //shouldnt be needed, but handy if we are forcing a question in debug.
 
-
-
+            
             //check that the question card still exists. Remove any dead cards
             mod_xyzzy_card question = null;
             while (question == null && remainingQuestions.Count > 0)
@@ -268,6 +267,15 @@ namespace Roboto.Modules
                     log("Tried to ask q " + remainingQuestions[0] + " but has been removed from the cache.", logging.loglevel.high);
                     remainingQuestions.RemoveAt(0);
                 }
+            }
+
+            //are we out of qcards, and need to refill?
+            if (question == null)
+            {
+                log("Out of Question Cards, refilling.", logging.loglevel.high);
+                TelegramAPI.SendMessage(chatID, "All questions have been used up, pack has been refilled!");
+                addQuestions();
+                question = localData.getQuestionCard(remainingQuestions[0]); //if this doesnt work, it will bomb out later when it checks for a null card, hopefully
             }
 
             
@@ -343,6 +351,7 @@ namespace Roboto.Modules
                 else
                 {
                     //no questions left, finish game
+                    log("No more questions, ending.");
                     wrapUp();
                 }
             }
@@ -514,11 +523,14 @@ namespace Roboto.Modules
             else
             {
                 message += "Current settings are below. You can change with /xyzzy_settings, or use /xyzzy_status to get the current state of the game.";
-                message += "\n\r- " + packFilterIDs.Count + " packs currently enabled.";
+                
                 message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck";
                 message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players.";
                 message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands starting.";
-                
+                message += "\n\r- " + packFilterIDs.Count + " packs currently enabled.";
+                //add the enabled packs:
+                message += "\n\r \n\r" + "Enabled Packs:" + "\n\r" + getPackFilterStatus();
+
             }
             TelegramAPI.SendMessage(chatID, message);
 
@@ -526,6 +538,7 @@ namespace Roboto.Modules
 
         public  void forceQuestion()
         {
+            log("Forcing the next question", logging.loglevel.high);
             askQuestion(true);
         }
 
@@ -1658,24 +1671,28 @@ namespace Roboto.Modules
 
         }
 
-        internal string getPackFilterStatus()
+        /// <summary>
+        /// Get a list of enabled pack filters. Returns top 30. 
+        /// </summary>
+        /// <param name="enabledOnly"></param>
+        /// <returns></returns>
+        public string getPackFilterStatus()
         {
             //Now build up a message to the user
             string response = "";
-            mod_xyzzy_coredata localData = getLocalData();
-            foreach (Helpers.cardcast_pack pack in localData.getPackFilterList())
+            List<Helpers.cardcast_pack> packList = getLocalData().getPackFilterList();
+            int recs = 0;
+            int extrarecs = 0;
+            foreach (Helpers.cardcast_pack pack in packList)
             {
                 //is it currently enabled
                 if (packEnabled(pack.packID))
                 {
-                    response += "ON  ";
-                }
-                else
-                {
-                    response += "OFF ";
-                }
-                response += pack.name + "\n\r";
+                    if (recs < 30) { response += pack.name + "\n\r"; } else { extrarecs++; }
+                    recs++;
+                } 
             }
+            if (extrarecs > 0) { response += ".. plus " + extrarecs + " more."; }
             return response;
 
         }
