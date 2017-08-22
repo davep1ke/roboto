@@ -224,39 +224,9 @@ namespace Roboto
                         int errorCode = response.SelectToken("error_code").Value<int>();
                         string errorDesc = response.SelectToken("description").Value<string>();
 
-                        if (errorCode == 400 && errorDesc == "PEER_ID_INVALID")
-                        {
-                            //return a -403 for this - we want to signal that the call failed
-                            Roboto.Settings.parseFailedReply(e);
-                            return -403;
-                        }
-                        else if (errorCode == 403 && (errorDesc == "Bot was blocked by the user" 
-                            || errorDesc == "Forbidden: bot was blocked by the user" 
-                            || errorDesc == "Forbidden: Bot was blocked by the user" 
-                            || errorDesc == "Forbidden: Bot can't initiate conversation with a user"
-                            || errorDesc == "Forbidden: bot was kicked from the group chat"
-                            ))
-                        {
-                            //return a -403 for this - we want to signal that the call failed
-                            Roboto.Settings.parseFailedReply(e);
-                            return -403;
-                        }
-                       
-                        else if (errorCode == 400 && errorDesc == "Bad Request: group chat was migrated to a supergroup chat")
-                        {
-                            //return a -403 for this - we want to signal that the call failed
-                            Roboto.Settings.parseFailedReply(e);
-                            return -403;
-                        }
-                       
-                        else
-                        {
-                            Roboto.log.log("Unmapped error recieved - " + errorCode + " " + errorDesc, logging.loglevel.high);
-                            Roboto.Settings.parseFailedReply(e);
-                            return -1;
-                        }
-
-
+                        int result = parseErrorCode(errorCode, errorDesc);
+                        Roboto.Settings.parseFailedReply(e);
+                        return result;
                     }
 
 
@@ -494,46 +464,10 @@ namespace Roboto
                 }
                 else
                 {
+                    
                     int errorCode = response.SelectToken("error_code").Value<int>();
                     string errorDesc = response.SelectToken("description").Value<string>();
-
-                    if (errorCode == 403 && errorDesc == "Forbidden: bot is not a member of the group chat")
-                    {
-                        //return a -403 for this - we want to signal that the call failed
-                        return -403;
-                    }
-
-                    if (errorCode == 403 && errorDesc == "Forbidden: bot was kicked from the supergroup chat")
-                    {
-                        //return a -403 for this - we want to signal that the call failed
-                        return -403;
-                    }
-
-
-                    if (errorCode == 403 && errorDesc == "Forbidden: bot can't initiate conversation with a user")
-                    {
-                        //return a -403 for this - we want to signal that the call failed
-                        return -403;
-                    }
-
-                    if (errorCode == 403 && errorDesc.StartsWith("Forbidden"))
-                    {
-                        Roboto.log.log("Unmapped '403 Forbidden' error recieved - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
-                        //return a -403 for this - we want to signal that the call failed
-                        return -403;
-                    }
-
-
-                    if (errorCode == 400 && errorDesc == "Bad Request: chat not found" )
-                    {
-                        //I see this as more of a 403 so suck it. 
-                        return -403;
-                    }
-                    else
-                    {
-                        Roboto.log.log("Unmapped error recieved - " + errorCode + " " + errorDesc, logging.loglevel.high);
-                        return -1;
-                    }
+                    return parseErrorCode(errorCode, errorDesc);
 
                 }
 
@@ -545,6 +479,66 @@ namespace Roboto
             }
 
             return -1;
+        }
+
+        /// <summary>
+        /// Parse the error code / desc
+        /// </summary>
+        /// <param name="errorCode"></param>
+        /// <param name="description"></param>
+        /// <returns></returns>
+        public static int parseErrorCode(int errorCode, string errorDesc)
+        {
+
+
+
+            List<string> errorDescs_403 = new List<string>()
+                    {
+                        "Forbidden: bot is not a member of the group chat",
+                        "Forbidden: bot was kicked from the supergroup chat",
+                        "Forbidden: bot was kicked from the group chat",
+                        "Forbidden: bot was blocked by the user",
+                        "Forbidden: Bot was blocked by the user",
+                        "Bot was blocked by the user",
+                        "Forbidden: bot can't initiate conversation with a user",
+                        "Forbidden: Bot can't initiate conversation with a user"
+                    };
+
+            List<string> errorDescs_400 = new List<string>()
+                    {
+                        "Bad Request: chat not found",
+                        "Bad Request: group chat was migrated to a supergroup chat",
+                        "PEER_ID_INVALID"
+                    };
+
+
+            //403 with a valid message: 
+            if (errorCode == 403 && errorDescs_403.Contains(errorDesc)) { return -403; }
+
+            if (errorCode == 403 && errorDesc.StartsWith("Forbidden"))
+            {
+                Roboto.log.log("Unmapped '403 Forbidden' error recieved - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
+                //return a -403 for this - we want to signal that the call failed
+                return -403;
+            }
+
+            //default 403 unmapped:
+            if (errorCode == 403)
+            {
+                Roboto.log.log("Other Unmapped '403' error recieved - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
+                //return a -403 for this - we want to signal that the call failed
+                return -403;
+            }
+
+            //400 with valid error - I see this as more of a 403 so suck it. 
+            if (errorCode == 400 && errorDescs_400.Contains(errorDesc)) { return -403; }
+
+
+            //Catchall
+            Roboto.log.log("Unmapped error recieved - " + errorCode + " - " + errorDesc, logging.loglevel.high);
+            return -1;
+            
+
         }
     }
 }

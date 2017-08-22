@@ -137,6 +137,7 @@ namespace Roboto.Helpers
             text = text.Replace("_", "-");
             text = text.Replace("*", "x");
             text = text.Replace("'", "\"");
+            text = text.Replace("`", "\"");
 
             return text;
         }
@@ -146,6 +147,7 @@ namespace Roboto.Helpers
             text = text.Replace("_", "\\_");
             text = text.Replace("*", "\\*");
             text = text.Replace("'", "\\'");
+            text = text.Replace("`", "\\`");
 
             return text;
         }
