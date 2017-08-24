@@ -244,7 +244,7 @@ namespace Roboto.Helpers
 
                     //if (path != "ok" || result != "True")
                     //{
-                    //    Console.WriteLine("Error recieved sending message!");
+                    //    Console.WriteLine("Error received sending message!");
                     //throw new WebException("Failure code from web service");
 
                     //}

@@ -84,7 +84,7 @@ namespace Roboto
         }
 
         /// <summary>
-        /// Send a message, which we are expecting a reply to. Message can be sent publically or privately. Replies will be detected and sent via the plugin replyRecieved method. 
+        /// Send a message, which we are expecting a reply to. Message can be sent publically or privately. Replies will be detected and sent via the plugin replyReceived method. 
         /// </summary>
         /// <param name="chatID"></param>
         /// <param name="text"></param>
@@ -221,10 +221,12 @@ namespace Roboto
                     }
                     else
                     {
+                        
                         int errorCode = response.SelectToken("error_code").Value<int>();
                         string errorDesc = response.SelectToken("description").Value<string>();
 
                         int result = parseErrorCode(errorCode, errorDesc);
+                        Roboto.log.log("Message failed with code " + result, logging.loglevel.high);
                         Roboto.Settings.parseFailedReply(e);
                         return result;
                     }
@@ -322,7 +324,7 @@ namespace Roboto
 
                 if (responseObject == null || responseObject == "")
                 {
-                    Roboto.log.log("Sent message but recieved blank reply confirmation" , logging.loglevel.critical);
+                    Roboto.log.log("Sent message but received blank reply confirmation" , logging.loglevel.critical);
                     return null;
                 }
                 try
@@ -517,7 +519,7 @@ namespace Roboto
 
             if (errorCode == 403 && errorDesc.StartsWith("Forbidden"))
             {
-                Roboto.log.log("Unmapped '403 Forbidden' error recieved - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
+                Roboto.log.log("Unmapped '403 Forbidden' error received - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
                 //return a -403 for this - we want to signal that the call failed
                 return -403;
             }
@@ -525,7 +527,7 @@ namespace Roboto
             //default 403 unmapped:
             if (errorCode == 403)
             {
-                Roboto.log.log("Other Unmapped '403' error recieved - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
+                Roboto.log.log("Other Unmapped '403' error received - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
                 //return a -403 for this - we want to signal that the call failed
                 return -403;
             }
@@ -535,7 +537,7 @@ namespace Roboto
 
 
             //Catchall
-            Roboto.log.log("Unmapped error recieved - " + errorCode + " - " + errorDesc, logging.loglevel.high);
+            Roboto.log.log("Unmapped error received - " + errorCode + " - " + errorDesc, logging.loglevel.high);
             return -1;
             
 

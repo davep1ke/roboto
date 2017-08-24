@@ -148,7 +148,7 @@ namespace Roboto.Modules
         protected override void backgroundProcessing()
         {
             //do we need to save? 
-            if (localData.lastSaveToDiskDateTime.AddMinutes(Roboto.Settings.saveXMLeveryXMins) > DateTime.Now)
+            if (localData.lastSaveToDiskDateTime.AddMinutes(Roboto.Settings.saveXMLeveryXMins) < DateTime.Now)
             {
                 localData.lastSaveToDiskDateTime = DateTime.Now;
                 Roboto.Settings.save();

@@ -144,7 +144,7 @@ namespace Roboto
                 string updateURL = Settings.telegramAPIURL + Settings.telegramAPIKey + "/getUpdates" +
                     "?offset=" + Settings.getUpdateID() +
                     "&timeout=" + Settings.waitDuration +
-                    "&limit=1";
+                    "&limit=10";
 
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
                 log.log(".", logging.loglevel.low, ConsoleColor.White, true );
@@ -178,6 +178,7 @@ namespace Roboto
                                 }
                                 else
                                 {
+                                    int resultID = 0;
                                     //open the response and parse it using JSON. Probably only one result, but should be more? 
                                     foreach (JToken token in jo.SelectTokens("result.[*]"))//jo.Children()) //) records[*].data.importedPath"
                                     {
@@ -219,7 +220,7 @@ namespace Roboto
 
 
                                         //Do we have an incoming message?
-                                        if (update_TK.Path == "result[0].message" && update_TK.SelectToken(".text") != null)
+                                        if (update_TK.Path == "result[" + resultID.ToString() + "].message" && update_TK.SelectToken(".text") != null)
                                         {
                                             //prevent delays - its sent something valid back to us so we are probably OK. 
                                             lastUpdate = DateTime.MinValue;
@@ -251,8 +252,13 @@ namespace Roboto
                                             }
                                             
                                         }
+                                        else
+                                        {
+                                            log.log("No text in update", logging.loglevel.verbose);
+                                        }
                                         //dont know what other update types we want to monitor? 
                                         //TODO - leave / kicked / chat deleted
+                                        resultID++;
                                     }
 
                                     //housekeeping

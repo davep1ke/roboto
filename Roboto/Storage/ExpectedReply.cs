@@ -26,7 +26,7 @@ namespace Roboto
         public string userName = "";
 
         /// <summary>
-        /// Internal data that can be returned to the plugin after the response is recieved
+        /// Internal data that can be returned to the plugin after the response is received
         /// </summary>
         public string messageData;
         public string pluginType;

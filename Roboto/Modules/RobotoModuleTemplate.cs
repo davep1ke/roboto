@@ -89,7 +89,7 @@ namespace Roboto.Modules
         /// <returns>A boolean indicating whether the plugin dealt with the reply or not. </returns>
         public virtual bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
-            log("Plugin " + GetType().ToString() + " recieved a reply, but doesnt override replyRecieved", logging.loglevel.critical);
+            log("Plugin " + GetType().ToString() + " received a reply, but doesnt override replyReceived", logging.loglevel.critical);
             return false;
         }
         /// <summary>

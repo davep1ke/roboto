@@ -422,7 +422,7 @@ namespace Roboto.Modules
             int outstanding = outstandingResponses().Count;
             if (outstanding == 0)
             {
-                log("All answers recieved, judging", logging.loglevel.verbose);
+                log("All answers received, judging", logging.loglevel.verbose);
                 beginJudging();
             }
             else
@@ -692,7 +692,7 @@ namespace Roboto.Modules
 
                 //get all the responses for the keyboard, and the chat message
                 List<string> responses = new List<string>();
-                string chatMsg = "All answers recieved! The honourable " + tzar.name + " presiding." + "\n\r" +
+                string chatMsg = "All answers received! The honourable " + tzar.name + " presiding." + "\n\r" +
                     "Question: " + q.text + "\n\r" + "\n\r";
                 string missingRepliestxt = "Skipped these chumps: ";
                 bool missingReplies = false;
@@ -913,9 +913,17 @@ namespace Roboto.Modules
                 }
             }
 
-            TelegramAPI.SendMessage(chatID, response, null, true, -1 , true);
-            check();
 
+            long messageID = TelegramAPI.SendMessage(chatID, response, null, true, -1 , true);
+            if (messageID == -403)
+            {
+                log("Bot blocked - abandoning", logging.loglevel.high);
+                reset();
+            }
+            else
+            {
+                check();
+            }
         }
 
         /// <summary>

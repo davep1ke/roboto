@@ -21,6 +21,7 @@ namespace Roboto
         private bool followOnLine = false;
         private Char bannerChar = "*".ToCharArray()[0];
         private DateTime currentLogFileDate = DateTime.MinValue;
+        private DateTime logLastFlushed = DateTime.Now;
 
         /// <summary>
         /// 
@@ -53,6 +54,15 @@ namespace Roboto
                     log("Error rotating logs! File logging disabled. " + e.ToString(), loglevel.critical);
                 }
             }
+
+            if (logLastFlushed < DateTime.Now.AddMinutes(-5) )
+            {
+                textWriter.Flush();
+                logLastFlushed = DateTime.Now;
+                log("Flushed logfile", loglevel.low);
+                
+            }
+
 
             StackFrame frame = new StackFrame(skipLevel);
             var method = frame.GetMethod();

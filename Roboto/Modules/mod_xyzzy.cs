@@ -622,7 +622,7 @@ namespace Roboto.Modules
                 {
                     string message = "Failed Incoming expected reply";
                     if (c != null) { message += " for chat " + c.ToString(); }
-                    if (m != null) { message += " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID; }
+                    if (m != null) { message += " received from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID; }
 
 
                 log(message, logging.loglevel.high);
@@ -636,7 +636,7 @@ namespace Roboto.Modules
 
             else
             {
-                log("Incoming expected reply for chat " + c.ToString() + " recieved from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.verbose);
+                log("Incoming expected reply for chat " + c.ToString() + " received from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.verbose);
             }
 
             //Set up the game, once we get a reply from the user. 
