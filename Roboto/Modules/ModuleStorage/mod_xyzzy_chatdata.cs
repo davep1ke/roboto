@@ -871,7 +871,7 @@ namespace Roboto.Modules
                 {
                     case xyzzy_Statuses.Question:
                         response += "The current question is : " + "\n\r" +
-                            getLocalData().getQuestionCard(currentQuestion).text + "\n\r" +
+                            Helpers.common.escapeMarkDownChars(getLocalData().getQuestionCard(currentQuestion).text) + "\n\r" +
                             "Still waiting on the following players :";
                         bool unsentMessages = false;
                         bool first = true;
@@ -882,7 +882,7 @@ namespace Roboto.Modules
                                 mod_xyzzy_player p = getPlayer(r.userID);
                                 if (p != null)
                                 {
-                                    response += (first? " " : ", ") + p.ToString();
+                                    response += (first? " " : ", ") + p.ToString(true);
                                     if (first) { first = false; }
                                     if (!r.isSent())
                                     {

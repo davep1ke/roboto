@@ -71,6 +71,28 @@ namespace Roboto.Modules
             return response;
         }
 
+        public string ToString(bool markdownSafe)
+        {
+            if (markdownSafe)
+            {
+                string response = " " + name_markdownsafe ;
+                String handle_safe =  Helpers.common.removeMarkDownChars(handle);
+                if (handle != "" && handle == handle_safe)
+                {
+                    response += " (@" + handle_safe + ")";
+                }
+                else if (handle != handle_safe)
+                {
+                    Roboto.log.log("Skipping handle for " + handle + " as contains markdown", logging.loglevel.low);
+                }
+                return response;
+            }
+            else
+            {
+                return ToString();
+            }
+        }
+
         internal void topUpCards(int nrCards, List<string> availableAnswers, long chatID)
         {
             
@@ -1047,7 +1069,7 @@ namespace Roboto.Modules
 
             else
             {
-                log("Didnt process incoming expected reply! Status=" + chatData.status + ", msg=" + e.text + " msgdata=" + e.messageData, logging.loglevel.critical);
+                log("Didnt process incoming expected reply! Status=" + chatData.status + ", msg=" + e.text + " msgdata=" + e.messageData + " msg=" + m.text_msg , logging.loglevel.critical);
             }
 
             return processed;
