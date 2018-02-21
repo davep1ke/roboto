@@ -51,8 +51,8 @@ namespace Roboto
                 if (replyMsg_TK != null)
                 {
                     isReply = true;
-                    replyOrigMessage = replyMsg_TK.SelectToken(".text").Value<String>();
-                    replyOrigUser = replyMsg_TK.SelectToken(".from.username").Value<String>();
+                    replyOrigMessage = getNullableString(replyMsg_TK.SelectToken(".text"));
+                    replyOrigUser = getNullableString(replyMsg_TK.SelectToken(".from.username"));
                     replyMessageID = replyMsg_TK.SelectToken(".message_id").Value<long>();
                     
                 }

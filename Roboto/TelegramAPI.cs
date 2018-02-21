@@ -503,7 +503,8 @@ namespace Roboto
                         "Forbidden: Bot was blocked by the user",
                         "Bot was blocked by the user",
                         "Forbidden: bot can't initiate conversation with a user",
-                        "Forbidden: Bot can't initiate conversation with a user"
+                        "Forbidden: Bot can't initiate conversation with a user",
+                        "Bad Request: group chat was upgraded to a superground chat"
                     };
 
             List<string> errorDescs_400 = new List<string>()
@@ -517,12 +518,8 @@ namespace Roboto
             //403 with a valid message: 
             if (errorCode == 403 && errorDescs_403.Contains(errorDesc)) { return -403; }
 
-            if (errorCode == 403 && errorDesc.StartsWith("Forbidden"))
-            {
-                Roboto.log.log("Unmapped '403 Forbidden' error received - " + errorCode + " " + errorDesc + ". Assuming Forbidden", logging.loglevel.high);
-                //return a -403 for this - we want to signal that the call failed
-                return -403;
-            }
+            //Slightly less valid 403's (right message, wrong error code given)
+            if (errorDescs_403.Contains(errorDesc)) { return -403; }
 
             //default 403 unmapped:
             if (errorCode == 403)
@@ -535,6 +532,8 @@ namespace Roboto
             //400 with valid error - I see this as more of a 403 so suck it. 
             if (errorCode == 400 && errorDescs_400.Contains(errorDesc)) { return -403; }
 
+            //400 with valid error - I see this as more of a 403 so suck it. 
+            if (errorDescs_400.Contains(errorDesc)) { return -403; }
 
             //Catchall
             Roboto.log.log("Unmapped error received - " + errorCode + " - " + errorDesc, logging.loglevel.high);
