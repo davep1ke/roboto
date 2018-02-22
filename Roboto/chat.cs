@@ -11,7 +11,7 @@ namespace Roboto
     public class chat
     {
         public long chatID;
-        public bool enabled = false; //assume chats are disabled until we get a /start
+        //public bool enabled = false; //assume chats are disabled until we get a /start - deprecated. Uses "muted"
         public DateTime lastupdate = DateTime.Now; //track when our last message was. Discard idle chats.
         public string chatTitle = "";
         public List<Modules.RobotoModuleChatDataTemplate> chatData = new List<Modules.RobotoModuleChatDataTemplate>();
@@ -46,14 +46,14 @@ namespace Roboto
             lastupdate = DateTime.Now;
         }
 
-        public void enable()
+        /*deprecated public void enable()
         {
             enabled = true;
         }
         public void disable()
         {
             enabled = false;
-        }
+        }*/
 
         public void addChatData(Modules.RobotoModuleChatDataTemplate data)
         {

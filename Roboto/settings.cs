@@ -577,11 +577,17 @@ namespace Roboto
                 {
                     bool pluginProcessed = pluginToCall.replyReceived(er, m);
 
-                    if (!pluginProcessed)
+                    if (pluginProcessed)
+                    {
+                        //reset our chat timer
+                        chat c = getChat(er.chatID);
+                        c.resetLastUpdateTime();
+                    }
+                    else
                     {
                         throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
-
                     }
+
                 }
                 catch (Exception e)
                 {
