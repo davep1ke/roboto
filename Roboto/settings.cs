@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-
+using System.Drawing;
 using System.Linq;
 using System.Text;
 using System.IO;
@@ -38,8 +38,8 @@ namespace Roboto
         public string botUserName = "";
         public int waitDuration = 60; //wait duration for long polling. 
         public int lastUpdate = 0; //last update index, needs to be passed back with each call. 
-        
-        
+        public int maxLogItems = 50;
+
         //generic plugin storage. NB: Chats DO want to be serialised. 
         public List<Modules.RobotoModuleDataTemplate> pluginData = new List<Modules.RobotoModuleDataTemplate>();
         public List<chat> chatData = new List<chat>();
@@ -53,6 +53,7 @@ namespace Roboto
 
         //is this the first time the settings file has been initialised?
         public bool isFirstTimeInitialised = false;
+        
 
         /// <summary>
         /// Load all the plugins BEFORE loading the settings file. We need to be able to enumerate the extra types when loading the XML. 
@@ -145,7 +146,7 @@ namespace Roboto
             //Check for dormant chats & plugins to purge
             //TODO - move this to a background proc.
 
-            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, ConsoleColor.White, false, true);
+            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, Color.White, false, true);
             foreach (chat c in chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(purgeInactiveChatsAfterXDays,0,0,0))).ToList())
             {
                 //check all plugins and remove data if no longer reqd

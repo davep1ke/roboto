@@ -1,4 +1,5 @@
-﻿using System;
+﻿using System.Drawing;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -18,7 +19,7 @@ namespace Roboto.Modules
         /// <param name="level"></param>
         /// <param name="colour"></param>
         /// <param name="noLineBreak"></param>
-        public void log(string text, logging.loglevel level = logging.loglevel.normal, ConsoleColor colour = ConsoleColor.White, bool noLineBreak = false)
+        public void log(string text, logging.loglevel level = logging.loglevel.normal, Color? colour = null, bool noLineBreak = false)
         {
             Roboto.log.log(text, level, colour, noLineBreak, false, false, false, 2);
         }
