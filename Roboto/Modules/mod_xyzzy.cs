@@ -607,6 +607,8 @@ namespace Roboto.Modules
             int activeGames = 0;
             int dormantGames = 0;
 
+            mod_xyzzy_coredata localdata = (mod_xyzzy_coredata)getPluginData();
+
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
@@ -624,7 +626,8 @@ namespace Roboto.Modules
             log("There are " + dormantGames + " potentially cancelable games", logging.loglevel.normal);
 
             
-            string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games";
+            string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games\n\r";
+            result += localData.packs.Count().ToString() + " packs loaded containing " + (localData.questions.Count() + localData.answers.Count()) + " cards";
 
             return result;
 
@@ -827,7 +830,7 @@ namespace Roboto.Modules
                 {
                     string importMessage;
                     Helpers.cardcast_pack pack = new Helpers.cardcast_pack();
-                    bool success = importCardCastPack(m.text_msg, out pack, out importMessage);
+                    bool success = localData.importCardCastPack(m.text_msg, out pack, out importMessage);
                     if (success == true)
                     {
                         //reply to user
@@ -1075,19 +1078,6 @@ namespace Roboto.Modules
             return processed;
         }
 
-        /// <summary>
-        /// Import a cardcast pack into the xyzzy localdata
-        /// </summary>
-        /// <param name="packFilter"></param>
-        /// <returns>String containing details of the pack and cards added. String will be empty if import failed.</returns>
-        private bool importCardCastPack(string packCode, out Helpers.cardcast_pack pack, out string response)
-        {
-
-            bool success = localData.importCardCastPack(packCode, out pack, out response);
-            
-            return success;
-
-        }
 
         public override void sampleData()
         {
@@ -1156,12 +1146,29 @@ namespace Roboto.Modules
 
 
             }
+
+            //check through our chatData and log some stats
+            log("XYZZY Chatdata:", logging.loglevel.verbose);
+            log("ChatID\tstatus\tStatus Changed On\tplayers\tfilters:", logging.loglevel.verbose);
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+
+                mod_xyzzy_chatdata cd = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
+                if (cd != null)
+                {
+                    log(cd.chatID.ToString().PadRight(15," ".ToCharArray()[0]) 
+                        + "\t" + cd.status.ToString().PadRight(22, " ".ToCharArray()[0]) 
+                        + "\t" + cd.statusChangedTime 
+                        + "\t" + cd.players.Count() 
+                        + "\t" + cd.packFilterIDs.Count, logging.loglevel.verbose);
+                    
+                }
+            }
+
             //make sure our local pack filter list is fully populated 
-            localData.startupChecks();
+            //MOVED TO Settings.Validate localData.startupChecks();
 
-
-            //TODO - some other mechanism for removing duplicate cards if we e.g. merge packs. Can't dedupe properly as e.g. John Cena pack has multiple cards
-
+            
             //todo - this should be a general pack remove option
             //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
             //foreach (mod_xyzzy_card q in localData.questions.Where(x => x.category == " Image1").ToList()) { q.category = "Image1"; }
@@ -1194,10 +1201,11 @@ namespace Roboto.Modules
             //}
 
 
-            //sync anything that needs it
-            localData.packSyncCheck();
+            //MOVED - done as part of regular background sync
+            //localData.packSyncCheck();
 
             //Check for null-IDd packs and report
+            //TODO - move to coredata
             List<Helpers.cardcast_pack> nullIDPacks = localData.packs.Where(x => string.IsNullOrEmpty(x.packCode)).ToList();
             Roboto.log.log("There are " + nullIDPacks.Count() + " packs without pack codes." +
                 (nullIDPacks.Count() == 0 ? "": " Try rename an existing pack in the XML file to the same name, or add the pack code to this pack - should merge in next time a Sync is called. " )
@@ -1207,12 +1215,10 @@ namespace Roboto.Modules
                 Roboto.log.log("Pack " + pack.name + " has no pack code ", logging.loglevel.critical);
             }
 
-            //AT THIS POINT THE GAME WILL START PROCESSING INSTRUCTIONS!!!
-            //DONT GO PAST IN STARTUP TEST MODE
-            //----------------------------
-            int ABANDONALLHOPE = 1;
-            ABANDONALLHOPE++;
-            //----------------------------
+            
+
+
+
 
         }
 

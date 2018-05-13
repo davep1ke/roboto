@@ -7,11 +7,25 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Runtime.InteropServices;
+
+
 
 namespace Roboto
 {
     public partial class LogWindow : Form
     {
+        //So that we can pause updating
+        private const int WM_SETREDRAW = 0x000B;
+        private const int WM_USER = 0x400;
+        private const int EM_GETEVENTMASK = (WM_USER + 59);
+        private const int EM_SETEVENTMASK = (WM_USER + 69);
+        [DllImport("user32", CharSet = CharSet.Auto)]
+        private extern static IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, IntPtr lParam);
+        IntPtr eventMask = IntPtr.Zero;
+
+
+
         //private List<logging.logItem> logitems = new List<logging.logItem>();
         private bool backgroundCompleted = false;
         
@@ -68,9 +82,13 @@ namespace Roboto
                 {
                     if (Roboto.Settings != null)
                     {
-                        //LogText.SuspendLayout();
-                        LogText.SuspendLayout();
-                        Roboto.Settings.maxLogItems = 44;
+                        // Stop redrawing:
+                        SendMessage(LogText.Handle, WM_SETREDRAW, 0, IntPtr.Zero);
+                        // Stop sending of events:
+                        eventMask = SendMessage(LogText.Handle, EM_GETEVENTMASK, 0, IntPtr.Zero);
+
+
+                        Roboto.Settings.maxLogItems = 50;
                         int linesToRemove = LogText.Lines.Count() - Roboto.Settings.maxLogItems;
                         if (linesToRemove > 0)
                         {
@@ -79,14 +97,20 @@ namespace Roboto
                             LogText.SelectedText = "";
                         }
                         appendLog(li);
-                        LogText.ResumeLayout();
+
+                        // turn on events
+                        SendMessage(LogText.Handle, EM_SETEVENTMASK, 0, eventMask);
+                        // turn on redrawing
+                        SendMessage(LogText.Handle, WM_SETREDRAW, 1, IntPtr.Zero);
+                        LogText.Invalidate();
+
                         //while ( && LogText.Lines.Count() > Roboto.Settings.maxLogItems)
                         //    {
                         //        LogText.Text = LogText. .Lines[0].Remove();
                         //    }
 
                     }
-                    
+
                 }
                 catch (Exception e)
                 {

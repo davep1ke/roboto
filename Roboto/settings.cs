@@ -100,15 +100,31 @@ namespace Roboto
         /// </summary>
         public void startupChecks()
         {
+            //TODO - all these checks should be general housekeeping and run on a schedule!!!
             foreach(Modules.RobotoModuleTemplate plugin in plugins )
             {
-                Roboto.log.log("Startup Checks for " + plugin.ToString());
+                Roboto.log.log("Startup Checks for " + plugin.ToString(), logging.loglevel.warn);
+                
+                //moduledata and chatData startup checks
+                Roboto.log.log("Checking chatdata for " + plugin.ToString(), logging.loglevel.warn);
+                int i = chatData.Count();
+                foreach (chat c in chatData)
+                {
+                    i--;
+                    if (i % 100 == 0) { Roboto.log.log(i.ToString() + " remaining", logging.loglevel.verbose); }
+                    c.initPlugins();
+                    if (plugin.pluginChatDataType != null)
+                    {
+                        RobotoModuleChatDataTemplate cd = c.getPluginData(plugin.pluginChatDataType);
+                        if (cd != null) { cd.startupChecks(); }
+                    }
+                }
+                Roboto.log.log("Checking coredata for " + plugin.ToString(), logging.loglevel.warn);
+                plugin.getPluginData().startupChecks();
+                Roboto.log.log("Checking module for " + plugin.ToString(), logging.loglevel.warn);
                 plugin.startupChecks();
             }
-            stats.startup();
-
-
-
+            
         }
 
 
@@ -117,14 +133,14 @@ namespace Roboto
         /// </summary>
         public void validate()
         {
+            stats.startup();
             foreach (Modules.RobotoModuleTemplate plugin in plugins)
             {
                 plugin.initData(); //this data probably already exists if loaded by XML, but if not, allow the plugin to create it. 
-                if (plugin.pluginDataType != null)
+                /*if (plugin.pluginDataType != null)
                 {
                     //TODO - check if this datatype is a subclass of RobotoModuleDataTemplate
-                }
-                //TODO - do same for chat data types. 
+                }*/
             }
 
 
@@ -132,17 +148,13 @@ namespace Roboto
             if (telegramAPIKey == null) { telegramAPIKey = "ENTERYOURAPIKEYHERE"; };
             if (botUserName == "") { botUserName = "Roboto_bot_name"; }
 
-            Console.WriteLine("=========");
-            Console.WriteLine("All Plugins initialised");
-            Console.WriteLine(Modules.mod_standard.getAllMethodDescriptions());
-            Console.WriteLine("=========");
 
+            Roboto.log.log("All Plugins initialised", logging.loglevel.high, Color.White, false, true);
+            Roboto.log.log((Modules.mod_standard.getAllMethodDescriptions()));
 
-            foreach (chat c in chatData)
-            {
-                c.initPlugins();
-            }
+           
 
+            
             //Check for dormant chats & plugins to purge
             //TODO - move this to a background proc.
 
@@ -429,12 +441,17 @@ namespace Roboto
         /// </summary>
         public void expectedReplyHousekeeping()
         {
-            //Build up a list of user IDs
-            //List<int> userIDs = new List<int>();
-            //foreach (ExpectedReply e in expectedReplies) { userIDs.Add(e.userID); }
-            //userIDs = (List<int>)userIDs.Distinct<int>();
+            
+            Roboto.log.log("There are " + expectedReplies.Count() + " expected replies on the stack", logging.loglevel.verbose);
+
+            //main processing
             try
             {
+                //remove any expired ones
+                int i = expectedReplies.RemoveAll(x => x.timeLogged < DateTime.Now.Subtract(TimeSpan.FromDays(Roboto.Settings.killInactiveChatsAfterXDays)));
+                Roboto.log.log("Removed " + i + " expected replies, now " + expectedReplies.Count() + " remain", i == 0 ? logging.loglevel.verbose: logging.loglevel.warn);
+
+                //Build up a list of user IDs
                 List<long> userIDs = expectedReplies.Select(e => e.userID).Distinct().ToList<long>();
 
                 //remove any invalid messages
@@ -448,13 +465,8 @@ namespace Roboto
                     expectedReplies.Remove(e);
                 }
                 
-
-
                 foreach (long userID in userIDs)
                 {
-                    
-
-
                     bool retry = true;
                     while (retry)
                     {

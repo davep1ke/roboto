@@ -48,8 +48,7 @@ namespace Roboto.Modules
         public List<String> remainingQuestions = new List<string>();
         public string currentQuestion;
         public List<String> remainingAnswers = new List<string>();
-
-
+        
         //handled by super
         //internal mod_xyzzy_chatdata() { }
 
@@ -1175,9 +1174,22 @@ namespace Roboto.Modules
                 log("Score change failed for some reason", logging.loglevel.high);
             }
             return success;
+            
+        }
 
+        public override void startupChecks()
+        {
+            int i = packFilterIDs.Count();
+            if (i > 250) //i.e enough that its stupid
+            {
+                packFilterIDs.Clear();
+                packFilterIDs.Add(mod_xyzzy.AllPacksEnabledID);
+                log("Replaced large filter list with allPacks flag ", logging.loglevel.high);
+            }
 
-
+            packFilterIDs = packFilterIDs.Distinct().ToList();
+            log("Removed " + (i - packFilterIDs.Count()) + " filters (now " + packFilterIDs.Count() + ")", logging.loglevel.verbose);
+            
         }
 
         /// <summary>
@@ -1381,8 +1393,16 @@ namespace Roboto.Modules
 
                     if (reask)
                     {
-                        beginJudging(true);
-                        log("Redid judging", logging.loglevel.critical);
+                        if (statusChangedTime < DateTime.Now.Subtract(TimeSpan.FromDays(30))) 
+                        {
+                            log("Dormant game, abandoning", logging.loglevel.critical);
+                            reset();
+                        }
+                        else
+                        {
+                            beginJudging(true);
+                            log("Redid judging", logging.loglevel.critical);
+                        }
                     }
                     else
                     {
@@ -1527,10 +1547,11 @@ namespace Roboto.Modules
             {
                 packFilterIDs.Clear();
 
-                foreach(Helpers.cardcast_pack pack in localData.getPackFilterList())
+                packFilterIDs.Add(mod_xyzzy.AllPacksEnabledID);
+                /*NOOOPE - use a placeholder instead foreach(Helpers.cardcast_pack pack in localData.getPackFilterList())
                 {
                     packFilterIDs.Add(pack.packID);
-                }
+                }*/
 
                 //packFilter.AddRange(localData.getPackFilterList());
             }
@@ -1555,6 +1576,7 @@ namespace Roboto.Modules
                 else
                 {
                     packFilterIDs.Add(chosenPack.packID);
+                    chosenPack.picked();
                 }
             }
 

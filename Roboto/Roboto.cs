@@ -122,17 +122,22 @@ namespace Roboto
             //todo - exit?
 
             log.log("I am " + Settings.botUserName, logging.loglevel.critical, Color.White, false, true);
+            
             Settings.startupChecks();
+       
 
+            //AT THIS POINT THE GAME WILL START PROCESSING INSTRUCTIONS!!!
+            //DONT GO PAST IN STARTUP TEST MODE
+            //----------------------------
+            int ABANDONALLHOPE = 1;
+            ABANDONALLHOPE++;
+            //----------------------------
 
-
+            Settings.save();
 
             if (Settings.isFirstTimeInitialised)
             {
                 log.log(@"New XML file created in %appdata%\Roboto\ . Enter your API key in there and restart.", logging.loglevel.critical, Color.White, false, true);
-                Settings.save();
-                
-
             }
             else
             {
@@ -151,7 +156,7 @@ namespace Roboto
                     }
                     lastUpdate = DateTime.Now;
 
-                    //TODO - move this code to the webADI class
+                    //TODO - move this code to the webAPI class
                     string updateURL = Settings.telegramAPIURL + Settings.telegramAPIKey + "/getUpdates" +
                         "?offset=" + Settings.getUpdateID() +
                         "&timeout=" + Settings.waitDuration +

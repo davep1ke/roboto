@@ -23,6 +23,10 @@ namespace Roboto.Modules
         {
             Roboto.log.log(text, level, colour, noLineBreak, false, false, false, 2);
         }
+        /// <summary>
+        /// Perform any startup consistency checks / datafix type operations
+        /// </summary>
+        public virtual void startupChecks() { }
     }
 
 

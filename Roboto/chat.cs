@@ -37,6 +37,7 @@ namespace Roboto
                 plugin.initChatData(this);
                 plugin.validateChatData(this);
                 //find and validate the data
+
             }
 
         }
@@ -69,7 +70,7 @@ namespace Roboto
             }
             if (found != null)
             {
-                Console.WriteLine("Chat data Already exists!");
+                Roboto.log.log("Chat data Already exists!");
                 throw new InvalidOperationException("Chat data Already exists!");
             }
 
@@ -88,7 +89,7 @@ namespace Roboto
                 }
             }
 
-            Console.WriteLine("Couldnt find plugin data of type " + typeof(T).ToString());
+            Roboto.log.log("Couldnt find plugin data of type " + typeof(T).ToString());
             return default(T);
         }
 
@@ -103,8 +104,8 @@ namespace Roboto
                 }
             }
             if (!supressWarning)
-            { 
-                Console.WriteLine("Couldnt find plugin data of type " + t.ToString());
+            {
+                Roboto.log.log("Couldnt find plugin data of type " + t.ToString());
             }
             return null;
         }

@@ -143,6 +143,15 @@ namespace Roboto.Modules
         }
 
         /// <summary>
+        /// Get basic stats
+        /// </summary>
+        /// <returns></returns>
+        public override string getStats()
+        {
+            return "There are " + Roboto.Settings.expectedReplies.Count() + " messages awaiting reply.";
+        }
+
+        /// <summary>
         /// Background processing for Roboto
         /// </summary>
         protected override void backgroundProcessing()

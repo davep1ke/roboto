@@ -28,6 +28,8 @@ namespace Roboto.Helpers
     public class cardcast_pack
     {
         public Guid packID = Guid.NewGuid();
+        public DateTime lastPickedDate = DateTime.MinValue;
+        public int totalPicks = 0;
         public string name;
         public string packCode;
         public string description;
@@ -79,6 +81,13 @@ namespace Roboto.Helpers
             //don't sync again within x days. Add a random duration. 
             nextSync = DateTime.Now.Add(new TimeSpan(3 + settings.getRandom(7), settings.getRandom(23), 0, 0)); //3-10 days, random hour
         }
+
+        internal void picked()
+        {
+            lastPickedDate = DateTime.Now;
+            totalPicks++;
+        }
+
     }
 
     /// <summary>

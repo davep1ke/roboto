@@ -26,7 +26,10 @@ namespace Roboto.Modules
             return Roboto.Settings.getChat(chatID);
 
         }
-        
+        /// <summary>
+        /// Perform any startup consistency checks / datafix type operations
+        /// </summary>
+        public virtual void startupChecks() { }
         /// <summary>
         /// Logging wrapper
         /// </summary>
