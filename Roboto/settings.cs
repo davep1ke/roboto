@@ -1,15 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Drawing;
+using System.Windows.Media;
 using System.Linq;
 using System.Text;
 using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
-using Roboto.Modules;
+using RobotoChatBot.Modules;
 
-namespace Roboto
+namespace RobotoChatBot
 {
     
 
@@ -101,6 +101,7 @@ namespace Roboto
         public void startupChecks()
         {
             //TODO - all these checks should be general housekeeping and run on a schedule!!!
+            logging.longOp lo_modules = new logging.longOp("Module Startup Checks", plugins.Count()*2);
             foreach(Modules.RobotoModuleTemplate plugin in plugins )
             {
                 Roboto.log.log("Startup Checks for " + plugin.ToString(), logging.loglevel.warn);
@@ -121,9 +122,13 @@ namespace Roboto
                 }
                 Roboto.log.log("Checking coredata for " + plugin.ToString(), logging.loglevel.warn);
                 plugin.getPluginData().startupChecks();
+                lo_modules.addone();
                 Roboto.log.log("Checking module for " + plugin.ToString(), logging.loglevel.warn);
                 plugin.startupChecks();
+                lo_modules.addone();
+               
             }
+            lo_modules.complete();
             
         }
 
@@ -149,7 +154,7 @@ namespace Roboto
             if (botUserName == "") { botUserName = "Roboto_bot_name"; }
 
 
-            Roboto.log.log("All Plugins initialised", logging.loglevel.high, Color.White, false, true);
+            Roboto.log.log("All Plugins initialised", logging.loglevel.high, Colors.White, false, true);
             Roboto.log.log((Modules.mod_standard.getAllMethodDescriptions()));
 
            
@@ -158,7 +163,7 @@ namespace Roboto
             //Check for dormant chats & plugins to purge
             //TODO - move this to a background proc.
 
-            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, Color.White, false, true);
+            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, Colors.White, false, true);
             foreach (chat c in chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(purgeInactiveChatsAfterXDays,0,0,0))).ToList())
             {
                 //check all plugins and remove data if no longer reqd
@@ -220,6 +225,7 @@ namespace Roboto
                 }
                 else
                 {
+                    //todo - if the XML is bad, it will trigger here. Need a way to display to the user. 
                     Console.WriteLine(e.ToString());
                 }
             }
@@ -343,7 +349,7 @@ namespace Roboto
             }
 
             //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
-            expectedReplyHousekeeping();
+            expectedReplyBackgroundProcessing();
 
             return messageID;
 
@@ -404,52 +410,33 @@ namespace Roboto
 
         /// <summary>
         /// Do a healthcheck, and archive any old presence data
+        /// Called from mod_standard's backgorund loop.
         /// </summary>
         public void expectedReplyBackgroundProcessing()
         {
+            //TODO - are we calling this whole thing every loop at the moment? Move to mod_standard.background?  
+
             RecentChatMembers.RemoveAll(x => x.chatID == x.userID);
             RecentChatMembers.RemoveAll(x => x.lastSeen < DateTime.Now.Subtract(new TimeSpan(chatPresenceExpiresAfterHours, 0, 0)));
-
-            expectedReplyHousekeeping();
-        }
-
-        /// <summary>
-        /// General background processing loop. Called 
-        /// </summary>
-        public void backgroundProcessing(bool force)
-        {
-            foreach (Modules.RobotoModuleTemplate plugin in plugins)
-            {
-                if (plugin.backgroundHook)
-                {
-                    try
-                    {
-                        plugin.callBackgroundProcessing(force);
-                    }
-                    catch (Exception e)
-                    {
-                        Console.Out.WriteLine("-----------------");
-                        Console.Out.WriteLine("Error During Plugin " + plugin.GetType().ToString() + " background processing");
-                        Console.Out.WriteLine(e.Message);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Make sure any reply processing is being done
-        /// </summary>
-        public void expectedReplyHousekeeping()
-        {
             
             Roboto.log.log("There are " + expectedReplies.Count() + " expected replies on the stack", logging.loglevel.verbose);
 
             //main processing
             try
             {
+                //Remove any ERs that are for dead chats
+                List<ExpectedReply> deadERs = new List<ExpectedReply>();
+                foreach (ExpectedReply er in expectedReplies)
+                {
+                    chat c = getChat(er.chatID);
+                    if (c == null) { deadERs.Add(er); }
+                }
+                foreach (ExpectedReply er in deadERs) { expectedReplies.Remove(er); }
+                Roboto.log.log("Removed " + deadERs.Count() + " dead expected replies, now " + expectedReplies.Count() + " remain", deadERs.Count() == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
+
                 //remove any expired ones
                 int i = expectedReplies.RemoveAll(x => x.timeLogged < DateTime.Now.Subtract(TimeSpan.FromDays(Roboto.Settings.killInactiveChatsAfterXDays)));
-                Roboto.log.log("Removed " + i + " expected replies, now " + expectedReplies.Count() + " remain", i == 0 ? logging.loglevel.verbose: logging.loglevel.warn);
+                Roboto.log.log("Removed " + i + " expected replies, now " + expectedReplies.Count() + " remain", i == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
 
                 //Build up a list of user IDs
                 List<long> userIDs = expectedReplies.Select(e => e.userID).Distinct().ToList<long>();
@@ -458,13 +445,13 @@ namespace Roboto
                 List<ExpectedReply> messagesToRemove = expectedReplies.Where(e => e.outboundMessageID > 0 && e.expectsReply == false).ToList();
                 if (messagesToRemove.Count > 0)
                 {
-                    Roboto.log.log("Removing " + messagesToRemove.Count() + " messages from queue as they are sent and dont require a reply", logging.loglevel.warn) ;
+                    Roboto.log.log("Removing " + messagesToRemove.Count() + " messages from queue as they are sent and dont require a reply", logging.loglevel.warn);
                 }
                 foreach (ExpectedReply e in messagesToRemove)
                 {
                     expectedReplies.Remove(e);
                 }
-                
+
                 foreach (long userID in userIDs)
                 {
                     bool retry = true;
@@ -498,7 +485,7 @@ namespace Roboto
 
                             }
                             //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
-                            
+
                         }
 
                         //what do we do next? 
@@ -513,8 +500,39 @@ namespace Roboto
             {
                 Roboto.log.log("Error during expected reply housekeeping " + e.ToString(), logging.loglevel.critical);
             }
-            
         }
+
+        /// <summary>
+        /// General background processing loop. Called 
+        /// </summary>
+        public void backgroundProcessing(bool force)
+        {
+            foreach (Modules.RobotoModuleTemplate plugin in plugins)
+            {
+                if (plugin.backgroundHook)
+                {
+                    try
+                    {
+                        plugin.callBackgroundProcessing(force);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.Out.WriteLine("-----------------");
+                        Console.Out.WriteLine("Error During Plugin " + plugin.GetType().ToString() + " background processing");
+                        Console.Out.WriteLine(e.Message);
+                    }
+                }
+            }
+        }
+
+        /*// <summary>
+        /// Make sure any reply processing is being done
+        /// </summary>
+        public void expectedReplyHousekeeping()
+        {
+
+            
+        }*/
 
         /// <summary>
         /// Get an array of expected replies for a given plugin
@@ -630,7 +648,7 @@ namespace Roboto
                     expectedReplyHousekeeping();
                 }
                 */
-                expectedReplyHousekeeping();
+                expectedReplyBackgroundProcessing();
                 
             }
             return processed;   
@@ -693,21 +711,19 @@ namespace Roboto
             {
                 di.Create();
             }
-            else
-            {
-                //use datepart to keep a file for each day. 
-                //TODO - tidy up files older than x days. 
-                string datePart = DateTime.Now.ToString("yyyy-MM-dd") + ".xml";
+            
+            //use datepart to keep a file for each day. 
+            //TODO - tidy up files older than x days. 
+            string datePart = DateTime.Now.ToString("yyyy-MM-dd") + ".xml";
 
-                //delete our old backup
-                FileInfo fi = new FileInfo(filename + "." + datePart);
-                if (fi.Exists) { fi.Delete(); }
+            //delete our old backup
+            FileInfo fi = new FileInfo(filename + "." + datePart);
+            if (fi.Exists) { fi.Delete(); }
 
-                //replace our current backup
-                FileInfo fi_backup = new FileInfo(filename);
-                if (fi_backup.Exists) { fi_backup.MoveTo(filename + "." + datePart); }
+            //replace our current backup
+            FileInfo fi_backup = new FileInfo(filename);
+            if (fi_backup.Exists) { fi_backup.MoveTo(filename + "." + datePart); }
 
-            }
             
             //write out XML
             XmlSerializer serializer = new XmlSerializer(typeof(settings), getPluginDataTypes());

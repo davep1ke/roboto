@@ -1,7 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Drawing;
+//using System.Drawing;
+using System.Windows.Media;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -17,7 +18,7 @@ using System.Data;
 
 
 
-namespace Roboto
+namespace RobotoChatBot
 {
     /// <summary>
     /// Class for logging data in a standard format. 
@@ -82,28 +83,99 @@ namespace Roboto
             internal Color getColor()
             {
                 if (colour != null) { return (Color)colour; }
-               
-               
+
+
                 switch (level)
                 {
                     case loglevel.verbose:
-                        return Color.Gray;
+                        return Colors.Gray;
                     case loglevel.low:
-                        return Color.DarkGreen;
+                        return Colors.DarkGreen;
                     case loglevel.normal:
-                        return Color.Cyan;
+                        return Colors.Cyan;
                     case loglevel.warn:
-                        return Color.Magenta;
+                        return Colors.Magenta;
                     case loglevel.high:
-                        return Color.Yellow;
+                        return Colors.Yellow;
                     case loglevel.critical:
-                        return Color.Red;
+                        return Colors.Red;
                 }
 
-                return Color.White;
+                return Colors.White;
             }
         }
-            
+
+        public class longOp
+        {
+            public string name;
+            public int totalLength;
+            private int currentPos = 0;
+
+            private longOp parent;
+
+            public int CurrentPos
+            {
+                get
+                {
+                    return currentPos;
+                }
+            }
+
+            public longOp Parent
+            {
+                get
+                {
+                    return parent;
+                }
+
+            }
+
+            public longOp(string name, int totalLength)
+            {
+                this.name = name;
+                this.totalLength = totalLength;
+                Roboto.log.registerLongOp(this);
+                Roboto.logWindow.addOrUpdateLongOp(this);
+            }
+
+            public longOp(string name, int totalLength, longOp parent)
+            {
+                this.name = name;
+                this.totalLength = totalLength;
+                this.parent = parent;
+                Roboto.log.registerLongOp(this);
+                Roboto.logWindow.addOrUpdateLongOp(this);
+            }
+
+            public void updateLongOp(int current, bool complete = false)
+            {
+                this.currentPos = current;
+                Roboto.logWindow.addOrUpdateLongOp(this);
+
+                if (complete) { this.complete(); }
+            }
+
+            public void complete()
+            {
+                Roboto.log.unregisterLongOp(this);
+                Roboto.logWindow.removeProgressBar(this);
+            }
+
+            public void addone()
+            {
+                updateLongOp(currentPos+1);
+            }
+        }
+
+        protected void unregisterLongOp(longOp longOp)
+        {
+            longOps.Remove(longOp);
+        }
+
+        protected void registerLongOp(longOp longOp)
+        {
+            longOps.Add(longOp);
+        }
 
         public enum loglevel { verbose, low, normal, warn, high, critical }
         private StreamWriter textWriter = null;
@@ -112,7 +184,9 @@ namespace Roboto
         private Char bannerChar = "*".ToCharArray()[0];
         private DateTime currentLogFileDate = DateTime.MinValue;
         private DateTime logLastFlushed = DateTime.Now;
-        public string windowTitle = "Roboto ChatBot";
+        private static string windowTitleCore = "Roboto ChatBot";
+        private string windowTitle = windowTitleCore;
+        private List<longOp> longOps = new List<longOp>();
 
         /// <summary>
         /// 
@@ -142,7 +216,7 @@ namespace Roboto
                 initialised = false;
                 try
                 {
-                    log("Rotating Logs", loglevel.warn, Color.White, false, true);
+                    log("Rotating Logs", loglevel.warn, Colors.White, false, true);
                     finalise();
                     initialise();
                 }
@@ -200,6 +274,17 @@ namespace Roboto
 
             }
             Console.ResetColor();
+        }
+
+        public void setWindowTitle(string title)
+        {
+            this.windowTitle = windowTitleCore + " " + title;
+            if (Roboto.logWindow != null) { Roboto.logWindow.setTitle(windowTitleCore + " " + title); }
+        }
+
+        public string getWindowTitle()
+        {
+            return windowTitle;
         }
 
         internal void finalise()
@@ -268,8 +353,8 @@ namespace Roboto
         public void initialise()
         {
             //Set up any stats
-            Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), Color.Crimson, stats.displaymode.bar);
-            Roboto.Settings.stats.registerStatType("High Errors", typeof(logging), Color.Orange, stats.displaymode.bar);
+            Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), System.Drawing.Color.Crimson, stats.displaymode.bar);
+            Roboto.Settings.stats.registerStatType("High Errors", typeof(logging), System.Drawing.Color.Orange, stats.displaymode.bar);
             
             //todo - remove any logs older than x days.
 
@@ -293,11 +378,6 @@ namespace Roboto
 
         }
 
-        public void setTitle(string title)
-        {
-            windowTitle = title;
-            //Console.Title = "Roboto - " + title;
-        }
 
     }
 }

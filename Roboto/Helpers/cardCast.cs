@@ -11,7 +11,7 @@ using System.Runtime.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace Roboto.Helpers
+namespace RobotoChatBot.Helpers
 {
     public class cardcast_question_card
     {

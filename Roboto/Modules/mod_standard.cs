@@ -6,7 +6,7 @@ using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace Roboto.Modules
+namespace RobotoChatBot.Modules
 {
     [XmlType("mod_standard_data")]
     [Serializable]
@@ -79,7 +79,7 @@ namespace Roboto.Modules
             pluginChatDataType = typeof(mod_standard_chatdata);
 
             backgroundHook = true;
-            backgroundMins = 30;
+            backgroundMins = 5;
             
 
         }
@@ -166,6 +166,7 @@ namespace Roboto.Modules
             //do general housekeeping
             Roboto.Settings.stats.houseKeeping();
             Roboto.Settings.expectedReplyBackgroundProcessing();
+            
 
         }
 

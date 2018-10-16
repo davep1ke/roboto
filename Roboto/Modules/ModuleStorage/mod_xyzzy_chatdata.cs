@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace Roboto.Modules
+namespace RobotoChatBot.Modules
 {
 
     public enum xyzzy_Statuses { Stopped, useDefaults, SetGameLength, setPackFilter, setMinHours, setMaxHours, cardCastImport, Invites, Question, Judging, waitingForNextHand }
@@ -74,6 +74,7 @@ namespace Roboto.Modules
             remainingAnswers.Clear();
             remainingQuestions.Clear();
             lastPlayerAsked = -1;
+            Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
         }
 
         //when the status is changed, make a note of the date.
@@ -1276,8 +1277,7 @@ namespace Roboto.Modules
                 log(" Removed expected reply " + r.userID + "\\" + r.pluginType.ToString() + "\\" + r.messageData + ".");
             }
 
-            //todo - Remove non-existant cards anywhere (e.g. if a sync has recently happened)
-
+            
 
             //do we have any duplicate cards? rebuild the list
             int count_q = remainingQuestions.Count;
@@ -1452,7 +1452,10 @@ namespace Roboto.Modules
                     break;
                     
                 case xyzzy_Statuses.Stopped:
-                    //reset(); --dont want to do this, as if we have reached the end of the game, want to be able to resume with a /extend
+                    //do we have any game related ERs outstanding? 
+                    Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+
+
                     break;
             }
             

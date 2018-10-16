@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Drawing;
+using System.Windows.Media;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
@@ -13,7 +13,7 @@ using System.Runtime.Serialization;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace Roboto
+namespace RobotoChatBot
 {
     /// <summary>
     /// Methods that interact with the Telegram APIs
@@ -381,7 +381,7 @@ namespace Roboto
         /// </summary>
         private static void WriteToStream(Stream s, string txt )
         {
-            Roboto.log.log( txt, logging.loglevel.verbose, Color.White, false, false, false, true);
+            Roboto.log.log( txt, logging.loglevel.verbose, Colors.White, false, false, false, true);
             byte[] bytes = Encoding.UTF8.GetBytes(txt);
             s.Write(bytes, 0, bytes.Length);
         }

@@ -2,9 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Drawing;
+using System.Windows.Media;
 
-namespace Roboto.Modules
+namespace RobotoChatBot.Modules
 {
     public abstract class RobotoModuleChatDataTemplate
     {

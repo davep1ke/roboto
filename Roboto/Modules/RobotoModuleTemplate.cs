@@ -1,10 +1,10 @@
 ﻿using System;
-using System.Drawing;
+using System.Windows.Media;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Roboto.Modules
+namespace RobotoChatBot.Modules
 {
 
     public abstract class RobotoModuleTemplate

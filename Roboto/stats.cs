@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+//using System.Windows.Media;
 using System.Drawing;
 using System.Text.RegularExpressions;
 using System.Linq;
@@ -8,7 +9,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms.DataVisualization.Charting;
 using System.IO;
 
-namespace Roboto
+namespace RobotoChatBot
 {
 
     /// <summary>
@@ -21,10 +22,10 @@ namespace Roboto
         public stats.displaymode displayMode = stats.displaymode.line;
         public stats.statmode statMode = stats.statmode.increment;
         public List<statSlice> statSlices = new List<statSlice>();
-        Color c = Color.Blue;
+        System.Drawing.Color c = System.Drawing.Color.Blue;
 
         internal statType() { }
-        public statType(string name, string moduleType, Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
+        public statType(string name, string moduleType, System.Drawing.Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
         {
             this.name = name;
             this.moduleType = moduleType;
@@ -32,7 +33,7 @@ namespace Roboto
             this.statMode = statMode;
         }
 
-        public void updateDisplaySettings(Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
+        public void updateDisplaySettings(System.Drawing.Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
         {
             this.c = c;
             this.displayMode = displayMode;
@@ -184,7 +185,7 @@ namespace Roboto
         }
 
 
-        public void registerStatType(string name, Type moduleType, Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = statmode.increment )
+        public void registerStatType(string name, Type moduleType, System.Drawing.Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = statmode.increment )
         {
             statType existing = getStatType(name, moduleType.ToString());
             if (existing != null)

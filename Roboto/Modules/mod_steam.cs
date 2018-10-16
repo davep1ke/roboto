@@ -7,7 +7,7 @@ using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace Roboto.Modules
+namespace RobotoChatBot.Modules
 {
 
     /// <summary>

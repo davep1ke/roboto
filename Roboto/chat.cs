@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace Roboto
+namespace RobotoChatBot
 {
     /// <summary>
     /// represents a group chat and all the data stored abotu it. Doesnt exist for PERSON chats, just group

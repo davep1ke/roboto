@@ -6,7 +6,7 @@ using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace Roboto.Modules
+namespace RobotoChatBot.Modules
 {
 
     /*
@@ -527,6 +527,7 @@ namespace Roboto.Modules
         protected override void backgroundProcessing()
         {
             mod_xyzzy_coredata localdata = (mod_xyzzy_coredata)getPluginData();
+            logging.longOp lo_bg = new logging.longOp("XYZZY - background", 5);
 
             //update stats
             int activeGames = 0;
@@ -542,11 +543,11 @@ namespace Roboto.Modules
             }
             Roboto.Settings.stats.logStat(new statItem("Active Games", this.GetType(), activeGames));
             Roboto.Settings.stats.logStat(new statItem("Active Players", this.GetType(), activePlayers));
-
-
+            
             //sync packs where needed
             localdata.packSyncCheck();
-            
+            lo_bg.addone();
+
             //Handle background processing per chat (Timeouts / Throttle etc..)
             //create a temporary list of chatdata so we can pick the oldest X records
             List<mod_xyzzy_chatdata> dataToCheck = new List<mod_xyzzy_chatdata>();
@@ -569,8 +570,10 @@ namespace Roboto.Modules
                     }
                 }
             }
+            
 
             log("There are " + dataToCheck.Count() + " games to check. Checking oldest " + localdata.backgroundChatsToProcess , logging.loglevel.normal);
+            lo_bg.totalLength = 5 + localdata.backgroundChatsToProcess + localdata.backgroundChatsToMiniProcess;
 
             //do a full check on the oldest 20 records. Dont check more than once per day. 
             bool firstrec = true;
@@ -583,9 +586,10 @@ namespace Roboto.Modules
                 }
                 chatData.check(true);
                 firstrec = false;
+                lo_bg.addone();
             }
+            lo_bg.updateLongOp(localdata.backgroundChatsToProcess + 5);
 
-            
             //also do a quick check on the oldest 100 ordered by statusMiniCheckTime
             log("There are " + dataToMiniCheck.Count() + " games to quick-check. Checking oldest " + localdata.backgroundChatsToMiniProcess, logging.loglevel.normal);
             firstrec = true;
@@ -598,7 +602,9 @@ namespace Roboto.Modules
                 }
                 chatData.check();
                 firstrec = false;
+                lo_bg.addone();
             }
+            lo_bg.complete();
         }
 
         public override string getStats()
@@ -1102,6 +1108,7 @@ namespace Roboto.Modules
         /// </summary>
         public override void startupChecks()
         {
+            logging.longOp lo_s = new logging.longOp("XYZZY - Startup Checks", 5);
             //check that our primary pack has the correct guid
             //does it exist? 
             if (localData.getPack(primaryPackID) != null)
@@ -1143,11 +1150,11 @@ namespace Roboto.Modules
                 {
                     log("No copy of the primary CAH pack could be found!", logging.loglevel.critical);
                 }
-
-
             }
 
+
             //check through our chatData and log some stats
+            lo_s.totalLength = Roboto.Settings.chatData.Count();
             log("XYZZY Chatdata:", logging.loglevel.verbose);
             log("ChatID\tstatus\tStatus Changed On\tplayers\tfilters:", logging.loglevel.verbose);
             foreach (chat c in Roboto.Settings.chatData)
@@ -1163,6 +1170,7 @@ namespace Roboto.Modules
                         + "\t" + cd.packFilterIDs.Count, logging.loglevel.verbose);
                     
                 }
+                lo_s.addone();
             }
 
             //make sure our local pack filter list is fully populated 
@@ -1214,12 +1222,9 @@ namespace Roboto.Modules
             {
                 Roboto.log.log("Pack " + pack.name + " has no pack code ", logging.loglevel.critical);
             }
-
+            lo_s.complete();
             
-
-
-
-
+            
         }
 
     }

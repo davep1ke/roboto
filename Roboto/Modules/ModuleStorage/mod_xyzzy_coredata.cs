@@ -5,9 +5,9 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Serialization;
-using Roboto.Helpers;
+using RobotoChatBot.Helpers;
 
-namespace Roboto.Modules
+namespace RobotoChatBot.Modules
 {
     /// <summary>
     /// General Data to be stored in the plugin XML store.
@@ -76,7 +76,9 @@ namespace Roboto.Modules
 
         public override void startupChecks()
         {
-            
+            //start a logging longop
+            logging.longOp lo_startup = new logging.longOp("XYZZY - Coredata Startup", 10);
+
             //DATAFIX: allocate any cards without a pack guid the correct guid
             int success = 0;
             int fail = 0;
@@ -101,6 +103,7 @@ namespace Roboto.Modules
             {
                 log("DATAFIX: " + success + " cards have had packIDs populated, " + fail + " couldn't find pack");
             }
+            lo_startup.addone();
 
             //now remove category from all cards that have a guid. 
             success = 0;
@@ -113,6 +116,7 @@ namespace Roboto.Modules
             {
                 log("DATAFIX: Wiped category from " + success + " cards successfully.", logging.loglevel.warn);
             }
+            lo_startup.addone();
 
             //lets see if packs with null Cardcast Pack codes can be populated by looking through our other packs
             foreach (cardcast_pack p in packs.Where(x => string.IsNullOrEmpty(x.packCode)))
@@ -123,9 +127,8 @@ namespace Roboto.Modules
                     log("DATAFIX: Orphaned pack " + p.name + " has been matched against an existing pack, and packcode set to " + p.packCode, logging.loglevel.warn);
                     p.packCode = matchingPacks[0].packCode;
                 }
-
             }
-
+            lo_startup.addone();
 
             //now find any packs where the pack ID exists more than once. Start by getting unique list of packs
             List<string> uniqueCodes = new List<string>();
@@ -193,15 +196,18 @@ namespace Roboto.Modules
                 }
                 
             }
+            lo_startup.addone();
 
             //find any cards that dont match a pack and remove
             log("Removing orphaned answers", logging.loglevel.high);
             int i = 0;
             int removed = 0;
+            logging.longOp lo_answers = new logging.longOp("Remove Orphan Answers", answers.Count()/100, lo_startup);
 
             while ( i < answers.Count())
             {
-                if (i%100 == 0) { log("Remaining " + (answers.Count() - i) + ". Removed " + removed, logging.loglevel.high); }
+
+                if (i%100 == 0) { log("Remaining " + (answers.Count() - i) + ". Removed " + removed, logging.loglevel.high); lo_answers.addone(); }
                 if (getPacks(answers[i].packID).Count() == 0)
                 {
                     //log("Removing " + answers[i].text, logging.loglevel.verbose);
@@ -212,15 +218,18 @@ namespace Roboto.Modules
                 else { i++; }
             }
             log("Removed " + removed + " orphaned answers", logging.loglevel.high);
+            lo_answers.complete();
+            lo_startup.addone();
 
             //find any cards that dont match a pack and remove
             log("Removing orphaned questions", logging.loglevel.high);
             i = 0;
             removed = 0;
+            logging.longOp lo_questions = new logging.longOp("Remove Orphan Questions", questions.Count() / 100, lo_startup);
 
             while (i < questions.Count())
             {
-                if (i % 100 == 0) { log("Remaining " + (questions.Count() - i) + ". Removed " + removed, logging.loglevel.high); }
+                if (i % 100 == 0) { log("Remaining " + (questions.Count() - i) + ". Removed " + removed, logging.loglevel.high);lo_questions.addone(); }
                 if (getPacks(questions[i].packID).Count() == 0)
                 {
                     //log("Removing " + questions[i].text, logging.loglevel.verbose);
@@ -231,9 +240,11 @@ namespace Roboto.Modules
                 else { i++; }
             }
             log("Removed " + removed + " orphaned questions", logging.loglevel.high);
-
+            lo_startup.addone();
+            lo_questions.complete();
 
             //Dump the packlist and stats to the log window in verbose mode. Flag anything removable
+            logging.longOp lo_dump = new logging.longOp("Dump packlist", packs.Count());
             List<cardcast_pack> removablePacks = new List<cardcast_pack>();
             log("Packs Loaded:", logging.loglevel.verbose);
             log("Code \tlastPickedDate\t\tPicks\tAllFlt\tActFlt\tHotFlt\tQCards\tACards\tName", logging.loglevel.verbose);
@@ -263,28 +274,34 @@ namespace Roboto.Modules
                     log(p.packCode + " is potentially removable", logging.loglevel.verbose);
                     removablePacks.Add(p);
                 }
-                
+                lo_dump.addone();
             }
-            
+            lo_dump.complete();
+            lo_startup.addone();
+
             //Remove the packs
             log(removablePacks.Count().ToString() + " removable packs found", logging.loglevel.high);
             i = 0;
-                
+
             //TODO - make this a variable, and move this all to a background job. 
-            while ( i < 25 && removablePacks.Count() > 0 )
+            logging.longOp lo_remove = new logging.longOp("Remove dead packs", removablePacks.Count(), lo_startup);
+            while ( i < 5 && removablePacks.Count() > 0 )
             {
                 i++;
                 log("Removing pack " + i + " - " + removablePacks[0].name + ", there are up to " + removablePacks.Count() + " remaining", logging.loglevel.high);
                 removePack(removablePacks[0]);
                 removablePacks.RemoveAt(0);
+                lo_remove.addone();
             }
-
+            lo_remove.complete();
+            lo_startup.complete();
 
         }
 
         private void removePack(cardcast_pack p)
         {
             log("Removing pack " + p.name + " - " + p.packID + " - " + p.packCode, logging.loglevel.high);
+            logging.longOp lo_remove = new logging.longOp("Remove " + p.name, questions.Where(x => x.packID == p.packID).Count() + answers.Where(x => x.packID == p.packID).Count());
             int q = 0; int a = 0; int cn = 0;
             //remove from all filters
             foreach (chat c in Roboto.Settings.chatData)
@@ -297,6 +314,7 @@ namespace Roboto.Modules
             foreach (mod_xyzzy_card c in qcards)
             {
                 q++;
+                lo_remove.addone();
                 removeQCard(c, null);
             }
 
@@ -304,6 +322,7 @@ namespace Roboto.Modules
             List<mod_xyzzy_card> acards = answers.Where(x => x.packID == p.packID).ToList();
             foreach (mod_xyzzy_card c in acards)
             {
+                lo_remove.addone();
                 a++;
                 removeACard(c, null);
             }
@@ -311,12 +330,9 @@ namespace Roboto.Modules
             //remove pack
             packs.Remove(p);
             log("Removed pack " + p.packCode + " with " + cn + " filters, " + q + " questions and " + a + " answers", logging.loglevel.high);
-
-
+            lo_remove.complete();
         }
-
-
-
+        
         /// <summary>
         /// check for any packs that can be (and need to be) synced
         /// </summary>
@@ -324,7 +340,10 @@ namespace Roboto.Modules
         {
             
             int backlog = packs.Where(p => (p.packCode != null && p.packCode != "" && p.nextSync < DateTime.Now)).Count();
-            log("There are " + backlog + " packs outstanding to sync. Picking first 15", logging.loglevel.normal );
+            log("There are " + backlog + " packs outstanding to sync. Picking first " + maxPacksToSyncInOneGo, logging.loglevel.normal );
+
+            logging.longOp lo_sync = new logging.longOp("XYZZY Background Pack Sync", maxPacksToSyncInOneGo);
+
             Roboto.Settings.stats.logStat(new statItem("Background Wait (Pack Sync)", typeof(mod_xyzzy), backlog));
 
             //take a subset of packs for now. 
@@ -339,9 +358,12 @@ namespace Roboto.Modules
                 string response;
                 bool success = importCardCastPack(p.packCode, out outpack, out response);
                 log("Pack sync complete - returned " + response, logging.loglevel.warn);
+                lo_sync.addone();
                 if (!success) { p.syncFailed(); }
                 else { p.syncSuccess(); }
             }
+            lo_sync.complete();
+
             foreach (Helpers.cardcast_pack p in packs.Where(x => x.failCount > 5).ToList())
             {
                 //TODO - lets remove the pack!
@@ -374,6 +396,7 @@ namespace Roboto.Modules
             List<Helpers.cardcast_answer_card> import_answers = new List<Helpers.cardcast_answer_card>();
             List<mod_xyzzy_chatdata> brokenChats = new List<mod_xyzzy_chatdata>();
 
+            logging.longOp lo_sync = new logging.longOp("XYZZY - Packsync", 5);
             
             try
             {
@@ -381,6 +404,8 @@ namespace Roboto.Modules
                 //Call the cardcast API. We should get an array of cards back (but in the wrong format)
                 //note that this directly updates the pack object we are going to return - so need to shuffle around later if we sync a pack
                 success = Helpers.cardCast.getPackCards(ref packCode, out pack, ref import_questions, ref import_answers);
+
+                lo_sync.addone();
 
                 if (!success)
                 {
@@ -392,6 +417,8 @@ namespace Roboto.Modules
                     log("Retrieved " + import_questions.Count() + " questions and " + import_answers.Count() + " answers from Cardcast");
                     Guid l_packID = pack.packID;
                     List<cardcast_pack> matchingPacks = getPackFilterList().Where(x => x.packCode == packCode).ToList();
+
+                    
 
                     if (matchingPacks.Count > 1)  // .Contains(pack.name))
                     {
@@ -418,10 +445,12 @@ namespace Roboto.Modules
                         log("=============================", logging.loglevel.high);
                         log("Procesing " + questionCache.Count() + " QUESTION cards", logging.loglevel.high);
                         log("=============================", logging.loglevel.high);
+                        logging.longOp lo_q = new logging.longOp("Questions", questionCache.Count());
 
                         //Loop through everything that is in the import list, removing items as we go. 
                         while (import_questions.Count() > 0)
                         {
+                            lo_q.updateLongOp(questionCache.Count());
                             cardcast_question_card currentCard = import_questions[0];
                             //find how many other matches in the import list we have. 
                             List<cardcast_question_card> matchingImportCards = import_questions.Where(x => Helpers.common.cleanseText(x.question) == Helpers.common.cleanseText(currentCard.question)).ToList();
@@ -506,6 +535,7 @@ namespace Roboto.Modules
                             List<mod_xyzzy_chatdata> addnBrokenChats = removeQCard(c, null);
                             brokenChats.AddRange(addnBrokenChats);
                         }
+                        lo_q.complete();
 
                         //===================
                         //ANSWERS
@@ -519,13 +549,15 @@ namespace Roboto.Modules
                         log("=============================", logging.loglevel.high);
                         log("Procesing " + answerCache.Count() + " ANSWER cards", logging.loglevel.high);
                         log("=============================", logging.loglevel.high);
-
+                        logging.longOp lo_a = new logging.longOp("Answers", answerCache.Count());
 
 
 
                         //Loop through everything that is in the import list, removing items as we go. 
                         while (import_answers.Count() > 0)
                         {
+                            lo_a.updateLongOp(answerCache.Count());
+
                             cardcast_answer_card currentCard = import_answers[0];
                             //find how many other matches in the import list we have. 
                             List<cardcast_answer_card> matchingImportCards = import_answers.Where(x => Helpers.common.cleanseText(x.answer) == Helpers.common.cleanseText(currentCard.answer)).ToList();
@@ -608,7 +640,7 @@ namespace Roboto.Modules
                             List<mod_xyzzy_chatdata> addnBrokenChats = removeQCard(c, null);
                             brokenChats.AddRange(addnBrokenChats);
                         }
-
+                        lo_a.complete();
 
                         
 

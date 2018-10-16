@@ -1,6 +1,6 @@
 ﻿
 using System.Text;
-using System.Drawing;
+using System.Windows.Media;
 using System.Text.RegularExpressions;
 using System;
 using System.Threading;
@@ -8,7 +8,8 @@ using System.Threading.Tasks;
 //using System.Web;
 using System.Net;
 using System.IO;
-using System.Windows.Forms;
+//using System.Windows.Forms;
+using System.Windows;
 using System.Runtime.Serialization;
 using System.Collections.Generic;
 using System.Linq;
@@ -16,7 +17,7 @@ using System.Xml.Linq;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-namespace Roboto
+namespace RobotoChatBot
 {
     public class Roboto
     {
@@ -34,12 +35,13 @@ namespace Roboto
         
         private enum argtype {def, context, plugin };
         
+        [STAThread]
         static void Main(string[] args)
         {
             logWindow = new LogWindow();
             logWindow.Show();
 
-            log.log("ROBOTO", logging.loglevel.critical, Color.White, false, true);
+            log.log("ROBOTO", logging.loglevel.critical,  Colors.White, false, true);
             log.log("Telegram Bot Startup", logging.loglevel.low);
          
             argtype mode = argtype.def;
@@ -77,8 +79,8 @@ namespace Roboto
 
             if (context != null)
             {
-                log.setTitle(Roboto.context);
-                log.log( context + " context", logging.loglevel.high, Color.White,false,true,false,true);
+                log.setWindowTitle(Roboto.context);
+                log.log( context + " context", logging.loglevel.high, Colors.White,false,true,false,true);
             }
 
            // Console.CancelKeyPress += new ConsoleCancelEventHandler(closeHandler);
@@ -86,23 +88,16 @@ namespace Roboto
             bgthread = new Thread(new ThreadStart(startBackground));
             bgthread.Start();
 
-            Application.Run(logWindow);
-
+            //UI Thread cludge to enable it to run properly. Wasnt exiting cleanly from the UI thread before
+            logWindow.Hide();
+            logWindow.ShowDialog();
 
         }
 
-        /*        private void closing()
-                {
-                    log.log("Saving & exiting", logging.loglevel.high);
-                    Settings.save();
-                    log.finalise();
-                    log.log("Exiting", logging.loglevel.high, ConsoleColor.White, false, true, true);
-                    logWindow.Close();
-                }
-           */
+      
         public static void shudownMainThread()
         {
-            log.log("Close Signal Recieved in main thread", logging.loglevel.high, Color.White, false, true);
+            log.log("Close Signal Recieved in main thread", logging.loglevel.high, Colors.White, false, true);
             if (Settings != null)
             {
                 log.log("This could take up to " + Settings.waitDuration + " seconds to complete");
@@ -112,19 +107,25 @@ namespace Roboto
 
         private static void startBackground()
         {
-            settings.loadPlugins();
+            logging.longOp lo_s = new logging.longOp("Core Startup", 5);
 
+            settings.loadPlugins();
+            lo_s.addone();
+            
             log.log("Loading Settings", logging.loglevel.high);
             Settings = settings.load();
+            lo_s.addone();
+
             Settings.validate();
+            lo_s.addone();
+
             log.initialise();
+            lo_s.complete();
 
-            //todo - exit?
 
-            log.log("I am " + Settings.botUserName, logging.loglevel.critical, Color.White, false, true);
-            
+            log.log("I am " + Settings.botUserName, logging.loglevel.critical, Colors.White, false, true);
             Settings.startupChecks();
-       
+
 
             //AT THIS POINT THE GAME WILL START PROCESSING INSTRUCTIONS!!!
             //DONT GO PAST IN STARTUP TEST MODE
@@ -137,7 +138,7 @@ namespace Roboto
 
             if (Settings.isFirstTimeInitialised)
             {
-                log.log(@"New XML file created in %appdata%\Roboto\ . Enter your API key in there and restart.", logging.loglevel.critical, Color.White, false, true);
+                log.log(@"New XML file created in %appdata%\Roboto\ . Enter your API key in there and restart.", logging.loglevel.critical, Colors.White, false, true);
             }
             else
             {
@@ -163,7 +164,7 @@ namespace Roboto
                         "&limit=10";
 
                     HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
-                    log.log(".", logging.loglevel.low, Color.White, true);
+                    log.log(".", logging.loglevel.low, Colors.White, true);
                     request.Method = "GET";
                     request.ContentType = "application/json";
 
@@ -276,10 +277,7 @@ namespace Roboto
                                             //TODO - leave / kicked / chat deleted
                                             resultID++;
                                         }
-
-                                        //housekeeping
-                                        //check that all players have been sent a message, if there is one in the stack. This is to double check that if e.g. a game is cancelled the player doesnt get stuck
-                                        Settings.expectedReplyHousekeeping();
+                                        //NB: ER Housekepeping moved from here as called too frequently
                                     }
                                 }
                             }
@@ -295,7 +293,7 @@ namespace Roboto
                     {
                         try
                         {
-                            log.log("Exception caught at main loop. " + e.ToString(), logging.loglevel.critical, Color.White, false, false, false, false, 2);
+                            log.log("Exception caught at main loop. " + e.ToString(), logging.loglevel.critical, Colors.White, false, false, false, false, 2);
                         }
 
                         catch (Exception ex)
@@ -309,6 +307,7 @@ namespace Roboto
                         }
                     }
 
+                    //Perform all background processing, syncing etc..
                     Settings.backgroundProcessing(false);
 
 
