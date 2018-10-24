@@ -100,6 +100,18 @@ namespace RobotoChatBot
         /// </summary>
         public void startupChecks()
         {
+
+            //TODO - temporary code from 2018 - can be removed. Replace any incorrect namespaces in the datafile. 
+            foreach (ExpectedReply er in expectedReplies)
+            {
+                if (er.pluginType.StartsWith("Roboto."))
+                {
+                    er.pluginType = "RobotoChatBot." + er.pluginType.Remove(0, 7);
+                }
+            }
+
+
+
             //TODO - all these checks should be general housekeeping and run on a schedule!!!
             logging.longOp lo_modules = new logging.longOp("Module Startup Checks", plugins.Count()*2);
             foreach(Modules.RobotoModuleTemplate plugin in plugins )
@@ -372,7 +384,10 @@ namespace RobotoChatBot
             foreach (ExpectedReply reply in repliesToRemove)
             {
                 expectedReplies.Remove(reply);
+                Roboto.log.log("Removed " + reply.text + " from expected replies", logging.loglevel.high);
             }
+            
+            
         }
 
 
@@ -598,12 +613,24 @@ namespace RobotoChatBot
             {
                 Roboto.log.log("Error matching incoming message to plugin - " + e.ToString(), logging.loglevel.critical);
             }
-            
+
 
             if (processed)
             {
-                expectedReplies.Remove(er);
+                if (er == null)
+                {
+                    Roboto.log.log("Expected reply found, but er not available.", logging.loglevel.critical);
+                    return true;
+                }
+                if (pluginToCall == null)
+                {
+                    Roboto.log.log("Expected reply plugin found, but not available.", logging.loglevel.critical);
+                    return true;
+                }
+
                 //now send it to the plugin (remove first, so any checks can be done)
+                expectedReplies.Remove(er);
+                
                 try
                 {
                     bool pluginProcessed = pluginToCall.replyReceived(er, m);
@@ -612,42 +639,20 @@ namespace RobotoChatBot
                     {
                         //reset our chat timer
                         chat c = getChat(er.chatID);
-                        c.resetLastUpdateTime();
+                        if (c != null) { c.resetLastUpdateTime(); }
+                        else { Roboto.log.log("Chat not found for update.", logging.loglevel.critical); }
                     }
                     else
                     {
                         throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
                     }
-
                 }
                 catch (Exception e)
                 {
                     Roboto.log.log("Error calling plugin " + pluginToCall.GetType().ToString() + " with expected reply. " + e.ToString(), logging.loglevel.critical);
                 }
-
-                /*/are there any more messages for the user? If so, find & send
-                ExpectedReply messageToSend = null;
-                foreach (ExpectedReply e in expectedReplies)
-                {
-                    if (e.userID == m.userID)
-                    {
-                        if (messageToSend == null || e.timeLogged < messageToSend.timeLogged)
-                        {
-                            messageToSend = e;
-                        }
-
-                    }
-                }
-
-                //send it
-                //note that the plugin might send an urgent message during this processing that may have jumped the queue (using trySendImmediate param)
-                if ( !userHasOutstandingMessages(m.userID) && messageToSend != null)
-                {
-                    messageToSend.sendMessage();
-                    //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
-                    expectedReplyHousekeeping();
-                }
-                */
+                
+                //Do any follow up er actions. 
                 expectedReplyBackgroundProcessing();
                 
             }

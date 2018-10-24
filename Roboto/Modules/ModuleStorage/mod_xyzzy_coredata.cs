@@ -199,7 +199,7 @@ namespace RobotoChatBot.Modules
             lo_startup.addone();
 
             //find any cards that dont match a pack and remove
-            log("Removing orphaned answers", logging.loglevel.high);
+            log("Removing orphaned answers", logging.loglevel.warn);
             int i = 0;
             int removed = 0;
             logging.longOp lo_answers = new logging.longOp("Remove Orphan Answers", answers.Count()/100, lo_startup);
@@ -217,7 +217,7 @@ namespace RobotoChatBot.Modules
                 }
                 else { i++; }
             }
-            log("Removed " + removed + " orphaned answers", logging.loglevel.high);
+            log("Removed " + removed + " orphaned answers", logging.loglevel.warn);
             lo_answers.complete();
             lo_startup.addone();
 
@@ -450,7 +450,7 @@ namespace RobotoChatBot.Modules
                         //Loop through everything that is in the import list, removing items as we go. 
                         while (import_questions.Count() > 0)
                         {
-                            lo_q.updateLongOp(questionCache.Count());
+                            lo_q.updateLongOp(questionCache.Count()); //go backwards. This is just the remaining nr cards. 
                             cardcast_question_card currentCard = import_questions[0];
                             //find how many other matches in the import list we have. 
                             List<cardcast_question_card> matchingImportCards = import_questions.Where(x => Helpers.common.cleanseText(x.question) == Helpers.common.cleanseText(currentCard.question)).ToList();
@@ -527,7 +527,8 @@ namespace RobotoChatBot.Modules
                             log("Removed " + matches + " from temporary local cache", logging.loglevel.verbose);
                         }
 
-                        //now remove anything left in the cache from the master question list. 
+                        //now remove anything left in the cache from the master question list.
+                        lo_sync.addone();
                         foreach (mod_xyzzy_card c in questionCache)
                         {
                             log("Card wasnt processed - disposing of " + c.text, logging.loglevel.warn);
@@ -536,7 +537,7 @@ namespace RobotoChatBot.Modules
                             brokenChats.AddRange(addnBrokenChats);
                         }
                         lo_q.complete();
-
+                        lo_sync.addone();
                         //===================
                         //ANSWERS
                         //===================
@@ -624,6 +625,7 @@ namespace RobotoChatBot.Modules
 
                             }
                             //now remove all the processed import cards from our import list, and our cache
+                            lo_sync.addone();
                             foreach (cardcast_answer_card c in matchingImportCards)
                             {
                                 import_answers.Remove(c);
@@ -641,8 +643,8 @@ namespace RobotoChatBot.Modules
                             brokenChats.AddRange(addnBrokenChats);
                         }
                         lo_a.complete();
+                        lo_sync.addone();
 
-                        
 
                         //Update the updatePack with the values from the imported pack
                         updatePack.description = pack.description;
@@ -652,23 +654,27 @@ namespace RobotoChatBot.Modules
                         pack = updatePack;
                         
                         Roboto.Settings.stats.logStat(new statItem("Packs Synced", typeof(mod_xyzzy)));
+                        lo_sync.addone();
                         
                         success = true;
                     }
                     else
                     {
                         response += "Importing fresh pack " + pack.packCode + " - " + pack.name + " - " + pack.description;
+                        logging.longOp lo_import = new logging.longOp("Import", import_answers.Count + import_questions.Count, lo_sync );
                         foreach (Helpers.cardcast_question_card q in import_questions)
                         {
                             mod_xyzzy_card x_question = new mod_xyzzy_card(q.question, pack.packID, q.nrAnswers);
                             questions.Add(x_question);
                             nr_qs++;
+                            lo_import.addone();
                         }
                         foreach (Helpers.cardcast_answer_card a in import_answers)
                         {
                             mod_xyzzy_card x_answer = new mod_xyzzy_card(a.answer, pack.packID);
                             answers.Add(x_answer);
                             nr_as++;
+                            lo_import.addone();
                         }
                         
                         response += "\n\r" + "Next sync " + pack.nextSync.ToString("f") + ".";
@@ -676,11 +682,12 @@ namespace RobotoChatBot.Modules
                         response += "\n\r" + "Added " + nr_qs.ToString() + " questions and " + nr_as.ToString() + " answers.";
                         packs.Add(pack);
                         response += "\n\r" + "Added " + pack.name + " to filter list.";
+                        lo_import.complete();
                     }
-                    
 
-                    
-                    
+                    lo_sync.complete();
+
+
                 }
             }
             catch (Exception e)

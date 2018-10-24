@@ -174,6 +174,30 @@ namespace RobotoChatBot
         /// </summary>
         public void startup()
         {
+            //TODO - temporary code - replace any incorrect namespaces following renamespacing and remove duplicates
+            List<statType> newTypes = new List<statType>();
+            foreach (statType t in statsList)
+            {
+                if (t.moduleType.StartsWith("Roboto."))
+                {
+                    t.moduleType = "RobotoChatBot." + t.moduleType.Remove(0, 7);
+                }
+
+                if (newTypes.Where(x => x.moduleType == t.moduleType && x.name == t.name).ToList().Count() > 0)
+                {
+                    Roboto.log.log("Stat type " + t.moduleType + " already exists! Dropping", logging.loglevel.critical);
+                }
+                else
+                {
+                    newTypes.Add(t);
+                }
+                
+            }
+            //swap in the rebuild list
+            statsList = newTypes;
+
+
+
             registerStatType("Startup", typeof(Roboto), Color.LawnGreen, displaymode.bar);
             registerStatType("Incoming Msgs", typeof(TelegramAPI), Color.Blue );
             registerStatType("Outgoing Msgs", typeof(TelegramAPI), Color.Purple);
@@ -217,7 +241,7 @@ namespace RobotoChatBot
 
         private statType getStatType(string name, string moduleType)
         {
-            List<statType> matches = statsList.Where(x => x.name == name && x.moduleType == moduleType.ToString()).ToList();
+            List<statType> matches = statsList.Where(x => x.name == name && x.moduleType == moduleType).ToList();
             if (matches.Count == 1 ) { return matches[0]; }
             else if (matches.Count > 1 )
             {
