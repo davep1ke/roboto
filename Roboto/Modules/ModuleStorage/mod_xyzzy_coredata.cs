@@ -284,7 +284,7 @@ namespace RobotoChatBot.Modules
             i = 0;
 
             //TODO - make this a variable, and move this all to a background job. 
-            logging.longOp lo_remove = new logging.longOp("Remove dead packs", removablePacks.Count(), lo_startup);
+            logging.longOp lo_remove = new logging.longOp("Remove dead packs", 5, lo_startup);
             while ( i < 5 && removablePacks.Count() > 0 )
             {
                 i++;
@@ -685,7 +685,7 @@ namespace RobotoChatBot.Modules
                         lo_import.complete();
                     }
 
-                    lo_sync.complete();
+                    
 
 
                 }
@@ -701,6 +701,7 @@ namespace RobotoChatBot.Modules
                 c.check(true);
             }
 
+            lo_sync.complete();
             log(response, logging.loglevel.normal);
 
             return success;

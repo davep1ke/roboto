@@ -345,9 +345,12 @@ namespace RobotoChatBot.Modules
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == xyzzy_Statuses.Stopped)
                 {
 
+                    //Tidy up 
+                    chatData.reset();
+
                     Roboto.Settings.stats.logStat(new statItem("New Games Started", this.GetType()));
                     //Start a new game!
-
+                    
                     //try and send the opening message
 
 
@@ -365,12 +368,10 @@ namespace RobotoChatBot.Modules
                     else
                     {
                         //message went out successfully, start setting it up proper
-                        chatData.reset();
-                        //Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy)); //Cant do this, as clears the "how many questions" we just asked!
+
                         chatData.setStatus(xyzzy_Statuses.useDefaults);
                         //add the player that started the game
                         chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
-
 
                         //send out invites
                         TelegramAPI.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +

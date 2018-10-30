@@ -104,7 +104,7 @@ namespace RobotoChatBot
             //TODO - temporary code from 2018 - can be removed. Replace any incorrect namespaces in the datafile. 
             foreach (ExpectedReply er in expectedReplies)
             {
-                if (er.pluginType.StartsWith("Roboto."))
+                if (er.pluginType != null && er.pluginType.StartsWith("Roboto."))
                 {
                     er.pluginType = "RobotoChatBot." + er.pluginType.Remove(0, 7);
                 }
@@ -429,9 +429,12 @@ namespace RobotoChatBot
         /// </summary>
         public void expectedReplyBackgroundProcessing()
         {
-            //TODO - are we calling this whole thing every loop at the moment? Move to mod_standard.background?  
+            
 
-            RecentChatMembers.RemoveAll(x => x.chatID == x.userID);
+            RecentChatMembers.RemoveAll(x => x.chatID == x.userID); //TODO <- this should be a startup housekeeping check only. 
+
+            //TODO - are we calling this whole thing every loop at the moment? Move to mod_standard.background?  
+            //Remove any stale presence info
             RecentChatMembers.RemoveAll(x => x.lastSeen < DateTime.Now.Subtract(new TimeSpan(chatPresenceExpiresAfterHours, 0, 0)));
             
             Roboto.log.log("There are " + expectedReplies.Count() + " expected replies on the stack", logging.loglevel.verbose);

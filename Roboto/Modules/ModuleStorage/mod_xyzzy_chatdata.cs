@@ -1180,6 +1180,7 @@ namespace RobotoChatBot.Modules
 
         public override void startupChecks()
         {
+            //TODO - add a longop here
             int i = packFilterIDs.Count();
             if (i > 250) //i.e enough that its stupid
             {
