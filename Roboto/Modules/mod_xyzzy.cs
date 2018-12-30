@@ -513,10 +513,43 @@ namespace RobotoChatBot.Modules
                 */
             }
             //has someone tried to do something unexpected in a private chat?
-            else if (m.chatID == m.userID && m.text_msg.StartsWith("/xyzzy_"))
+            else if (m.chatID == m.userID)
             {
-                TelegramAPI.SendMessage(m.chatID, "To start a game, add me to a group chat, and type /xyzzy_start");
-                processed = true;
+                //player leaving from the private chat
+                if (m.text_msg.StartsWith("/xyzzy_leave"))
+                {
+                    //get list of active games that they are in
+                    List<string> activeGames = new List<string>();
+                    
+                    //search active games and add ids to a list
+                    foreach (chat ca in Roboto.Settings.chatData)
+                    {
+                        mod_xyzzy_chatdata plug = (mod_xyzzy_chatdata)ca.getPluginData(typeof(mod_xyzzy_chatdata), true);
+                        if (plug != null && plug.players.Where(x => x.playerID == m.userID).Count() > 0) { activeGames.Add(ca.chatTitle + " (" + ca.chatID + ")"  ); }
+                    }
+
+                    if (activeGames.Count() > 0)
+                    {
+                        //make a keyboard and send leave message to user.
+                        activeGames.Add("Cancel");
+                        string kb = TelegramAPI.createKeyboard(activeGames, 1);
+                        long messageID = TelegramAPI.GetExpectedReply(0, m.userID, "Which game would you like to leave?", true, typeof(mod_xyzzy), "leaveGamePickGroup", m.userFullName, -1, false, kb, false, false, true);
+                    }
+                    else
+                    {
+                        TelegramAPI.SendMessage(m.userID, "You are not in any active games.", null, false, m.message_id, true, true);
+                    }
+
+
+                    processed = true;
+                }
+
+
+                else if (m.text_msg.StartsWith("/xyzzy_"))
+                {
+                    TelegramAPI.SendMessage(m.chatID, "To start a game, add me to a group chat, and type /xyzzy_start");
+                    processed = true;
+                }
             }
 
 
@@ -643,443 +676,479 @@ namespace RobotoChatBot.Modules
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
             bool processed = false;
-            chat c = Roboto.Settings.getChat(e.chatID);
-            mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
 
-            //did one of our outbound messages fail?
-            if (messageFailed)
+            //messages without a chat context, that we need to infer one from (e.g "leave" in a DM)
+            if (e.messageData.Contains("PickGroup"))
             {
-                //TODO - better handling of failed outbound messages. Timeout player or something depending on status? 
+                //just drop out if its a cancel, the er should get closed off anyway. 
+                if (e.text == "Cancel") { return true; }
+
+                //get the chat ID from the message and process further down
                 try
                 {
-                    string message = "Failed Incoming expected reply";
-                    if (c != null) { message += " for chat " + c.ToString(); }
-                    if (m != null) { message += " received from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID; }
-
-
-                log(message, logging.loglevel.high);
+                    string chatID = m.text_msg.Substring(m.text_msg.LastIndexOf("(")+1);
+                    chatID = chatID.Substring(0, chatID.Length - 1);
+                    e.chatID = long.Parse(chatID);
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    log("Error thrown during failed reply processing " + ex.ToString(), logging.loglevel.critical);
+                    log("A 'Pick Group' message could not be deciphered properly, no chat was found.", logging.loglevel.critical);
+                    TelegramAPI.SendMessage(m.userID, "Sorry - something went wrong, I cant find that group.");
+                    return (true);
                 }
-                return true;
-            }
-
-            else
-            {
-                log("Incoming expected reply for chat " + c.ToString() + " received from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.verbose);
-            }
-
-            //Set up the game, once we get a reply from the user. 
-            if (e.messageData == "Settings")
-            {
-                if (m.text_msg == "Cancel") { } //do nothing, should just end and go back
-                else if (m.text_msg == "Change Packs") { chatData.sendPackFilterMessage(m, 1); }
-                else if (m.text_msg == "Re-deal") { chatData.reDeal(); }
-                else if (m.text_msg == "Game Length") { chatData.askGameLength(m); }
-                else if (m.text_msg == "Extend") { chatData.extend(); }
-                else if (m.text_msg == "Reset") { chatData.reset(); }
-                else if (m.text_msg == "Force Question") { chatData.forceQuestion(); }
-                else if (m.text_msg == "Timeout") { chatData.askMaxTimeout(m.userID); }
-                else if (m.text_msg == "Delay") { chatData.askMinTimeout(m.userID); }
-                else if (m.text_msg == "Kick") { chatData.askKickMessage(m); }
-                else if (m.text_msg == "Mess With") { chatData.askFuckWithMessage(m); }
-                else if (m.text_msg == "Change Score") { chatData.askChangeScoreMessage(m); }
-                else if (m.text_msg == "Abandon")
-                {
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", m.userFullName, -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
-                }
-                return true;
             }
 
 
-            //TODO - think we can remove all of the checks here for if it is being called during the settings window. Should be handled by the neater code above? 
 
-            else if (e.messageData == "useDefaults")
-            {
-                if (m.text_msg == "Use Defaults")
-                {
-                    //add all the q's and a's based on the previous settings / defaults if a new game. 
-                    chatData.addQuestions();
-                    chatData.addAllAnswers();
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
-                    chatData.setStatus(xyzzy_Statuses.Invites);
-                }
-                else if (m.text_msg == "Configure Game")
-                {
-                    chatData.askGameLength(m);
-                    chatData.setStatus(xyzzy_Statuses.SetGameLength);
-                }
-                else if (m.text_msg == "Cancel")
-                {
 
-                    TelegramAPI.SendMessage(m.userID, "Cancelled setup");
-                    chatData.setStatus(xyzzy_Statuses.Stopped);
-                }
-                else
-                {
-                    string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
-                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1, false, kb);
-                }
-                processed = true;
-            }
-            
-            else if (e.messageData == "SetGameLength")
+            chat c = Roboto.Settings.getChat(e.chatID);
+            if (c != null)
             {
-                int questions;
-                if (int.TryParse(m.text_msg, out questions) && questions >= -1)
+                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata), true);
+
+
+                //did one of our outbound messages fail?
+                if (messageFailed)
                 {
-                    //set the value
-                    chatData.enteredQuestionCount = questions;
-                    
-                    if (chatData.status == xyzzy_Statuses.SetGameLength)
+                    //TODO - better handling of failed outbound messages. Timeout player or something depending on status? 
+                    try
                     {
-                        //adding as part of the game setup
-                        //next, ask which packs they want:
-                        chatData.sendPackFilterMessage(m, 1);
-                        chatData.setStatus(xyzzy_Statuses.setPackFilter);
+                        string message = "Failed Incoming expected reply";
+                        if (c != null) { message += " for chat " + c.ToString(); }
+                        if (m != null) { message += " received from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID; }
+
+
+                        log(message, logging.loglevel.high);
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        //adding as part of a /settings. return to main
-                        chatData.sendSettingsMessage(m);
+                        log("Error thrown during failed reply processing " + ex.ToString(), logging.loglevel.critical);
                     }
+                    return true;
                 }
+
                 else
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, m.text_msg + " is not a valid number. How many questions do you want the round to last for? -1 for infinite", true, typeof(mod_xyzzy), "SetGameLength");
-                }
-                processed = true;
-            }
-
-
-            
-
-
-
-
-            //Set up the game filter, once we get a reply from the user. 
-            else if (e.messageData.StartsWith("setPackFilter"))
-            {
-                //figure out what page we are on. Should be in the message data
-                int currentPage = 1;
-                bool success = int.TryParse(e.messageData.Substring(14), out currentPage);
-                if (!success)
-                {
-                    currentPage = 1;
-                    log("Expected messagedata to contain a page number. Was " + e.messageData, logging.loglevel.high);
-                }
-                //import a cardcast pack
-                if (m.text_msg == "Import CardCast Pack")
-                {
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
-                        + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
-                    if (chatData.status == xyzzy_Statuses.setPackFilter) { chatData.setStatus(xyzzy_Statuses.cardCastImport); }
-                }
-                else if (m.text_msg == "Next")
-                {
-                    currentPage++;
-                    chatData.sendPackFilterMessage(m, currentPage);
-
-                }
-                else if (m.text_msg == "Prev")
-                {
-                    currentPage--;
-                    chatData.sendPackFilterMessage(m, currentPage);
+                    log("Incoming expected reply for chat " + c.ToString() + " received from chatID " + m.chatID + " from userID " + m.userID + " in reply to " + e.outboundMessageID, logging.loglevel.verbose);
                 }
 
-                //enable/disable an existing pack
-                else if (m.text_msg != "Continue")
+
+
+
+
+                //Set up the game, once we get a reply from the user. 
+                if (e.messageData == "Settings")
                 {
-                    chatData.processPackFilterMessage(m);
-                    chatData.sendPackFilterMessage(m, currentPage);
-                }
-                //no packs selected, retry
-                else if (chatData.packFilterIDs.Count == 0)
-                {
-                    chatData.sendPackFilterMessage(m, 1);
-                }
-                //This is presumably a continue now...
-                else
-                {
-                    //are we adding this as part of the setup process?
-                    if (chatData.status == xyzzy_Statuses.setPackFilter)
+                    if (m.text_msg == "Cancel") { } //do nothing, should just end and go back
+                    else if (m.text_msg == "Change Packs") { chatData.sendPackFilterMessage(m, 1); }
+                    else if (m.text_msg == "Re-deal") { chatData.reDeal(); }
+                    else if (m.text_msg == "Game Length") { chatData.askGameLength(m); }
+                    else if (m.text_msg == "Extend") { chatData.extend(); }
+                    else if (m.text_msg == "Reset") { chatData.reset(); }
+                    else if (m.text_msg == "Force Question") { chatData.forceQuestion(); }
+                    else if (m.text_msg == "Timeout") { chatData.askMaxTimeout(m.userID); }
+                    else if (m.text_msg == "Delay") { chatData.askMinTimeout(m.userID); }
+                    else if (m.text_msg == "Kick") { chatData.askKickMessage(m); }
+                    else if (m.text_msg == "Mess With") { chatData.askFuckWithMessage(m); }
+                    else if (m.text_msg == "Change Score") { chatData.askChangeScoreMessage(m); }
+                    else if (m.text_msg == "Abandon")
                     {
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", m.userFullName, -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
+                    }
+                    return true;
+                }
+
+
+                //TODO - think we can remove all of the checks here for if it is being called during the settings window. Should be handled by the neater code above? 
+
+                else if (e.messageData == "useDefaults")
+                {
+                    if (m.text_msg == "Use Defaults")
+                    {
+                        //add all the q's and a's based on the previous settings / defaults if a new game. 
                         chatData.addQuestions();
                         chatData.addAllAnswers();
+                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        chatData.setStatus(xyzzy_Statuses.Invites);
+                    }
+                    else if (m.text_msg == "Configure Game")
+                    {
+                        chatData.askGameLength(m);
+                        chatData.setStatus(xyzzy_Statuses.SetGameLength);
+                    }
+                    else if (m.text_msg == "Cancel")
+                    {
 
-                        chatData.askMaxTimeout(m.userID);
-                        chatData.setStatus(xyzzy_Statuses.setMaxHours);
+                        TelegramAPI.SendMessage(m.userID, "Cancelled setup");
+                        chatData.setStatus(xyzzy_Statuses.Stopped);
                     }
                     else
                     {
-                        //adding as part of a /settings. return to main
-                        chatData.sendSettingsMessage(m);
-                        //TelegramAPI.SendMessage(chatData.chatID, "Updated the pack list. New cards won't get added to the game until you restart, or /xyzzy_reDeal" );
+                        string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
+                        long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1, false, kb);
                     }
+                    processed = true;
                 }
-                processed = true;
-            }
 
-
-            //Cardcast importing
-            else if (e.messageData == "cardCastImport")
-            {
-                if (m.text_msg == "Cancel")
+                else if (e.messageData == "SetGameLength")
                 {
-                    //return to plugins
-                    chatData.sendPackFilterMessage(m, 1);
-                    if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
-                }
-                else
-                {
-                    string importMessage;
-                    Helpers.cardcast_pack pack = new Helpers.cardcast_pack();
-                    bool success = localData.importCardCastPack(m.text_msg, out pack, out importMessage);
-                    if (success == true)
+                    int questions;
+                    if (int.TryParse(m.text_msg, out questions) && questions >= -1)
                     {
-                        //reply to user
-                        TelegramAPI.SendMessage(m.userID, importMessage);
-                        //enable the filter
-                        chatData.processPackFilterMessage(m, pack.name);
-                        //return to plugin selection
+                        //set the value
+                        chatData.enteredQuestionCount = questions;
+
+                        if (chatData.status == xyzzy_Statuses.SetGameLength)
+                        {
+                            //adding as part of the game setup
+                            //next, ask which packs they want:
+                            chatData.sendPackFilterMessage(m, 1);
+                            chatData.setStatus(xyzzy_Statuses.setPackFilter);
+                        }
+                        else
+                        {
+                            //adding as part of a /settings. return to main
+                            chatData.sendSettingsMessage(m);
+                        }
+                    }
+                    else
+                    {
+                        TelegramAPI.GetExpectedReply(c.chatID, m.userID, m.text_msg + " is not a valid number. How many questions do you want the round to last for? -1 for infinite", true, typeof(mod_xyzzy), "SetGameLength");
+                    }
+                    processed = true;
+                }
+
+
+                if (e.messageData == "leaveGamePickGroup")
+                {
+                    chatData.removePlayer(m.userID);
+                    processed = true;
+                }
+
+
+
+
+                //Set up the game filter, once we get a reply from the user. 
+                else if (e.messageData.StartsWith("setPackFilter"))
+                {
+                    //figure out what page we are on. Should be in the message data
+                    int currentPage = 1;
+                    bool success = int.TryParse(e.messageData.Substring(14), out currentPage);
+                    if (!success)
+                    {
+                        currentPage = 1;
+                        log("Expected messagedata to contain a page number. Was " + e.messageData, logging.loglevel.high);
+                    }
+                    //import a cardcast pack
+                    if (m.text_msg == "Import CardCast Pack")
+                    {
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
+                            + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
+                        if (chatData.status == xyzzy_Statuses.setPackFilter) { chatData.setStatus(xyzzy_Statuses.cardCastImport); }
+                    }
+                    else if (m.text_msg == "Next")
+                    {
+                        currentPage++;
+                        chatData.sendPackFilterMessage(m, currentPage);
+
+                    }
+                    else if (m.text_msg == "Prev")
+                    {
+                        currentPage--;
+                        chatData.sendPackFilterMessage(m, currentPage);
+                    }
+
+                    //enable/disable an existing pack
+                    else if (m.text_msg != "Continue")
+                    {
+                        chatData.processPackFilterMessage(m);
+                        chatData.sendPackFilterMessage(m, currentPage);
+                    }
+                    //no packs selected, retry
+                    else if (chatData.packFilterIDs.Count == 0)
+                    {
+                        chatData.sendPackFilterMessage(m, 1);
+                    }
+                    //This is presumably a continue now...
+                    else
+                    {
+                        //are we adding this as part of the setup process?
+                        if (chatData.status == xyzzy_Statuses.setPackFilter)
+                        {
+                            chatData.addQuestions();
+                            chatData.addAllAnswers();
+
+                            chatData.askMaxTimeout(m.userID);
+                            chatData.setStatus(xyzzy_Statuses.setMaxHours);
+                        }
+                        else
+                        {
+                            //adding as part of a /settings. return to main
+                            chatData.sendSettingsMessage(m);
+                            //TelegramAPI.SendMessage(chatData.chatID, "Updated the pack list. New cards won't get added to the game until you restart, or /xyzzy_reDeal" );
+                        }
+                    }
+                    processed = true;
+                }
+
+
+                //Cardcast importing
+                else if (e.messageData == "cardCastImport")
+                {
+                    if (m.text_msg == "Cancel")
+                    {
+                        //return to plugins
                         chatData.sendPackFilterMessage(m, 1);
                         if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
                     }
                     else
                     {
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID,
-                        "Couldn't add the pack. " + importMessage + ". To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
+                        string importMessage;
+                        Helpers.cardcast_pack pack = new Helpers.cardcast_pack();
+                        bool success = localData.importCardCastPack(m.text_msg, out pack, out importMessage);
+                        if (success == true)
+                        {
+                            //reply to user
+                            TelegramAPI.SendMessage(m.userID, importMessage);
+                            //enable the filter
+                            chatData.processPackFilterMessage(m, pack.name);
+                            //return to plugin selection
+                            chatData.sendPackFilterMessage(m, 1);
+                            if (chatData.status == xyzzy_Statuses.cardCastImport) { chatData.setStatus(xyzzy_Statuses.setPackFilter); }
+                        }
+                        else
+                        {
+                            TelegramAPI.GetExpectedReply(chatData.chatID, m.userID,
+                            "Couldn't add the pack. " + importMessage + ". To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
+                        }
                     }
+                    processed = true;
                 }
-                processed = true;
-            }
 
-            //work out the maxWaitTime (timeout)
-            else if (e.messageData == "setMaxHours")
-            {
-                //try parse
-                bool success = chatData.setMaxTimeout(m.text_msg);
-                if (success && chatData.status == xyzzy_Statuses.setMaxHours) //could be at another status if being set mid-game
+                //work out the maxWaitTime (timeout)
+                else if (e.messageData == "setMaxHours")
                 {
-                    //move to the throttle
-                    chatData.setStatus(xyzzy_Statuses.setMinHours);
-                    chatData.askMinTimeout(m.userID);
-
-                }
-                else if (success)
-                {
-                    //success, called inflite
-                    //TelegramAPI.SendMessage(e.chatID, "Set timeouts to " + (chatData.maxWaitTimeHours == 0 ? "No Timeout" : chatData.maxWaitTimeHours.ToString() + " hours") );
-                    //adding as part of a /settings. return to main
-                    chatData.sendSettingsMessage(m);
-
-                }
-                else {
-                    //send message, and retry
-                    TelegramAPI.SendMessage(m.userID, "Not a valid value!");
-                    chatData.askMaxTimeout(m.userID);
-                }
-                processed = true;
-            }
-
-            //work out the minWaitTime (throttle)
-            else if (e.messageData == "setMinHours")
-            {
-                //try parse
-                bool success = chatData.setMinTimeout(m.text_msg);
-                if (success && chatData.status == xyzzy_Statuses.setMinHours)//could be at another status if being set mid-game
-                {
-
-                    //Ready to start game - tell the player they can start when they want
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
-                    chatData.setStatus(xyzzy_Statuses.Invites);
-
-                }
-                else if (success)
-                {
-                    //adding as part of a /settings. return to main
-                    chatData.sendSettingsMessage(m);
-                    //success, called inflite
-                    //TelegramAPI.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
-                }
-
-                else
-                {
-                    //send message, and retry
-                    TelegramAPI.SendMessage(m.userID, "Not a valid number!");
-                    chatData.askMinTimeout(m.userID);
-                }
-                processed = true;
-            }
-
-
-
-
-            //start the game proper
-            else if (chatData.status == xyzzy_Statuses.Invites && e.messageData == "Invites")
-            // TBH, dont care what they reply with. Its probably "start" as thats whats on the keyboard, but lets not bother checking, 
-            //as otherwise we would have to do some daft bounds checking 
-            // && m.text_msg == "start")
-            {
-                if (m.text_msg == "Cancel")
-                {
-                    //allow player to cancel, otherwise the message just keeps coming back. 
-                    chatData.setStatus(xyzzy_Statuses.Stopped);
-                }
-                else if (m.text_msg == "Override" && chatData.players.Count > 1)
-                {
-                    log("Overriding player limit and starting game", logging.loglevel.high);
-                    chatData.askQuestion(true);
-                }
-                else if (m.text_msg == "Start" && chatData.players.Count > 2)
-                {
-                    log("Starting game", logging.loglevel.verbose);
-                    chatData.askQuestion(true);
-                }
-                else if (m.text_msg == "Start")
-                {
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
-                }
-                else
-                {
-                    string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
-                }
-
-                processed = true;
-            }
-
-            //A player answering the question
-            else if (chatData.status == xyzzy_Statuses.Question && e.messageData == "Question")
-            {
-                bool answerAccepted = chatData.logAnswer(m.userID, m.text_msg);
-                processed = true;
-                /*if (answerAccepted) - covered in the logAnswer step
-                {
-                    //no longer expecting a reply from this player
-                    if (chatData.allPlayersAnswered())
+                    //try parse
+                    bool success = chatData.setMaxTimeout(m.text_msg);
+                    if (success && chatData.status == xyzzy_Statuses.setMaxHours) //could be at another status if being set mid-game
                     {
-                        chatData.beginJudging();
+                        //move to the throttle
+                        chatData.setStatus(xyzzy_Statuses.setMinHours);
+                        chatData.askMinTimeout(m.userID);
+
                     }
+                    else if (success)
+                    {
+                        //success, called inflite
+                        //TelegramAPI.SendMessage(e.chatID, "Set timeouts to " + (chatData.maxWaitTimeHours == 0 ? "No Timeout" : chatData.maxWaitTimeHours.ToString() + " hours") );
+                        //adding as part of a /settings. return to main
+                        chatData.sendSettingsMessage(m);
+
+                    }
+                    else {
+                        //send message, and retry
+                        TelegramAPI.SendMessage(m.userID, "Not a valid value!");
+                        chatData.askMaxTimeout(m.userID);
+                    }
+                    processed = true;
                 }
-                */
-            }
 
-            //A judges response
-            else if (chatData.status == xyzzy_Statuses.Judging && e.messageData == "Judging" && m != null)
-            {
-                bool success = chatData.judgesResponse(m.text_msg);
-
-                processed = true;
-            }
-
-
-            //abandon game
-            else if (e.messageData == "Abandon")
-            {
-                chatData.setStatus(xyzzy_Statuses.Stopped);
-                Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
-                TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game");
-                processed = true;
-            }
-
-
-
-            //kicking a player
-            else if (e.messageData == "kick")
-            {
-                mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
-                if (p != null)
+                //work out the minWaitTime (throttle)
+                else if (e.messageData == "setMinHours")
                 {
-                    chatData.removePlayer(p.playerID);
+                    //try parse
+                    bool success = chatData.setMinTimeout(m.text_msg);
+                    if (success && chatData.status == xyzzy_Statuses.setMinHours)//could be at another status if being set mid-game
+                    {
+
+                        //Ready to start game - tell the player they can start when they want
+                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        chatData.setStatus(xyzzy_Statuses.Invites);
+
+                    }
+                    else if (success)
+                    {
+                        //adding as part of a /settings. return to main
+                        chatData.sendSettingsMessage(m);
+                        //success, called inflite
+                        //TelegramAPI.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
+                    }
+
+                    else
+                    {
+                        //send message, and retry
+                        TelegramAPI.SendMessage(m.userID, "Not a valid number!");
+                        chatData.askMinTimeout(m.userID);
+                    }
+                    processed = true;
                 }
-                chatData.check();
-                //now return to the last settings page
-                chatData.sendSettingsMessage(m);
 
-                processed = true;
-            }
 
-            else if (e.messageData == "fuckwith")
-            {
-                mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
-                if (p != null)
+
+
+                //start the game proper
+                else if (chatData.status == xyzzy_Statuses.Invites && e.messageData == "Invites")
+                // TBH, dont care what they reply with. Its probably "start" as thats whats on the keyboard, but lets not bother checking, 
+                //as otherwise we would have to do some daft bounds checking 
+                // && m.text_msg == "start")
                 {
-                    chatData.toggleFuckWith(p.playerID);
-                }
-                else
-                {
-                    log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
-                    TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
-                }
-                chatData.check();
-                //now return to the last settings page
-                chatData.sendSettingsMessage(m);
+                    if (m.text_msg == "Cancel")
+                    {
+                        //allow player to cancel, otherwise the message just keeps coming back. 
+                        chatData.setStatus(xyzzy_Statuses.Stopped);
+                    }
+                    else if (m.text_msg == "Override" && chatData.players.Count > 1)
+                    {
+                        log("Overriding player limit and starting game", logging.loglevel.high);
+                        chatData.askQuestion(true);
+                    }
+                    else if (m.text_msg == "Start" && chatData.players.Count > 2)
+                    {
+                        log("Starting game", logging.loglevel.verbose);
+                        chatData.askQuestion(true);
+                    }
+                    else if (m.text_msg == "Start")
+                    {
+                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                    }
+                    else
+                    {
+                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                    }
 
-                processed = true;
-            }
-
-            else if (e.messageData == "changescore")
-            {
-                mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
-                if (p != null)
-                {                    
-                    TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "What should their new score be?", true, typeof(mod_xyzzy), "changescorepoints " + p.playerID.ToString(), m.userFullName, -1, true, "", false, true, true);
+                    processed = true;
                 }
-                else
+
+                //A player answering the question
+                else if (chatData.status == xyzzy_Statuses.Question && e.messageData == "Question")
                 {
-                    log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
-                    TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
+                    bool answerAccepted = chatData.logAnswer(m.userID, m.text_msg);
+                    processed = true;
+                    /*if (answerAccepted) - covered in the logAnswer step
+                    {
+                        //no longer expecting a reply from this player
+                        if (chatData.allPlayersAnswered())
+                        {
+                            chatData.beginJudging();
+                        }
+                    }
+                    */
+                }
+
+                //A judges response
+                else if (chatData.status == xyzzy_Statuses.Judging && e.messageData == "Judging" && m != null)
+                {
+                    bool success = chatData.judgesResponse(m.text_msg);
+
+                    processed = true;
+                }
+
+
+                //abandon game
+                else if (e.messageData == "Abandon")
+                {
+                    chatData.setStatus(xyzzy_Statuses.Stopped);
+                    Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
+                    TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game");
+                    processed = true;
+                }
+
+
+
+                //kicking a player
+                else if (e.messageData == "kick")
+                {
+                    mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
+                    if (p != null)
+                    {
+                        chatData.removePlayer(p.playerID);
+                    }
+                    chatData.check();
                     //now return to the last settings page
                     chatData.sendSettingsMessage(m);
+
+                    processed = true;
                 }
-                
-                processed = true;
-            }
 
-            //reply to the change points question
-            else if (e.messageData.StartsWith("changescorepoints"))
-            {
-                //find the player from the messagedata
-                long playerID = -1;
-                bool success = long.TryParse(e.messageData.Substring(18), out playerID);
-                if (success && playerID != -1)
+                else if (e.messageData == "fuckwith")
                 {
-                    //get the desired score
-                    int playerScore = -1;
-                    success = int.TryParse(m.text_msg, out playerScore);
-
-                    //NB: we should only be able to get here as admin, so no need to check. 
-                    success = chatData.setPlayerScore(playerID, playerScore);
-                    
-                    if (!success)
+                    mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
+                    if (p != null)
                     {
-                        log("Error changing points value", logging.loglevel.high);
-                        TelegramAPI.SendMessage(m.userID, "Sorry, something went wrong.");
+                        chatData.toggleFuckWith(p.playerID);
+                    }
+                    else
+                    {
+                        log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
+                        TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
+                    }
+                    chatData.check();
+                    //now return to the last settings page
+                    chatData.sendSettingsMessage(m);
+
+                    processed = true;
+                }
+
+                else if (e.messageData == "changescore")
+                {
+                    mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
+                    if (p != null)
+                    {
+                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "What should their new score be?", true, typeof(mod_xyzzy), "changescorepoints " + p.playerID.ToString(), m.userFullName, -1, true, "", false, true, true);
+                    }
+                    else
+                    {
+                        log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
+                        TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
+                        //now return to the last settings page
                         chatData.sendSettingsMessage(m);
                     }
+
+                    processed = true;
                 }
 
+                //reply to the change points question
+                else if (e.messageData.StartsWith("changescorepoints"))
+                {
+                    //find the player from the messagedata
+                    long playerID = -1;
+                    bool success = long.TryParse(e.messageData.Substring(18), out playerID);
+                    if (success && playerID != -1)
+                    {
+                        //get the desired score
+                        int playerScore = -1;
+                        success = int.TryParse(m.text_msg, out playerScore);
+
+                        //NB: we should only be able to get here as admin, so no need to check. 
+                        success = chatData.setPlayerScore(playerID, playerScore);
+
+                        if (!success)
+                        {
+                            log("Error changing points value", logging.loglevel.high);
+                            TelegramAPI.SendMessage(m.userID, "Sorry, something went wrong.");
+                            chatData.sendSettingsMessage(m);
+                        }
+                    }
 
 
-                chatData.check();
+
+                    chatData.check();
 
 
-                processed = true;
+                    processed = true;
+                }
+
             }
-
-
 
 
 
             else
             {
-                log("Didnt process incoming expected reply! Status=" + chatData.status + ", msg=" + e.text + " msgdata=" + e.messageData + " msg=" + m.text_msg , logging.loglevel.critical);
+                log("Didnt process incoming expected reply! msg=" + e.text + " msgdata=" + e.messageData + " msg=" + m.text_msg, logging.loglevel.critical);
             }
 
             return processed;

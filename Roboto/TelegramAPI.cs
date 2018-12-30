@@ -87,7 +87,7 @@ namespace RobotoChatBot
         /// <summary>
         /// Send a message, which we are expecting a reply to. Message can be sent publically or privately. Replies will be detected and sent via the plugin replyReceived method. 
         /// </summary>
-        /// <param name="chatID"></param>
+        /// <param name="chatID">0 for a message not related to a specific chat - i.e. if the user is in a DM session with the bot</param>
         /// <param name="text"></param>
         /// <param name="replyToMessageID"></param>
         /// <param name="selective"></param>

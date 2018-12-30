@@ -446,8 +446,11 @@ namespace RobotoChatBot
                 List<ExpectedReply> deadERs = new List<ExpectedReply>();
                 foreach (ExpectedReply er in expectedReplies)
                 {
-                    chat c = getChat(er.chatID);
-                    if (c == null) { deadERs.Add(er); }
+                    if (er.chatID != 0) //ignore messages that are specifically chat-less
+                    {
+                        chat c = getChat(er.chatID);
+                        if (c == null) { deadERs.Add(er); }
+                    }
                 }
                 foreach (ExpectedReply er in deadERs) { expectedReplies.Remove(er); }
                 Roboto.log.log("Removed " + deadERs.Count() + " dead expected replies, now " + expectedReplies.Count() + " remain", deadERs.Count() == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
@@ -638,9 +641,9 @@ namespace RobotoChatBot
                 {
                     bool pluginProcessed = pluginToCall.replyReceived(er, m);
 
-                    if (pluginProcessed)
+                    //reset our chat timer (if a successfully processed chat message)
+                    if (pluginProcessed && er.chatID != 0)
                     {
-                        //reset our chat timer
                         chat c = getChat(er.chatID);
                         if (c != null) { c.resetLastUpdateTime(); }
                         else { Roboto.log.log("Chat not found for update.", logging.loglevel.critical); }

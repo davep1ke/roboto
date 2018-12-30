@@ -240,6 +240,7 @@ namespace RobotoChatBot
             {
                 Roboto.Settings.stats.logStat(new statItem("High Errors", typeof(logging)));
             }
+
             if (initialised && thisLogItem.level == loglevel.critical)
             {
                 Roboto.Settings.stats.logStat(new statItem("Critical Errors", typeof(logging)));
