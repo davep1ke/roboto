@@ -646,7 +646,11 @@ namespace RobotoChatBot
                     {
                         chat c = getChat(er.chatID);
                         if (c != null) { c.resetLastUpdateTime(); }
-                        else { Roboto.log.log("Chat not found for update.", logging.loglevel.critical); }
+                        else { Roboto.log.log("Chat not found for update.", logging.loglevel.high); }
+                    }
+                    else if (er.chatID == 0)
+                    {
+                        Roboto.log.log("No chat - skipping update of chat timers", logging.loglevel.verbose);
                     }
                     else
                     {

@@ -676,12 +676,13 @@ namespace RobotoChatBot.Modules
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
             bool processed = false;
+            chat c = null;
 
             //messages without a chat context, that we need to infer one from (e.g "leave" in a DM)
             if (e.messageData.Contains("PickGroup"))
             {
                 //just drop out if its a cancel, the er should get closed off anyway. 
-                if (e.text == "Cancel") { return true; }
+                if (m.text_msg == "Cancel") { return true; }
 
                 //get the chat ID from the message and process further down
                 try
@@ -689,10 +690,12 @@ namespace RobotoChatBot.Modules
                     string chatID = m.text_msg.Substring(m.text_msg.LastIndexOf("(")+1);
                     chatID = chatID.Substring(0, chatID.Length - 1);
                     e.chatID = long.Parse(chatID);
+                    c = Roboto.Settings.getChat(e.chatID);
+                    if (c == null) { throw new DataMisalignedException("Couldnt find chat with that ID"); }
                 }
                 catch (Exception)
                 {
-                    log("A 'Pick Group' message could not be deciphered properly, no chat was found.", logging.loglevel.critical);
+                    log("A 'Pick Group' message could not be deciphered properly, no chat was found.", logging.loglevel.warn);
                     TelegramAPI.SendMessage(m.userID, "Sorry - something went wrong, I cant find that group.");
                     return (true);
                 }
@@ -701,7 +704,7 @@ namespace RobotoChatBot.Modules
 
 
 
-            chat c = Roboto.Settings.getChat(e.chatID);
+            c = Roboto.Settings.getChat(e.chatID);
             if (c != null)
             {
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata), true);
