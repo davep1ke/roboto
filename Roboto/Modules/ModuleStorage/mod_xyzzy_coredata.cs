@@ -415,6 +415,12 @@ namespace RobotoChatBot.Modules
                 {
                     //lets just check if the pack already exists? 
                     log("Retrieved " + import_questions.Count() + " questions and " + import_answers.Count() + " answers from Cardcast");
+
+                    //remove any that are contain codes that somehow break the GODDAMN MS XML parser. APUC4 I'm looking at you...
+                    int remq =  import_questions.RemoveAll(x => x.question.Contains("\u000e"));
+                    int rema = import_answers.RemoveAll(x => x.answer.Contains("\u000e"));
+                    
+
                     Guid l_packID = pack.packID;
                     List<cardcast_pack> matchingPacks = getPackFilterList().Where(x => x.packCode == packCode).ToList();
 
