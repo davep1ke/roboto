@@ -90,6 +90,7 @@ namespace RobotoChatBot
 
             //UI Thread cludge to enable it to run properly. Wasnt exiting cleanly from the UI thread before
             logWindow.Hide();
+
             logWindow.ShowDialog();
 
         }

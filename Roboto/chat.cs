@@ -110,6 +110,7 @@ namespace RobotoChatBot
             return null;
         }
 
+        //TODO REMOVE - dead code
         public bool isPurgable()
         {
             //If no plugin data is being kept, remaining chat summary data can be purged. Otherwise keep
@@ -117,18 +118,21 @@ namespace RobotoChatBot
             return false;
         }
 
-        public void tryPurgeData()
+        public bool tryPurgeData()
         {
             List<Modules.RobotoModuleChatDataTemplate> dataToPurge = chatData.Where(cd => cd.isPurgable()).ToList();
 
-            foreach (Modules.RobotoModuleChatDataTemplate d in dataToPurge)
+            //if all modules report they can be purged, purge them. 
+            if (dataToPurge.Count() == chatData.Count())
             {
-                Roboto.log.log("About to remove " + d.GetType() + " data for chat " + chatID, logging.loglevel.high);
-                chatData.Remove(d);
+                foreach (Modules.RobotoModuleChatDataTemplate d in dataToPurge)
+                {
+                    Roboto.log.log("About to remove " + d.GetType() + " data for chat " + chatID, logging.loglevel.high);
+                    chatData.Remove(d);
+                }
+                return true;
             }
-
-
-                
+            return false;
         }
 
         public void setTitle(string chatTitle)

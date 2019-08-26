@@ -100,18 +100,7 @@ namespace RobotoChatBot
         /// </summary>
         public void startupChecks()
         {
-
-            //TODO - temporary code from 2018 - can be removed. Replace any incorrect namespaces in the datafile. 
-            foreach (ExpectedReply er in expectedReplies)
-            {
-                if (er.pluginType != null && er.pluginType.StartsWith("Roboto."))
-                {
-                    er.pluginType = "RobotoChatBot." + er.pluginType.Remove(0, 7);
-                }
-            }
-
-
-
+            
             //TODO - all these checks should be general housekeeping and run on a schedule!!!
             logging.longOp lo_modules = new logging.longOp("Module Startup Checks", plugins.Count()*2);
             foreach(Modules.RobotoModuleTemplate plugin in plugins )
@@ -154,10 +143,6 @@ namespace RobotoChatBot
             foreach (Modules.RobotoModuleTemplate plugin in plugins)
             {
                 plugin.initData(); //this data probably already exists if loaded by XML, but if not, allow the plugin to create it. 
-                /*if (plugin.pluginDataType != null)
-                {
-                    //TODO - check if this datatype is a subclass of RobotoModuleDataTemplate
-                }*/
             }
 
 
@@ -169,32 +154,7 @@ namespace RobotoChatBot
             Roboto.log.log("All Plugins initialised", logging.loglevel.high, Colors.White, false, true);
             Roboto.log.log((Modules.mod_standard.getAllMethodDescriptions()));
 
-           
-
             
-            //Check for dormant chats & plugins to purge
-            //TODO - move this to a background proc.
-
-            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, Colors.White, false, true);
-            foreach (chat c in chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(purgeInactiveChatsAfterXDays,0,0,0))).ToList())
-            {
-                //check all plugins and remove data if no longer reqd
-                c.tryPurgeData();
-
-                //if all plugins are purged, delete the chat
-                if (c.isPurgable())
-                {
-                    Roboto.log.log("Purging all data for chat " + c.chatID);
-                    Roboto.Settings.stats.logStat(new statItem("Chats Purged", typeof(Roboto)));
-                    chatData.Remove(c);
-                }
-                else
-                {
-                    Roboto.log.log("Skipping purge of chat " + c.chatID + " as one or more plugins reported they shouldn't be purged");
-                }
-            }
-            
-
         }
 
         /// <summary>
@@ -242,6 +202,36 @@ namespace RobotoChatBot
                 }
             }
             return null;
+
+        }
+
+        /// <summary>
+        /// Check for dormant chats & plugins to purge
+        /// </summary>
+        public void removeDormantChats()
+        {
+            logging.longOp lo_s = new logging.longOp("Dormant Chat Check", chatData.Count());
+
+            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, Colors.White, false, true);
+            foreach (chat c in chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(purgeInactiveChatsAfterXDays, 0, 0, 0))).ToList())
+            {
+                //check all plugins and remove data if no longer reqd
+                bool isPurgable = c.tryPurgeData();
+
+                //if all plugins are purged, delete the chat
+                if (isPurgable)
+                {
+                    Roboto.log.log("Purging all data for chat " + c.chatID);
+                    Roboto.Settings.stats.logStat(new statItem("Chats Purged", typeof(Roboto)));
+                    chatData.Remove(c);
+                }
+                else
+                {
+                    Roboto.log.log("Skipping purge of chat " + c.chatID + " as one or more plugins reported they shouldn't be purged");
+                }
+                lo_s.addone();
+            }
+            lo_s.complete();
 
         }
 

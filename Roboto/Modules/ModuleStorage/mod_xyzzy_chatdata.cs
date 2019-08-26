@@ -63,7 +63,14 @@ namespace RobotoChatBot.Modules
             log("Status for " + chatID + " now " + newStatus.ToString(), logging.loglevel.verbose);
 
         }
-        
+
+        public override bool isPurgable()
+        {
+            
+            if (statusChangedTime > DateTime.Now.AddDays(Roboto.Settings.killInactiveChatsAfterXDays * -1 )) { return false; }
+            return true;
+        }
+
         /// <summary>
         /// Completely stop the game and clear any player data
         /// </summary>

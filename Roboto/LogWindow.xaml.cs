@@ -23,16 +23,7 @@ namespace RobotoChatBot
     /// </summary>
     public partial class LogWindow : Window
     {
-        /*
-        //So that we can pause updating
-        private const int WM_SETREDRAW = 0x000B;
-        private const int WM_USER = 0x400;
-        private const int EM_GETEVENTMASK = (WM_USER + 59);
-        private const int EM_SETEVENTMASK = (WM_USER + 69);
-        [DllImport("user32", CharSet = CharSet.Auto)]
-        private extern static IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, IntPtr lParam);
-        IntPtr eventMask = IntPtr.Zero;
-        */
+
 
         private bool backgroundCompleted = false;
 
@@ -41,6 +32,9 @@ namespace RobotoChatBot
             InitializeComponent();
             this.Title = Roboto.log.getWindowTitle();
         }
+
+ 
+
 
         public void appendText(string s)
         {
@@ -54,23 +48,7 @@ namespace RobotoChatBot
                 Paragraph p = (Paragraph)LogText.Document.Blocks.Last();
                 p.Inlines.Add(s);
 
-                /*/if called from the GUI thread.
-                try
-                {
-                    BrushConverter bc = new BrushConverter();
-                    TextRange tr = new TextRange(LogText.Document.ContentEnd, LogText.Document.ContentEnd);
-                    tr.Text = s;
-                    try
-                    {
-                        tr.ApplyPropertyValue(TextElement.ForegroundProperty, Colors.White);
-                    }
-                    catch (FormatException) { }
-                }
-                catch (Exception e)
-                {
-                    MessageBox.Show(e.ToString());
-                }
-                */
+                
             }
         }
 
@@ -220,41 +198,17 @@ namespace RobotoChatBot
                 //if called from the GUI thread.
                 try
                 {
-                    if (Roboto.Settings != null)
+                    if (Roboto.Settings != null && (double)li.level > displayLogLevel.Value)
                     {
-                        /* TODO - not WPFable. 
-                        // Stop redrawing:
-                        SendMessage(LogText.Handle, WM_SETREDRAW, 0, IntPtr.Zero);
-                        // Stop sending of events:
-                        eventMask = SendMessage(LogText.Handle, EM_GETEVENTMASK, 0, IntPtr.Zero);
 
-
-                        Roboto.Settings.maxLogItems = 50;
-                        int linesToRemove = LogText.Lines.Count() - Roboto.Settings.maxLogItems;
-                        if (linesToRemove > 0)
-                        {
-                            int start_index = LogText.GetFirstCharIndexFromLine(linesToRemove);
-                            LogText.Select(0, start_index);
-                            LogText.SelectedText = "";
-                        }
-                        */
-                        if (LogText.Document.Blocks.Count() > 50)
+                        if (LogText.Document.Blocks.Count() > 100)
                         {
                             LogText.Document.Blocks.Remove(LogText.Document.Blocks.FirstBlock);
                         }
+                        
                         appendLog(li);
-                        /*
-                        // turn on events
-                        SendMessage(LogText.Handle, EM_SETEVENTMASK, 0, eventMask);
-                        // turn on redrawing
-                        SendMessage(LogText.Handle, WM_SETREDRAW, 1, IntPtr.Zero);
-                        LogText.Invalidate();
+                        
 
-                        //while ( && LogText.Lines.Count() > Roboto.Settings.maxLogItems)
-                        //    {
-                        //        LogText.Text = LogText. .Lines[0].Remove();
-                        //    }
-                        */
                     }
 
                 }
@@ -271,34 +225,23 @@ namespace RobotoChatBot
            
 
             //build the string
-            //string s = li.level.ToString() + "\t" + li.methodName + "\t" + li.logText;
             Color c = li.getColor();
             Paragraph p = new Paragraph();
-            p.Inlines.Add ( li.ToString() );//+ Environment.NewLine
+            p.Inlines.Add ( li.ToString() );
             
-            /*int startpos = LogText.TextLength;
-            LogText.AppendText(text);
-            LogText.Select(startpos, text.Length);
-            LogText.SelectionColor = c;
-            LogText.Select(LogText.TextLength, 0);
-            */
-
-
-            //BrushConverter bc = new BrushConverter();
-            //TextRange tr = new TextRange(LogText.Document.ContentEnd, LogText.Document.ContentEnd);
-
-
             try
             {
                 //TODO - new brush each time is probably shitty for perf.
                 p.Foreground = new SolidColorBrush(c);
                 LogText.Document.Blocks.Add(p);
+                if (chkLockScroll.IsChecked.Value)
+                {
+                    LogText.ScrollToEnd();
+                }
             }
             catch (FormatException) { }
 
-
-
-
+            
         }
 
 

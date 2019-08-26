@@ -17,9 +17,12 @@ namespace RobotoChatBot.Modules
     public class mod_xyzzy_coredata : RobotoModuleDataTemplate
     {
         public DateTime lastDayProcessed = DateTime.MinValue;
-        public int maxPacksToSyncInOneGo = 5;
+        public int maxPacksToSyncInOneGo = 3;
         public int backgroundChatsToProcess = 5;
-        public int backgroundChatsToMiniProcess = 100;
+        public int backgroundChatsToMiniProcess = 50;
+        public int maxDormantPacksToRemovePerPass = 1;
+        public int minimumPackThreshold = 150;
+        public int packDormantThresholdDays = 90;
         public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
         public List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
         public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>();
@@ -77,7 +80,7 @@ namespace RobotoChatBot.Modules
         public override void startupChecks()
         {
             //start a logging longop
-            logging.longOp lo_startup = new logging.longOp("XYZZY - Coredata Startup", 10);
+            logging.longOp lo_startup = new logging.longOp("XYZZY - Coredata Startup", 11);
 
             //DATAFIX: allocate any cards without a pack guid the correct guid
             int success = 0;
@@ -117,6 +120,7 @@ namespace RobotoChatBot.Modules
                 log("DATAFIX: Wiped category from " + success + " cards successfully.", logging.loglevel.warn);
             }
             lo_startup.addone();
+            
 
             //lets see if packs with null Cardcast Pack codes can be populated by looking through our other packs
             foreach (cardcast_pack p in packs.Where(x => string.IsNullOrEmpty(x.packCode)))
@@ -127,6 +131,17 @@ namespace RobotoChatBot.Modules
                     log("DATAFIX: Orphaned pack " + p.name + " has been matched against an existing pack, and packcode set to " + p.packCode, logging.loglevel.warn);
                     p.packCode = matchingPacks[0].packCode;
                 }
+            }
+            lo_startup.addone();
+
+            //Check for null-IDd packs and report
+            List<Helpers.cardcast_pack> nullIDPacks = packs.Where(x => string.IsNullOrEmpty(x.packCode)).ToList();
+            Roboto.log.log("There are " + nullIDPacks.Count() + " packs without pack codes." +
+                (nullIDPacks.Count() == 0 ? "" : " Try rename an existing pack in the XML file to the same name, or add the pack code to this pack - should merge in next time a Sync is called. ")
+                , nullIDPacks.Count() > 0 ? logging.loglevel.critical : logging.loglevel.normal);
+            foreach (Helpers.cardcast_pack pack in nullIDPacks)
+            {
+                Roboto.log.log("Pack " + pack.name + " has no pack code ", logging.loglevel.critical);
             }
             lo_startup.addone();
 
@@ -232,10 +247,8 @@ namespace RobotoChatBot.Modules
                 if (i % 100 == 0) { log("Remaining " + (questions.Count() - i) + ". Removed " + removed, logging.loglevel.high);lo_questions.addone(); }
                 if (getPacks(questions[i].packID).Count() == 0)
                 {
-                    //log("Removing " + questions[i].text, logging.loglevel.verbose);
                     removed++;
                     questions.RemoveAt(i);
-                    //questions.Remove(questions[i]);
                 }
                 else { i++; }
             }
@@ -245,7 +258,6 @@ namespace RobotoChatBot.Modules
 
             //Dump the packlist and stats to the log window in verbose mode. Flag anything removable
             logging.longOp lo_dump = new logging.longOp("Dump packlist", packs.Count());
-            List<cardcast_pack> removablePacks = new List<cardcast_pack>();
             log("Packs Loaded:", logging.loglevel.verbose);
             log("Code \tlastPickedDate\t\tPicks\tAllFlt\tActFlt\tHotFlt\tQCards\tACards\tName", logging.loglevel.verbose);
             foreach (cardcast_pack p in packs.OrderBy(x => x.lastPickedDate))
@@ -260,42 +272,111 @@ namespace RobotoChatBot.Modules
                     if (cd != null && cd.packFilterIDs.Contains(p.packID))     {   packFiltersAddedTo++;       }
                     if (cd != null && cd.packFilterIDs.Contains(p.packID) && cd.status != xyzzy_Statuses.Stopped) { activePackFiltersAddedTo++; }
                     if (cd != null && cd.packFilterIDs.Contains(p.packID) && cd.status != xyzzy_Statuses.Stopped && cd.statusChangedTime > DateTime.Now.Subtract(TimeSpan.FromDays(30) )) { hotPackFiltersAddedTo++; }
-
-
                 }
 
                 log(p.packCode + "\t" + p.lastPickedDate + "\t" + p.totalPicks + "\t" + packFiltersAddedTo + "\t" + activePackFiltersAddedTo + "\t" + hotPackFiltersAddedTo + "\t" + questions.Where(x => x.packID == p.packID).Count() + "\t" + answers.Where(x => x.packID == p.packID).Count() + "\t" +  p.name, logging.loglevel.verbose);
 
                 if (activePackFiltersAddedTo == 0
                     && p.packID != mod_xyzzy.primaryPackID
-                    && p.lastPickedDate < (DateTime.Now.Subtract(TimeSpan.FromDays(30)))
-                    && packs.Count - removablePacks.Count > 50)
+                    && p.lastPickedDate < (DateTime.Now.Subtract(TimeSpan.FromDays(30))))
                 { 
                     log(p.packCode + " is potentially removable", logging.loglevel.verbose);
+                }
+                lo_dump.addone();
+                //NB: No longer removing packs here - instead moved to background sync so ran occasionally. 
+            }
+            lo_dump.complete();
+            
+            lo_startup.complete();
+
+        }
+
+        /// <summary>
+        /// Removes any packs (over the maxPack limit, and under the per-sync limit) that havent been used in x days. 
+        /// </summary>
+        public void removeDormantPacks()
+        {
+            
+            //Loop through packs and cache anything removable
+            logging.longOp lo_find = new logging.longOp("Archive dormant packs - loop", packs.Count());
+            log("Scanning for dormant packs to remove", logging.loglevel.normal);
+            //create a full list of packs, then remove by skimming through active chat data. 
+            List<cardcast_pack> removablePacks = packs.ToList();
+
+
+            /*foreach (cardcast_pack p in packs.OrderBy(x => x.lastPickedDate))
+            {
+                //find out how many packs added to#
+                int packFiltersAddedTo = 0;
+                int activePackFiltersAddedTo = 0;
+                int hotPackFiltersAddedTo = 0;
+                foreach (chat c in Roboto.Settings.chatData)
+                {
+                    mod_xyzzy_chatdata cd = c.getPluginData<mod_xyzzy_chatdata>();
+                    if (cd != null && cd.packFilterIDs.Contains(p.packID)) { packFiltersAddedTo++; }
+                    if (cd != null && cd.packFilterIDs.Contains(p.packID) && cd.status != xyzzy_Statuses.Stopped) { activePackFiltersAddedTo++; }
+                    if (cd != null && cd.packFilterIDs.Contains(p.packID) && cd.status != xyzzy_Statuses.Stopped && cd.statusChangedTime > DateTime.Now.Subtract(TimeSpan.FromDays(30))) { hotPackFiltersAddedTo++; }
+                }
+                
+                if (activePackFiltersAddedTo == 0
+                    && p.packID != mod_xyzzy.primaryPackID
+                    && p.lastPickedDate < (DateTime.Now.Subtract(TimeSpan.FromDays(packDormantThresholdDays))))
+                {
+                    //log(p.packCode + " is potentially removable", logging.loglevel.verbose);
                     removablePacks.Add(p);
                 }
                 lo_dump.addone();
-            }
-            lo_dump.complete();
-            lo_startup.addone();
+            }*/
 
-            //Remove the packs
-            log(removablePacks.Count().ToString() + " removable packs found", logging.loglevel.high);
-            i = 0;
 
-            //TODO - make this a variable, and move this all to a background job. 
-            logging.longOp lo_remove = new logging.longOp("Remove dead packs", 5, lo_startup);
-            while ( i < 5 && removablePacks.Count() > 0 )
+            log(removablePacks.Count().ToString() + " removable packs - remove primary", logging.loglevel.normal);
+            removablePacks.RemoveAll(x => x.packID == mod_xyzzy.primaryPackID);//dont remove the primary pack
+            log(removablePacks.Count().ToString() + " removable packs - remove recent", logging.loglevel.normal);
+            removablePacks.RemoveAll(x => x.lastPickedDate > (DateTime.Now.Subtract(TimeSpan.FromDays(packDormantThresholdDays))));//dont remove anything picked in the lasts x days
+            log(removablePacks.Count().ToString() + " removable packs - remove active", logging.loglevel.normal);
+
+            logging.longOp lo_scan = new logging.longOp("Archive dormant packs - scan chats", Roboto.Settings.chatData.Count(), lo_find) ;
+            foreach (chat c in Roboto.Settings.chatData)
             {
-                i++;
+                foreach (mod_xyzzy_chatdata cd in c.chatData.Where(x => x.GetType() == typeof(mod_xyzzy_chatdata)))
+                {
+                    if (cd.status != xyzzy_Statuses.Stopped)
+                    {
+                        foreach (Guid g in cd.packFilterIDs)
+                        {
+                            removablePacks.RemoveAll(x => x.packID == g);
+                        }
+                    }
+                }
+                lo_scan.addone();
+            }
+            lo_scan.complete();
+
+            log(removablePacks.Count().ToString() + " removable packs remain", logging.loglevel.high);
+            Roboto.Settings.stats.logStat(new statItem("Dormant Packs Total", typeof(mod_xyzzy), removablePacks.Count()));
+            Roboto.Settings.stats.logStat(new statItem("Packs Total", typeof(mod_xyzzy), packs.Count()));
+            lo_find.complete();
+
+            removablePacks.OrderBy(x => x.lastPickedDate).ToList();
+
+            //Now remove the oldest x packs
+            logging.longOp lo_remove = new logging.longOp("Remove dead packs", maxDormantPacksToRemovePerPass);
+            int i = 0;
+            while (
+                i < maxDormantPacksToRemovePerPass 
+                && removablePacks.Count() > 0
+                && packs.Count > minimumPackThreshold
+                )
+            {
                 log("Removing pack " + i + " - " + removablePacks[0].name + ", there are up to " + removablePacks.Count() + " remaining", logging.loglevel.high);
                 removePack(removablePacks[0]);
                 removablePacks.RemoveAt(0);
+                Roboto.Settings.stats.logStat(new statItem("Dormant Packs Removed", typeof(mod_xyzzy)));
                 lo_remove.addone();
+                i++;
             }
             lo_remove.complete();
-            lo_startup.complete();
-
+            
         }
 
         private void removePack(cardcast_pack p)
@@ -307,7 +388,10 @@ namespace RobotoChatBot.Modules
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata cd = c.getPluginData<mod_xyzzy_chatdata>();
-                cn += cd.setPackFilter(p.packID, mod_xyzzy_chatdata.packAction.remove);
+                if (cd != null)
+                {
+                    cn += cd.setPackFilter(p.packID, mod_xyzzy_chatdata.packAction.remove);
+                }
             }
             //remove all qcards
             List<mod_xyzzy_card> qcards = questions.Where(x => x.packID == p.packID).ToList(); 
@@ -468,7 +552,6 @@ namespace RobotoChatBot.Modules
                             {
                                 log("Processing " + matchingImportCards.Count() + " cards matching " + currentCard.question, logging.loglevel.verbose);
                                 List<mod_xyzzy_card> matchingLocalCards = questions.Where(x => (x.packID == updatePack.packID) && (Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.question))).ToList();
-                                log("Found " + matchingLocalCards.Count() + " local cards", logging.loglevel.verbose);
 
                                 //assume the first cards should match the cards coming from CardCast. Update so we have exact text
                                 int j = 0;
@@ -530,7 +613,6 @@ namespace RobotoChatBot.Modules
                                 log("Removed card from import list: " + c.question, logging.loglevel.verbose);
                             }
                             int matches = questionCache.RemoveAll(x => Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.question));
-                            log("Removed " + matches + " from temporary local cache", logging.loglevel.verbose);
                         }
 
                         //now remove anything left in the cache from the master question list.
@@ -576,7 +658,6 @@ namespace RobotoChatBot.Modules
                             {
                                 log("Processing " + matchingImportCards.Count() + " cards matching " + currentCard.answer, logging.loglevel.verbose);
                                 List<mod_xyzzy_card> matchingLocalCards = answers.Where(x => (x.packID == updatePack.packID) && (Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.answer))).ToList();
-                                log("Found " + matchingLocalCards.Count() + " local cards", logging.loglevel.verbose);
 
                                 //assume the first cards should match the cards coming from CardCast. Update so we have exact text
                                 int j = 0;
@@ -638,7 +719,6 @@ namespace RobotoChatBot.Modules
                                 log("Removed card from import list: " + c.answer, logging.loglevel.verbose);
                             }
                             int matches = answerCache.RemoveAll(x => Helpers.common.cleanseText(x.text) == Helpers.common.cleanseText(currentCard.answer));
-                            log("Removed " + matches + " from temporary local cache", logging.loglevel.verbose);
                         }
 
                         //now remove anything left in the cache from the master answer list. 
@@ -726,7 +806,7 @@ namespace RobotoChatBot.Modules
             
             //remove from the master list
             bool success = answers.Remove(cardToRemove);
-            log("Answer " + cardToRemove.text + (success ? "successfully": "FAILED") + " to remove from master list", success ? logging.loglevel.normal:logging.loglevel.critical);
+            log("Answer " + cardToRemove.text + (success ? " successfull": " FAILED") + " removal from master list", success ? logging.loglevel.normal:logging.loglevel.critical);
 
             //remove any cached answers / cards in hand
             foreach (chat c in Roboto.Settings.chatData)
@@ -788,7 +868,7 @@ namespace RobotoChatBot.Modules
 
             //remove from the master list
             bool success = questions.Remove(cardToRemove);
-            log("Question " + cardToRemove.text + (success ? "successfully" : "FAILED") + " to remove from master list", success ? logging.loglevel.normal : logging.loglevel.critical);
+            log("Question " + cardToRemove.text + (success ? " successfull" : " FAILED") + " removal from master list", success ? logging.loglevel.normal : logging.loglevel.critical);
 
 
             //remove any cached questions

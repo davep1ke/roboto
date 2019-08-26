@@ -5,10 +5,17 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         Title="MainWindow" Height="847.926" Width="1564.778" 
         Closing="Window_Closing_1">
+
     <Grid>
         <RichTextBox x:Name="LogText" Margin="10,10,351,10" Background="Black" Block.LineHeight="1.333">
         </RichTextBox>
         <StackPanel x:Name="grpLongOps" HorizontalAlignment="Right" Margin="0,10,10,257" Width="336">
         </StackPanel>
+        <Label x:Name="label" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Content="Log Level" Margin="0,0,284,30" Height="38"/>
+        <CheckBox x:Name="chkLockScroll" Content="Lock Scroll" HorizontalAlignment="Right" Margin="0,685,194,96" Width="150" IsChecked="True"/>
+        <Slider x:Name="displayLogLevel" Margin="1294,749,108,30" RenderTransformOrigin="0.583,0.333" Maximum="5" Value="1"/>
+        <Label x:Name="label_Val" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Content="{Binding Value, ElementName=displayLogLevel}" Margin="0,0,26,30" Height="38" Width="56"/>
+
+
     </Grid>
 </Window>

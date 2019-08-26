@@ -291,6 +291,9 @@ namespace RobotoChatBot.Modules
             Roboto.Settings.stats.registerStatType("Games Ended", this.GetType(), System.Drawing.Color.Orange);
             Roboto.Settings.stats.registerStatType("Hands Played", this.GetType(), System.Drawing.Color.Olive);
             Roboto.Settings.stats.registerStatType("Packs Synced", this.GetType(), System.Drawing.Color.DarkBlue );
+            Roboto.Settings.stats.registerStatType("Packs Total", this.GetType(), System.Drawing.Color.LawnGreen, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Dormant Packs Removed", this.GetType(), System.Drawing.Color.Bisque);
+            Roboto.Settings.stats.registerStatType("Dormant Packs Total", this.GetType(), System.Drawing.Color.CadetBlue, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Bad Responses", this.GetType(), System.Drawing.Color.Olive);
             Roboto.Settings.stats.registerStatType("Active Games", this.GetType(), System.Drawing.Color.Green, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Active Players", this.GetType(), System.Drawing.Color.Blue, stats.displaymode.line, stats.statmode.absolute);
@@ -624,7 +627,7 @@ namespace RobotoChatBot.Modules
             }
             lo_bg.updateLongOp(localdata.backgroundChatsToProcess + 5);
 
-            //also do a quick check on the oldest 100 ordered by statusMiniCheckTime
+            //also do a quick check on the oldest x ordered by statusMiniCheckTime
             log("There are " + dataToMiniCheck.Count() + " games to quick-check. Checking oldest " + localdata.backgroundChatsToMiniProcess, logging.loglevel.normal);
             firstrec = true;
             foreach (mod_xyzzy_chatdata chatData in dataToMiniCheck.OrderBy(x => x.statusMiniCheckedTime).Take(localdata.backgroundChatsToMiniProcess))
@@ -638,6 +641,11 @@ namespace RobotoChatBot.Modules
                 firstrec = false;
                 lo_bg.addone();
             }
+
+            //check if we need to remove any dormant packs
+            localdata.removeDormantPacks();
+            lo_bg.addone();
+
             lo_bg.complete();
         }
 
@@ -1197,7 +1205,7 @@ namespace RobotoChatBot.Modules
                     Guid masterID = primaryPack.packID;
 
                     foreach(mod_xyzzy_card qc in localData.questions.Where(x => x.packID == masterID )) { qc.packID = primaryPackID; log(qc.ToString() + " has been shuffled", logging.loglevel.high); }
-                    foreach (mod_xyzzy_card qa in localData.answers.Where(x => x.packID == masterID)) { qa.packID = primaryPackID; log(qa.ToString() + " has been shuffled", logging.loglevel.high); }
+                    foreach(mod_xyzzy_card qa in localData.answers.Where(x => x.packID == masterID))    { qa.packID = primaryPackID; log(qa.ToString() + " has been shuffled", logging.loglevel.high); }
 
                     //swap any filters
                     foreach (chat c in Roboto.Settings.chatData)
@@ -1245,56 +1253,7 @@ namespace RobotoChatBot.Modules
                 }
                 lo_s.addone();
             }
-
-            //make sure our local pack filter list is fully populated 
-            //MOVED TO Settings.Validate localData.startupChecks();
-
             
-            //todo - this should be a general pack remove option
-            //DATAFIX: rename & replace any "good" packs from when they were manually loaded.
-            //foreach (mod_xyzzy_card q in localData.questions.Where(x => x.category == " Image1").ToList()) { q.category = "Image1"; }
-            //foreach (mod_xyzzy_card a in localData.answers.Where(x => x.category == " Image1").ToList()) { a.category = "Image1"; }
-            //localData.packs.RemoveAll(x => x.name == " Image1");
-            //not required now. Need to do a proper migration script at some point for merging / deleting packs. 
-            //foreach (chat c in Roboto.Settings.chatData)
-            //{
-            //    mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
-            //    if (chatData != null)
-            //    {
-            //        //if (chatData.packFilter.Contains("Base") || chatData.packFilter.Contains(" Base")) { chatData.packFilter.Add("Cards Against Humanity"); }
-            //        //if (chatData.packFilter.Contains("CAHe1") || chatData.packFilter.Contains(" CAHe1")) { chatData.packFilter.Add("Expansion 1 - CAH"); }
-            //        //if (chatData.packFilter.Contains("CAHe2") || chatData.packFilter.Contains(" CAHe2")) { chatData.packFilter.Add("Expansion 2 - CAH"); }
-            //        //if (chatData.packFilter.Contains("CAHe3") || chatData.packFilter.Contains(" CAHe3")) { chatData.packFilter.Add("Expansion 3 - CAH"); }
-            //        //if (chatData.packFilter.Contains("CAHe4") || chatData.packFilter.Contains(" CAHe4")) { chatData.packFilter.Add("Expansion 4 - CAH"); }
-            //        //if (chatData.packFilter.Contains("CAHe5") || chatData.packFilter.Contains(" CAHe5")) { chatData.packFilter.Add("CAH Fifth Expansion"); }
-            //        //if (chatData.packFilter.Contains("CAHe6") || chatData.packFilter.Contains(" CAHe6")) { chatData.packFilter.Add("CAH Sixth Expansion"); }
-            //        if (chatData.packFilter.Contains(" Image1")) { chatData.packFilter.Add("Image1"); }
-
-            //        chatData.packFilter.RemoveAll(x => x == " Image1");
-            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "Base");
-            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe1");
-            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe2");
-            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe3");
-            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe4");
-            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe5");
-            //        //chatData.packFilter.RemoveAll(x => x.Trim() == "CAHe6");
-            //    }
-            //}
-
-
-            //MOVED - done as part of regular background sync
-            //localData.packSyncCheck();
-
-            //Check for null-IDd packs and report
-            //TODO - move to coredata
-            List<Helpers.cardcast_pack> nullIDPacks = localData.packs.Where(x => string.IsNullOrEmpty(x.packCode)).ToList();
-            Roboto.log.log("There are " + nullIDPacks.Count() + " packs without pack codes." +
-                (nullIDPacks.Count() == 0 ? "": " Try rename an existing pack in the XML file to the same name, or add the pack code to this pack - should merge in next time a Sync is called. " )
-                , nullIDPacks.Count() > 0?logging.loglevel.critical:  logging.loglevel.normal);
-            foreach (Helpers.cardcast_pack pack in nullIDPacks)
-            {
-                Roboto.log.log("Pack " + pack.name + " has no pack code ", logging.loglevel.critical);
-            }
             lo_s.complete();
             
             

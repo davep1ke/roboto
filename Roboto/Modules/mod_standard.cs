@@ -166,7 +166,7 @@ namespace RobotoChatBot.Modules
             //do general housekeeping
             Roboto.Settings.stats.houseKeeping();
             Roboto.Settings.expectedReplyBackgroundProcessing();
-            
+            Roboto.Settings.removeDormantChats();
 
         }
 
