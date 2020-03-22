@@ -197,8 +197,7 @@ namespace RobotoChatBot
                 }
                 else
                 {
-                    //todo - if the XML is bad, it will trigger here. Need a way to display to the user. 
-                    Console.WriteLine(e.ToString());
+                    Roboto.log.log("Bad XML File - please fix and restart. " + e.ToString(), logging.loglevel.critical);
                 }
             }
             return null;
@@ -718,7 +717,6 @@ namespace RobotoChatBot
             }
             
             //use datepart to keep a file for each day. 
-            //TODO - tidy up files older than x days. 
             string datePart = DateTime.Now.ToString("yyyy-MM-dd") + ".xml";
 
             //delete our old backup

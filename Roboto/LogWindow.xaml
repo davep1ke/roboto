@@ -6,15 +6,19 @@
         Title="MainWindow" Height="847.926" Width="1564.778" 
         Closing="Window_Closing_1">
 
-    <Grid>
+    <Grid Margin="0,10,0,8">
         <RichTextBox x:Name="LogText" Margin="10,10,351,10" Background="Black" Block.LineHeight="1.333">
         </RichTextBox>
-        <StackPanel x:Name="grpLongOps" HorizontalAlignment="Right" Margin="0,10,10,257" Width="336">
+        <StackPanel x:Name="grpLongOps" HorizontalAlignment="Right" Margin="0,10,10,205" Width="336">
         </StackPanel>
-        <Label x:Name="label" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Content="Log Level" Margin="0,0,284,30" Height="38"/>
-        <CheckBox x:Name="chkLockScroll" Content="Lock Scroll" HorizontalAlignment="Right" Margin="0,685,194,96" Width="150" IsChecked="True"/>
-        <Slider x:Name="displayLogLevel" Margin="1294,749,108,30" RenderTransformOrigin="0.583,0.333" Maximum="5" Value="1"/>
-        <Label x:Name="label_Val" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Content="{Binding Value, ElementName=displayLogLevel}" Margin="0,0,26,30" Height="38" Width="56"/>
+        <Label x:Name="label" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Content="Log Level" Margin="0,0,283,53" Height="38"/>
+
+        <CheckBox x:Name="chkLockScroll" Content="Lock Scroll" VerticalAlignment="Bottom" HorizontalAlignment="Right"  Margin="0,0,193,96" Width="150" IsChecked="True" Height="24"/>
+        <Slider x:Name="displayLogLevel" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,125,67" RenderTransformOrigin="0.583,0.333" Maximum="4" Value="1" Width="146" SmallChange="1" TickPlacement="BottomRight" IsSnapToTickEnabled="True" ValueChanged="displayLogLevel_ValueChanged"/>
+        <Label x:Name="label_Val" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Content="{Binding Value, ElementName=displayLogLevel}" Margin="0,0,101,53" Height="38" Width="16"/>
+        <Button x:Name="btn_exit" Content="Exit" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Margin="0,0,8,0" Width="75" Click="btn_exit_Click"/>
+        <Label x:Name="label_Val_Text" HorizontalAlignment="Right" VerticalAlignment="Bottom"  Content="Normal" Margin="0,0,8,53" Height="38" Width="92"/>
+
 
 
     </Grid>

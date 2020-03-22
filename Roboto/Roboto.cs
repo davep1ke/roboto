@@ -32,6 +32,7 @@ namespace RobotoChatBot
         /// </summary>
         public static string context = null;
         public static List<string> pluginFilter = new List<string>();
+        public static bool quickStart = false;
         
         private enum argtype {def, context, plugin };
         
@@ -59,6 +60,9 @@ namespace RobotoChatBot
                                 break;
                             case "-plugin":
                                 mode = argtype.plugin;
+                                break;
+                            case "-quickstart":
+                                quickStart = true;
                                 break;
                         }
                         break;
@@ -115,6 +119,12 @@ namespace RobotoChatBot
             
             log.log("Loading Settings", logging.loglevel.high);
             Settings = settings.load();
+            if (Settings == null) {
+                logWindow.unlockExit();
+                log.log("Failed to load settings file - aborting. Please close the window", logging.loglevel.critical);
+                return;
+            } //unable to load - abort. 
+
             lo_s.addone();
 
             Settings.validate();
@@ -125,8 +135,14 @@ namespace RobotoChatBot
 
 
             log.log("I am " + Settings.botUserName, logging.loglevel.critical, Colors.White, false, true);
-            Settings.startupChecks();
 
+            //setup TLS 1.2
+            ServicePointManager.Expect100Continue = true;
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+            //only use for debug: 
+            if (!quickStart) { Settings.startupChecks(); }
+            
 
             //AT THIS POINT THE GAME WILL START PROCESSING INSTRUCTIONS!!!
             //DONT GO PAST IN STARTUP TEST MODE
@@ -158,13 +174,18 @@ namespace RobotoChatBot
                     }
                     lastUpdate = DateTime.Now;
 
-                    //TODO - move this code to the webAPI class
+                    //TODO - move this code to the TelegramAPI class
                     string updateURL = Settings.telegramAPIURL + Settings.telegramAPIKey + "/getUpdates" +
                         "?offset=" + Settings.getUpdateID() +
                         "&timeout=" + Settings.waitDuration +
                         "&limit=10";
 
+
+
                     HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
+
+
+
                     log.log(".", logging.loglevel.low, Colors.White, true);
                     request.Method = "GET";
                     request.ContentType = "application/json";

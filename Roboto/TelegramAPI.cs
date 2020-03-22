@@ -283,11 +283,9 @@ namespace RobotoChatBot
             string responseObject = "";
             using (var client = new HttpClient())
             {
-
                 try
                 {
                     HttpResponseMessage response;
-
 
                     using (var form = new MultipartFormDataContent())
                     {
@@ -306,7 +304,7 @@ namespace RobotoChatBot
                             form.Add(c, "photo", fileName);
                         }
 
-                        Roboto.log.log("Sending Message: " + postURL + "\n\r" + logtxt , logging.loglevel.low);
+                        Roboto.log.log("Sending Message: " + postURL + "\n\r" + logtxt, logging.loglevel.low);
 
                         response = await client.PostAsync(uri, form).ConfigureAwait(false);
 

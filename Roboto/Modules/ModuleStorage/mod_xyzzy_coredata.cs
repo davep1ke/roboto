@@ -502,8 +502,11 @@ namespace RobotoChatBot.Modules
 
                     //remove any that are contain codes that somehow break the GODDAMN MS XML parser. APUC4 I'm looking at you...
                     int remq =  import_questions.RemoveAll(x => x.question.Contains("\u000e"));
+                    remq += import_questions.RemoveAll(x => x.question.Contains("&#x0"));
                     int rema = import_answers.RemoveAll(x => x.answer.Contains("\u000e"));
-                    
+                    rema += import_answers.RemoveAll(x => x.answer.Contains("&#x0"));
+
+
 
                     Guid l_packID = pack.packID;
                     List<cardcast_pack> matchingPacks = getPackFilterList().Where(x => x.packCode == packCode).ToList();

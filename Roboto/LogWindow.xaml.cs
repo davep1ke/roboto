@@ -198,17 +198,15 @@ namespace RobotoChatBot
                 //if called from the GUI thread.
                 try
                 {
-                    if (Roboto.Settings != null && (double)li.level > displayLogLevel.Value)
+                    if (Roboto.Settings == null || (double)li.level >= displayLogLevel.Value )  //if it's above our threshold, OR we havent loaded yet so can't get the threshold
                     {
 
-                        if (LogText.Document.Blocks.Count() > 100)
+                        if (LogText.Document.Blocks.Count() > 500)
                         {
                             LogText.Document.Blocks.Remove(LogText.Document.Blocks.FirstBlock);
                         }
                         
                         appendLog(li);
-                        
-
                     }
 
                 }
@@ -300,6 +298,18 @@ namespace RobotoChatBot
                     Roboto.shudownMainThread();
                     break;
             }
+
+        }
+
+        private void btn_exit_Click(object sender, RoutedEventArgs e)
+        {
+            this.Close();
+        }
+
+        private void displayLogLevel_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        {
+            string val = Enum.GetName(typeof(logging.loglevel), (int)e.NewValue); ;
+            if (label_Val_Text != null) { label_Val_Text.Content = val; }
 
         }
     }
