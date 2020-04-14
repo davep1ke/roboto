@@ -142,7 +142,19 @@ namespace RobotoChatBot
 
             //only use for debug: 
             if (!quickStart) { Settings.startupChecks(); }
-            
+
+
+            /*
+             * 
+             * TRIGGER THINGS IN DEBUG - TEMPORARY CODE, REMOVE
+             *             
+            #warning REMOVE THIS FUCKING CODE
+            while (1 == 1)
+            {
+                Settings.backgroundProcessing(true);
+            }
+             */
+
 
             //AT THIS POINT THE GAME WILL START PROCESSING INSTRUCTIONS!!!
             //DONT GO PAST IN STARTUP TEST MODE

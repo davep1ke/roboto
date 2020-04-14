@@ -20,6 +20,9 @@ namespace RobotoChatBot.Modules
     [Serializable]
     public class mod_xyzzy_chatdata : RobotoModuleChatDataTemplate
     {
+        private const string emoji_check = "\u2705";
+        private const string emoji_cross = "\u274C";
+
         public int maxPacksPerPage = 30;
 
         //core chat data
@@ -1681,13 +1684,14 @@ namespace RobotoChatBot.Modules
                 }
 
                 //add message to the response
-                if (packEnabled(pack.packID)) { response += "ON  "; }
-                else { response += "OFF "; }
+                string emoji = "";
+                if (packEnabled(pack.packID)) { emoji = emoji_check; }
+                else { emoji = emoji_cross; }
                 string cleanPackName = Helpers.common.removeMarkDownChars(pack.name);
-                response += cleanPackName + "\n\r";
+                response += emoji + cleanPackName + "\n\r";
             
                 //add item to the keyboard
-                keyboardResponse.Add(pack.name);
+                keyboardResponse.Add(emoji + " " + pack.name);
             }
 
             //paging

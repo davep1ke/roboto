@@ -298,7 +298,7 @@ namespace RobotoChatBot.Modules
         {
             
             //Loop through packs and cache anything removable
-            logging.longOp lo_find = new logging.longOp("Archive dormant packs - loop", packs.Count());
+            logging.longOp lo_archive = new logging.longOp("Archive packs", packs.Count());
             log("Scanning for dormant packs to remove", logging.loglevel.normal);
             //create a full list of packs, then remove by skimming through active chat data. 
             List<cardcast_pack> removablePacks = packs.ToList();
@@ -328,14 +328,13 @@ namespace RobotoChatBot.Modules
                 lo_dump.addone();
             }*/
 
-
-            log(removablePacks.Count().ToString() + " removable packs - remove primary", logging.loglevel.normal);
+            log(removablePacks.Count().ToString() + " total packs - removing primary CAH pack", logging.loglevel.verbose);
             removablePacks.RemoveAll(x => x.packID == mod_xyzzy.primaryPackID);//dont remove the primary pack
-            log(removablePacks.Count().ToString() + " removable packs - remove recent", logging.loglevel.normal);
+            log(removablePacks.Count().ToString() + " packs remain  - removing recently picked", logging.loglevel.verbose);
             removablePacks.RemoveAll(x => x.lastPickedDate > (DateTime.Now.Subtract(TimeSpan.FromDays(packDormantThresholdDays))));//dont remove anything picked in the lasts x days
-            log(removablePacks.Count().ToString() + " removable packs - remove active", logging.loglevel.normal);
+            log(removablePacks.Count().ToString() + " packs remain - removing active packs", logging.loglevel.verbose);
 
-            logging.longOp lo_scan = new logging.longOp("Archive dormant packs - scan chats", Roboto.Settings.chatData.Count(), lo_find) ;
+            logging.longOp lo_scan = new logging.longOp("Archive packs - scan", Roboto.Settings.chatData.Count(), lo_archive) ;
             foreach (chat c in Roboto.Settings.chatData)
             {
                 foreach (mod_xyzzy_chatdata cd in c.chatData.Where(x => x.GetType() == typeof(mod_xyzzy_chatdata)))
@@ -352,15 +351,16 @@ namespace RobotoChatBot.Modules
             }
             lo_scan.complete();
 
-            log(removablePacks.Count().ToString() + " removable packs remain", logging.loglevel.high);
+            log(removablePacks.Count().ToString() + " packs remain - adding cardcast failures back in", logging.loglevel.verbose);
+            removablePacks.AddRange(packs.Where(x => x.failCount > 20));
+            log(removablePacks.Count().ToString() + " removable packs ", logging.loglevel.normal);
             Roboto.Settings.stats.logStat(new statItem("Dormant Packs Total", typeof(mod_xyzzy), removablePacks.Count()));
             Roboto.Settings.stats.logStat(new statItem("Packs Total", typeof(mod_xyzzy), packs.Count()));
-            lo_find.complete();
-
+           
             removablePacks.OrderBy(x => x.lastPickedDate).ToList();
 
             //Now remove the oldest x packs
-            logging.longOp lo_remove = new logging.longOp("Remove dead packs", maxDormantPacksToRemovePerPass);
+            logging.longOp lo_remove = new logging.longOp("Remove dead packs", maxDormantPacksToRemovePerPass, lo_archive);
             int i = 0;
             while (
                 i < maxDormantPacksToRemovePerPass 
@@ -376,12 +376,13 @@ namespace RobotoChatBot.Modules
                 i++;
             }
             lo_remove.complete();
-            
+            lo_archive.complete();
         }
 
         private void removePack(cardcast_pack p)
         {
             log("Removing pack " + p.name + " - " + p.packID + " - " + p.packCode, logging.loglevel.high);
+
             logging.longOp lo_remove = new logging.longOp("Remove " + p.name, questions.Where(x => x.packID == p.packID).Count() + answers.Where(x => x.packID == p.packID).Count());
             int q = 0; int a = 0; int cn = 0;
             //remove from all filters
@@ -448,16 +449,6 @@ namespace RobotoChatBot.Modules
             }
             lo_sync.complete();
 
-            foreach (Helpers.cardcast_pack p in packs.Where(x => x.failCount > 5).ToList())
-            {
-                //TODO - lets remove the pack!
-
-    
-            }
-
-
-
-
         }
 
         
@@ -466,7 +457,7 @@ namespace RobotoChatBot.Modules
         /// </summary>
         /// <param name="packCode"></param>
         /// <param name="pack"></param>
-        /// <param name="response"> String containing details of the pack and cards added.String will be empty if import failed.</param>
+        /// <param name="response"> String containing details of the pack and cards added, or error if import failed.</param>
         /// <returns>success/fil</returns>
         public bool importCardCastPack(string packCode, out Helpers.cardcast_pack pack, out string response)
         {
@@ -495,23 +486,27 @@ namespace RobotoChatBot.Modules
                 {
                     response = "Failed to import pack from cardcast. Check that the code is valid";
                 }
+                else if (import_questions.Count() + import_answers.Count > 1500)
+                {
+                    response = "Pack contains far too many cards and can't // won't be imported. Try another fam.";
+                    success = false;
+                }
+
                 else
                 {
-                    //lets just check if the pack already exists? 
                     log("Retrieved " + import_questions.Count() + " questions and " + import_answers.Count() + " answers from Cardcast");
 
                     //remove any that are contain codes that somehow break the GODDAMN MS XML parser. APUC4 I'm looking at you...
-                    int remq =  import_questions.RemoveAll(x => x.question.Contains("\u000e"));
+                    int remq =  import_questions.RemoveAll(x => x.question.Contains("\u000e"));
                     remq += import_questions.RemoveAll(x => x.question.Contains("&#x0"));
                     int rema = import_answers.RemoveAll(x => x.answer.Contains("\u000e"));
                     rema += import_answers.RemoveAll(x => x.answer.Contains("&#x0"));
 
 
-
+                    //check if the pack already exists? 
                     Guid l_packID = pack.packID;
                     List<cardcast_pack> matchingPacks = getPackFilterList().Where(x => x.packCode == packCode).ToList();
 
-                    
 
                     if (matchingPacks.Count > 1)  // .Contains(pack.name))
                     {
