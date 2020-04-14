@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -486,15 +487,46 @@ namespace RobotoChatBot.Modules
                 {
                     response = "Failed to import pack from cardcast. Check that the code is valid";
                 }
-                else if (import_questions.Count() + import_answers.Count > 1500)
-                {
-                    response = "Pack contains far too many cards and can't // won't be imported. Try another fam.";
-                    success = false;
-                }
-
                 else
                 {
                     log("Retrieved " + import_questions.Count() + " questions and " + import_answers.Count() + " answers from Cardcast");
+
+                    if (import_questions.Count() + import_answers.Count > 1500)
+                    {
+                        log("Warning - Pack is very large", logging.loglevel.warn);
+                    }
+
+                    try
+                    {
+                        //Dump qs and as into a string, then try unserialise to check for bs that will break XML parsing. 
+                        using (StringWriter sw = new StringWriter())
+                        {
+                            XmlSerializer xsq = new XmlSerializer(typeof(List<Helpers.cardcast_question_card>));
+                            xsq.Serialize(sw, import_questions);
+                            using (StringReader sr = new StringReader(sw.ToString()))
+                            {
+                                List<Helpers.cardcast_question_card> newList = (List<Helpers.cardcast_question_card>)xsq.Deserialize(sr);
+                            }
+                        }
+
+                        using (StringWriter sw = new StringWriter())
+                        {
+                            XmlSerializer xsa = new XmlSerializer(typeof(List<Helpers.cardcast_answer_card>));
+                            xsa.Serialize(sw, import_answers);
+                            using (StringReader sr = new StringReader(sw.ToString()))
+                            {
+                                List<Helpers.cardcast_answer_card> newList = (List<Helpers.cardcast_answer_card>)xsa.Deserialize(sr);
+                            }
+                        }
+
+                    }
+                    catch (Exception e)
+                    {
+                        log("Error XML parsing response, probably a dodgy card. " + e.ToString(), logging.loglevel.warn);
+                        response = "There was an error importing the pack - it probably contains a dodgy card?";
+                        return false;
+                    }
+
 
                     //remove any that are contain codes that somehow break the GODDAMN MS XML parser. APUC4 I'm looking at you...
                     int remq =  import_questions.RemoveAll(x => x.question.Contains("\u000e"));

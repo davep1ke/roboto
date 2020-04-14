@@ -593,15 +593,15 @@ namespace RobotoChatBot.Modules
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
-                if (chatData != null && chatData.status != xyzzy_Statuses.Stopped)
+                if (chatData != null) // && chatData.status != xyzzy_Statuses.Stopped) - Check Stopped games as well, tidy up any ERs that are floating
                 { 
                     //do a full check at most once per day
                     if (chatData.statusCheckedTime < DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0)))
                     {
                         dataToCheck.Add(chatData);
                     }
-                    //do a mini check at most every 5 mins
-                    if (chatData.statusMiniCheckedTime < DateTime.Now.Subtract(new TimeSpan(0,0,5,0)))
+                    //do a mini check on active games at most every 15 mins
+                    if (chatData.status != xyzzy_Statuses.Stopped && chatData.statusMiniCheckedTime < DateTime.Now.Subtract(new TimeSpan(0,0,15,0)))
                     {
                         dataToMiniCheck.Add(chatData);
                     }
@@ -612,7 +612,7 @@ namespace RobotoChatBot.Modules
             log("There are " + dataToCheck.Count() + " games to check. Checking oldest " + localdata.backgroundChatsToProcess , logging.loglevel.normal);
             lo_bg.totalLength = 5 + localdata.backgroundChatsToProcess + localdata.backgroundChatsToMiniProcess;
 
-            //do a full check on the oldest 20 records. Dont check more than once per day. 
+            //do a full check on the oldest n records. Dont check more than once per day. 
             bool firstrec = true;
             foreach (mod_xyzzy_chatdata chatData in dataToCheck.OrderBy(x => x.statusCheckedTime).Take(localdata.backgroundChatsToProcess))
             {

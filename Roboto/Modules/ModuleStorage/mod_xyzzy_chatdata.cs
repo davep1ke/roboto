@@ -1233,6 +1233,7 @@ namespace RobotoChatBot.Modules
 
             if (fullCheck)
             {
+
                 //does the group still exist? Is the bot still in it?
                 int chatMemberCount = TelegramAPI.getChatMembersCount(chatID);
                 log("There are " + chatMemberCount + " people in current group", logging.loglevel.verbose);
@@ -1271,15 +1272,21 @@ namespace RobotoChatBot.Modules
                 wrapUp();
             }
 
-            //responses from non-existent players
+            //responses from non-existent players, or replies for stopped games
             foreach (ExpectedReply reply in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID ))
             {
                 if (reply.chatID == chatID)
                 {
-                    if (getPlayer(reply.userID) == null)
+                    if (getPlayer(reply.userID) == null) //player removed
                     {
                         repliesToRemove.Add(reply);
                     }
+                    /* TODO remove. Should be trapped later on in stopped state switch. 
+                     * #else if (status == xyzzy_Statuses.Stopped)  //game stopped
+                    {
+                        repliesToRemove.Add(reply);
+                        log("Removed expected reply " + reply.text + " from stopped game");
+                    }*/
                 }
             }
             foreach (ExpectedReply r in repliesToRemove)
@@ -1288,7 +1295,6 @@ namespace RobotoChatBot.Modules
                 log(" Removed expected reply " + r.userID + "\\" + r.pluginType.ToString() + "\\" + r.messageData + ".");
             }
 
-            
 
             //do we have any duplicate cards? rebuild the list
             int count_q = remainingQuestions.Count;

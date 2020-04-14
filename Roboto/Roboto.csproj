@@ -264,6 +264,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Roboto.ico" />
+    <Content Include="XSLTFile1.xslt" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="LogWindow.xaml">

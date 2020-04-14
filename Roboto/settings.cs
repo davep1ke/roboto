@@ -421,12 +421,12 @@ namespace RobotoChatBot
             
 
             RecentChatMembers.RemoveAll(x => x.chatID == x.userID); //TODO <- this should be a startup housekeeping check only. 
-
-            //TODO - are we calling this whole thing every loop at the moment? Move to mod_standard.background?  
+ 
             //Remove any stale presence info
             RecentChatMembers.RemoveAll(x => x.lastSeen < DateTime.Now.Subtract(new TimeSpan(chatPresenceExpiresAfterHours, 0, 0)));
             
             Roboto.log.log("There are " + expectedReplies.Count() + " expected replies on the stack", logging.loglevel.verbose);
+            Roboto.Settings.stats.logStat(new statItem("Expected Replies", typeof(mod_standard),expectedReplies.Count()));
 
             //main processing
             try

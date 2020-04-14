@@ -86,6 +86,7 @@ namespace RobotoChatBot.Modules
 
         public override void initData()
         {
+            Roboto.Settings.stats.registerStatType("Expected Replies", this.GetType(), System.Drawing.Color.LawnGreen, stats.displaymode.line, stats.statmode.absolute);
             try
             {
                 //TODO - should move away from needing this local object. 

@@ -265,7 +265,7 @@ namespace RobotoChatBot
             List<statType> matches = new List<statType>();
             try
             {
-                Regex r = new Regex(regex);
+                Regex r = new Regex(regex, RegexOptions.IgnoreCase);
                 foreach (statType t in statsList)
                 {
 
