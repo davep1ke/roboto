@@ -1560,7 +1560,7 @@ namespace RobotoChatBot.Modules
         { 
             mod_xyzzy_coredata localData = getLocalData();
 
-            List<Helpers.cardcast_pack> matchingPatcks = localData.getPackFilterList().Where(x => x.name == packName).ToList();
+            List<Helpers.cardcast_pack> matchingPacks = localData.getPackFilterList().Where(x => x.name == packName.Substring(2)).ToList(); //remove the first two chars, as they are the emoji and a space
 
             //did they actually give us an answer? 
             if (m.text_msg == "All")
@@ -1579,14 +1579,14 @@ namespace RobotoChatBot.Modules
             {
                 packFilterIDs.Clear();
             }
-            else if (matchingPatcks.Count == 0 )//      .Contains(packName))
+            else if (matchingPacks.Count == 0 )//      .Contains(packName))
             {
                 TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", m.userFullName,  false, m.message_id);
             }
             else
             {
                 //get the pack 
-                Helpers.cardcast_pack chosenPack = matchingPatcks[0];
+                Helpers.cardcast_pack chosenPack = matchingPacks[0];
 
                 //toggle the pack
                 if (packFilterIDs.Contains(chosenPack.packID))
