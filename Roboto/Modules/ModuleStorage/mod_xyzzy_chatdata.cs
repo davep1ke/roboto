@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Serialization;
+using System.Windows.Media.Animation;
 
 namespace RobotoChatBot.Modules
 {
@@ -69,7 +70,6 @@ namespace RobotoChatBot.Modules
 
         public override bool isPurgable()
         {
-            
             if (statusChangedTime > DateTime.Now.AddDays(Roboto.Settings.killInactiveChatsAfterXDays * -1 )) { return false; }
             return true;
         }
@@ -87,11 +87,11 @@ namespace RobotoChatBot.Modules
             Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
         }
 
-        //when the status is changed, make a note of the date.
+        /*/when the status is changed, make a note of the date.
         private void statusChanged()
         {
             statusChangedTime = DateTime.Now;
-        }
+        }*/
 
         public mod_xyzzy_player getPlayer(long playerID)
         {
@@ -1209,7 +1209,7 @@ namespace RobotoChatBot.Modules
         /// </summary>
         internal void check(bool fullCheck = false)
         {
-            log("Performing " + (fullCheck?"Full":"Quick") + " status check for " + chatID + " " + getChat().chatTitle + ".", logging.loglevel.low);
+            log("Performing " + (fullCheck?"Full":"Quick") + " status check for " + chatID + " " + getChat().chatTitle + " - status=" + status.ToString() +  ".", logging.loglevel.low);
 
             statusMiniCheckedTime = DateTime.Now;
             if (fullCheck) { statusCheckedTime = DateTime.Now; }
@@ -1281,12 +1281,7 @@ namespace RobotoChatBot.Modules
                     {
                         repliesToRemove.Add(reply);
                     }
-                    /* TODO remove. Should be trapped later on in stopped state switch. 
-                     * #else if (status == xyzzy_Statuses.Stopped)  //game stopped
-                    {
-                        repliesToRemove.Add(reply);
-                        log("Removed expected reply " + reply.text + " from stopped game");
-                    }*/
+
                 }
             }
             foreach (ExpectedReply r in repliesToRemove)
@@ -1306,10 +1301,6 @@ namespace RobotoChatBot.Modules
             packFilterIDs = packFilterIDs.Distinct().ToList();
 
             //current status
-            //TODO - pad this out more
-            //TODO - call regularly. 
-            //TODO - does the tzar exist?
-            //TODO - check when removing the tzar
             switch (status)
             {
                 case xyzzy_Statuses.Question:
@@ -1467,7 +1458,23 @@ namespace RobotoChatBot.Modules
                     }
 
                     break;
-                    
+
+                //for setup statuses, if we are idle for > 24h then kill the game. 
+                case xyzzy_Statuses.cardCastImport:
+                case xyzzy_Statuses.Invites:
+                case xyzzy_Statuses.SetGameLength:
+                case xyzzy_Statuses.setMaxHours:
+                case xyzzy_Statuses.setMinHours:
+                case xyzzy_Statuses.setPackFilter:
+                case xyzzy_Statuses.useDefaults:
+                    DateTime cutoff = DateTime.Now.Subtract(TimeSpan.FromDays(1));
+                    if (statusChangedTime < cutoff)
+                    {
+                        reset();
+                    }
+                    break;
+
+
                 case xyzzy_Statuses.Stopped:
                     //do we have any game related ERs outstanding? 
                     Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));

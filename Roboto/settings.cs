@@ -324,33 +324,25 @@ namespace RobotoChatBot
             {
                 //send the message.  
                 messageID = e.sendMessage();
-                //queue if it was a question
-                if (e.expectsReply) { expectedReplies.Add(e); }
-            }
-            //If they have messages in the queue, and we want to jump ahead, has one already been asked, or are we open? 
-            else if (trySendImmediately && !userHasOutstandingQuestions(e.userID))
-            {
-                Roboto.log.log("Message jumping queue due to immediatemode", logging.loglevel.verbose);
-                //send the message, grab the ID. 
-                messageID = e.sendMessage();
-                //did it work/
-                if (messageID == long.MinValue)
+
+                //TODO - I dont see how try send immediately ever worked? 
+                if (trySendImmediately && messageID == long.MinValue)
                 {
                     Roboto.log.log("Tried to send message using immediateMode, but it failed.", logging.loglevel.warn);
                     return messageID;
                 }
 
                 //queue if it was a question
-                else if (e.expectsReply) { expectedReplies.Add(e); }
+                if (e.expectsReply) { expectedReplies.Add(e); }
             }
             else
             {
-                //chuck it on the stack if its going to be queued
+                //chuck it on the queue
                 expectedReplies.Add(e);
             }
 
-            //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
-            expectedReplyBackgroundProcessing();
+            //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. Potentially recursive.
+            trySendOutstandingMessagesForUser(e.userID);
 
             return messageID;
 
@@ -464,51 +456,58 @@ namespace RobotoChatBot
 
                 foreach (long userID in userIDs)
                 {
-                    bool retry = true;
-                    while (retry)
-                    {
-                        //for each user, check if a message has been sent, and track the oldest message
-                        ExpectedReply oldest = null;
-                        List<ExpectedReply> userReplies = expectedReplies.Where(e => e.userID == userID).ToList();
-
-                        //try find a message to send. Drop out if we already have a sent message on the stack (waiting for a reply)
-                        bool sent = false;
-                        foreach (ExpectedReply e in userReplies)
-                        {
-                            if (e.isSent()) { sent = true; } //message is waiting
-                            else
-                            {
-                                if (oldest == null || e.timeLogged < oldest.timeLogged)
-                                {
-                                    oldest = e;
-                                }
-                            }
-                        }
-
-                        //send the message if neccessary
-                        if (!sent && oldest != null)
-                        {
-                            oldest.sendMessage();
-                            if (!oldest.expectsReply)
-                            {
-                                expectedReplies.Remove(oldest);
-
-                            }
-                            //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
-
-                        }
-
-                        //what do we do next? 
-                        if (sent == true) { retry = false; } // drop out if we have a message awaiting an answer
-                        else if (oldest == null) { retry = false; } // drop out if we have no messages to send
-                        else if (oldest.expectsReply) { retry = false; } //drop out if we sent a message that expects a reply
-
-                    }
+                    trySendOutstandingMessagesForUser(userID);
                 }
             }
             catch (Exception e)
             {
                 Roboto.log.log("Error during expected reply housekeeping " + e.ToString(), logging.loglevel.critical);
+            }
+
+        }
+
+        /// <summary>
+        /// Check if a user has any outstanding messages and try send one. 
+        /// </summary>
+        /// <param name="userID"></param>
+        private void trySendOutstandingMessagesForUser(long userID)
+        {
+            bool retry = true;
+            while (retry)
+            {
+                //for each user, check if a message has been sent, and track the oldest message
+                ExpectedReply oldest = null;
+                List<ExpectedReply> userReplies = expectedReplies.Where(e => e.userID == userID).ToList();
+
+                //try find a message to send. Drop out if we already have a sent message on the stack (waiting for a reply)
+                bool sent = false;
+                foreach (ExpectedReply e in userReplies)
+                {
+                    if (e.isSent()) { sent = true; } //message is waiting
+                    else
+                    {
+                        if (oldest == null || e.timeLogged < oldest.timeLogged)
+                        {
+                            oldest = e;
+                        }
+                    }
+                }
+
+                //send the message if neccessary
+                if (!sent && oldest != null)
+                {
+                    oldest.sendMessage();
+                    if (!oldest.expectsReply)
+                    {
+                        expectedReplies.Remove(oldest);
+                    }
+                    //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
+                }
+
+                //what do we do next? 
+                if (sent == true) { retry = false; } // drop out if we have a message awaiting an answer
+                else if (oldest == null) { retry = false; } // drop out if we have no messages to send
+                else if (oldest.expectsReply) { retry = false; } //drop out if we sent a message that expects a reply
             }
         }
 
