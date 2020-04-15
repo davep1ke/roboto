@@ -593,15 +593,15 @@ namespace RobotoChatBot.Modules
             foreach (chat c in Roboto.Settings.chatData)
             {
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
-                if (chatData != null) // && chatData.status != xyzzy_Statuses.Stopped) - Check Stopped games as well, tidy up any ERs that are floating
+                if (chatData != null)
                 { 
-                    //do a full check at most once per day
-                    if (chatData.statusCheckedTime < DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0)))
+                    //do a full check (incl. getting group count to check access) at most once per day. Dont full check stopped games
+                    if (chatData.statusCheckedTime < DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0)) && chatData.status != xyzzy_Statuses.Stopped)
                     {
                         dataToCheck.Add(chatData);
                     }
                     //do a mini check on active games at most every 15 mins
-                    if (chatData.status != xyzzy_Statuses.Stopped && chatData.statusMiniCheckedTime < DateTime.Now.Subtract(new TimeSpan(0,0,15,0)))
+                    else if (chatData.statusMiniCheckedTime < DateTime.Now.Subtract(new TimeSpan(0,0,15,0)))
                     {
                         dataToMiniCheck.Add(chatData);
                     }
