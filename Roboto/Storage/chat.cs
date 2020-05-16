@@ -1,4 +1,5 @@
-﻿using System;
+﻿using RobotoChatBot.Modules;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -32,11 +33,20 @@ namespace RobotoChatBot
         /// </summary>
         public void initPlugins()
         {
-            //TODO - Activator stuff ?
-            foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
+            foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins.Where(p => p.pluginChatDataType != null))
             {
-                plugin.initChatData(this);
+                //do we already have the chatData?    
+                RobotoModuleChatDataTemplate existing = (RobotoModuleChatDataTemplate)getPluginData(plugin.pluginChatDataType, true);
+                if (existing == null)
+                {
+                    RobotoModuleChatDataTemplate data = plugin.initChatPluginData(this);
+                    data.chatID = chatID;
+                    chatData.Add(data);
+
+                }
+
             }
+
         }
 
         public void resetLastUpdateTime()
@@ -45,26 +55,7 @@ namespace RobotoChatBot
         }
 
 
-        private void addChatData(Modules.RobotoModuleChatDataTemplate data)
-        {
-            data.chatID = this.chatID;
-            //replace current Chat data, or add if doesnt exist
-            Modules.RobotoModuleChatDataTemplate found = null;
-            foreach (Modules.RobotoModuleChatDataTemplate current in chatData)
-            {
-                if (current.GetType() == data.GetType())
-                {
-                    found = current;
-                }
-            }
-            if (found != null)
-            {
-                Roboto.log.log("Chat data Already exists!");
-                throw new InvalidOperationException("Chat data Already exists!");
-            }
 
-            chatData.Add(data);
-        }
 
         public T getPluginData<T>()
         {

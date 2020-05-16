@@ -358,19 +358,6 @@ namespace RobotoChatBot.Modules
         }
 
 
-        public override void initChatData(chat c)
-        {
-            mod_steam_chat_data chatData = c.getPluginData<mod_steam_chat_data>();
-
-            if (chatData == null)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                chatData = new mod_steam_chat_data();
-                c.addChatData(chatData);
-            }
-
-        }
-        
 
         public override bool chatEvent(message m, chat c = null)
         {

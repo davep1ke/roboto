@@ -62,18 +62,6 @@ namespace RobotoChatBot.Modules
         }
 
 
-        public override void initChatData(chat c)
-        {
-            mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
-           
-            if (chatData == null)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                chatData = new mod_xyzzy_chatdata();
-                c.addChatData(chatData);
-            }
-        }
-
         /// <summary>
         /// Process chat messages
         /// </summary>
@@ -92,14 +80,8 @@ namespace RobotoChatBot.Modules
 
                 if (chatData == null)
                 {
-                    log("Chatdata doesnt exist! creating.", logging.loglevel.high);
-                    initChatData(c);
-                    chatData = c.getPluginData<mod_xyzzy_chatdata>();
-
-                    if (chatData == null)
-                    {
-                        log("Chatdata still doesnt exist! creating.", logging.loglevel.critical);
-                    }
+                    log("Chatdata doesnt exist!", logging.loglevel.critical);
+                    
                 }
 
                 if (m.text_msg.StartsWith("/xyzzy_start") && chatData.status == xyzzy_Statuses.Stopped)

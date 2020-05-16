@@ -101,18 +101,6 @@ namespace RobotoChatBot.Modules
         }
 
 
-        public override void initChatData(chat c)
-        {
-            mod_birthday_data chatData = c.getPluginData<mod_birthday_data>();
-           
-            if (chatData == null)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                chatData = new mod_birthday_data();
-                c.addChatData(chatData);
-            }
-        }
-
 
         public override bool chatEvent(message m, chat c = null)
         {

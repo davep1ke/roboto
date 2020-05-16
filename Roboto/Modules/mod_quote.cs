@@ -150,41 +150,6 @@ namespace RobotoChatBot.Modules
         }
 
 
-        public override void initChatData(chat c)
-        {
-            mod_quote_data chatData = c.getPluginData<mod_quote_data>();
-
-            if (chatData == null)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                chatData = new mod_quote_data();
-                c.addChatData(chatData);
-            }
-            else
-            {
-                //migrate any old chats to multi_quotes
-                //TODO - remove this once all migrated
-                #pragma warning disable 612, 618
-                foreach (mod_quote_quote q in chatData.quotes)
-                {
-                    //create a single line quote in multiquotes
-
-                    mod_quote_multiquote mq = new mod_quote_multiquote(new List<mod_quote_quote_line>() { new mod_quote_quote_line(q.by, q.text) });
-                    mq.on = q.on;
-                    chatData.multiquotes.Add(mq);
-                    log("Migrated quote for chat " + chatData.chatID + " to multiquote");
-                }
-                if (chatData.quotes.Count > 0)
-                {
-                    log("Migrated " + chatData.quotes.Count + " quotes for chat " + chatData.chatID);
-                    chatData.quotes.Clear();
-                }
-                #pragma warning restore 612, 618
-
-            }
-
-        }
-
         private bool addQuote(List<mod_quote_quote_line> lines, chat c)
         {
             mod_quote_data localChatData = c.getPluginData<mod_quote_data>();

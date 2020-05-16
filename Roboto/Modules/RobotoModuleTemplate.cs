@@ -68,11 +68,7 @@ namespace RobotoChatBot.Modules
         /// <summary>
         /// Initialise chat specific data. Chatdata object should already exist. 
         /// </summary>
-        public fvirtual void initChatData(chat c) { }
-        /// <summary>
-        /// If creating a sample settings file, populate some dummy data in a RobotoModuleDataTemplate class, and store in settings
-        /// using storeModuleData
-        /// </summary>
+
         public virtual void sampleData() { }
         /// <summary>
         /// Called whenever a chat message is sent, if Settings.RegisterChatHook has been called during init. 
@@ -176,19 +172,17 @@ namespace RobotoChatBot.Modules
         }
 
 
-/*        public void initChatPluginData(chat chat)
+        public RobotoModuleChatDataTemplate initChatPluginData(chat chat)
         {
 
             if (pluginChatDataType != null)
             {
-                RobotoModuleChatDataTemplate chatData = chat.getPluginData(pluginChatDataType);
-                if (chatData == null || !chatData.isValid())
-                {
-                    
-                    Console.WriteLine("chat data was invalid!");
-                    throw new InvalidOperationException("Chat Data was Invalid");
-                }
+                return (Modules.RobotoModuleChatDataTemplate)Activator.CreateInstance(pluginChatDataType);
             }
-        }*/
+            else
+            {
+                return null;
+            }
+        }
     }
 }

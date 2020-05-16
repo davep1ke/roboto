@@ -87,17 +87,6 @@ namespace RobotoChatBot.Modules
             Roboto.Settings.stats.registerStatType("Expected Replies", this.GetType(), System.Drawing.Color.LawnGreen, stats.displaymode.line, stats.statmode.absolute);
         }
 
-        public override void initChatData(chat c)
-        {
-            mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
-
-            if (chatData == null)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                chatData = new mod_standard_chatdata();
-                c.addChatData(chatData);
-            }
-        }
 
         public override string getMethodDescriptions()
         {
@@ -441,15 +430,6 @@ namespace RobotoChatBot.Modules
         {
             chat c = Chats.getChat(chatID);
             mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
-
-            if (chatData == null)
-            {
-                //create the chat data. Get the plugin instance (we are in a static method). 
-                RobotoModuleTemplate plugin = Plugins.getPlugin(typeof(mod_standard));
-                plugin.initChatData(c);
-                chatData = c.getPluginData<mod_standard_chatdata>();
-
-            }
 
             startQuietHours = chatData.quietHoursStartTime;
             endQuietHours = chatData.quietHoursEndTime;
