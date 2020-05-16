@@ -19,7 +19,7 @@ namespace RobotoChatBot.Modules
     {
         private static mod_steam_core_data getLocalData()
         {
-            mod_steam_core_data localData = (mod_steam_core_data)Roboto.Settings.getPluginData<mod_steam_core_data>();
+            mod_steam_core_data localData = (mod_steam_core_data)Plugins.getPluginData<mod_steam_core_data>();
             return localData;
         }
 

@@ -23,7 +23,7 @@ namespace RobotoChatBot.Modules
 
         public chat getChat()
         {
-            return Roboto.Settings.getChat(chatID);
+            return Chats.getChat(chatID);
 
         }
         /// <summary>

@@ -37,7 +37,7 @@ namespace RobotoChatBot.Modules
             {
                 message += b.birthday.ToString("\n\r" + "yyyy-MM-dd") + "\t\t - *" + b.name + "*";
             }
-            TelegramAPI.SendMessage(chatID, message, null, true);
+            Messaging.SendMessage(chatID, message, null, true);
         }
 
         /// <summary>
@@ -71,7 +71,6 @@ namespace RobotoChatBot.Modules
     
     public class mod_birthday : RobotoModuleTemplate
     {
-        private mod_birthday_coredata localData;
 
         public override void init()
         {
@@ -101,21 +100,6 @@ namespace RobotoChatBot.Modules
 
         }
 
-        public override void initData()
-        {
-            try
-            {
-                localData = Roboto.Settings.getPluginData<mod_birthday_coredata>();
-            }
-            catch (InvalidDataException)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                localData = new mod_birthday_coredata();
-                sampleData();
-                Roboto.Settings.registerData(localData);
-            }
-
-        }
 
         public override void initChatData(chat c)
         {
@@ -139,12 +123,12 @@ namespace RobotoChatBot.Modules
 
                 if (m.text_msg.StartsWith("/birthday_add"))
                 {
-                    TelegramAPI.GetExpectedReply(m.chatID, m.userID,  "Whose birthday do you want to add?", true, this.GetType(), "ADD");
+                    Messaging.SendQuestion(m.chatID, m.userID,  "Whose birthday do you want to add?", true, this.GetType(), "ADD");
                     processed = true;
                 }
                 else if (m.text_msg.StartsWith("/birthday_remove"))
                 {
-                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Whose birthday do you want to remove?", true, this.GetType(), "REMOVE");
+                    Messaging.SendQuestion(m.chatID, m.userID, "Whose birthday do you want to remove?", true, this.GetType(), "REMOVE");
                     processed = true;
                 }
 
@@ -160,13 +144,13 @@ namespace RobotoChatBot.Modules
 
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
-            chat c = Roboto.Settings.getChat(e.chatID);
+            chat c = Chats.getChat(e.chatID);
             mod_birthday_data chatData = c.getPluginData<mod_birthday_data>();
 
             if (e.messageData == "ADD")
             {
                 //reply to add word
-                TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What is their Birthday? (DD-MON-YYYY format, e.g. 01-JAN-1900)", true, this.GetType(), "ADD2-" + m.text_msg);
+                Messaging.SendQuestion(e.chatID, m.userID, "What is their Birthday? (DD-MON-YYYY format, e.g. 01-JAN-1900)", true, this.GetType(), "ADD2-" + m.text_msg);
                 return true;
             }
 
@@ -179,12 +163,12 @@ namespace RobotoChatBot.Modules
                 {
                     mod_birthday_birthday data = new mod_birthday_birthday(uname, birthday);
                     addBirthday(data, c );
-                    TelegramAPI.SendMessage(e.chatID, "Added " + uname + "'s Birthday (" + birthday.ToString("yyyy-MM-dd") + ")");
+                    Messaging.SendMessage(e.chatID, "Added " + uname + "'s Birthday (" + birthday.ToString("yyyy-MM-dd") + ")");
                 }
                 else
                 {
                     Console.WriteLine("Failed to add birthday");
-                    TelegramAPI.SendMessage(m.chatID, "Failed to add birthday");
+                    Messaging.SendMessage(m.chatID, "Failed to add birthday");
                 }
                 return true;
             }
@@ -193,7 +177,7 @@ namespace RobotoChatBot.Modules
             {
 
                 bool success = removeBirthday(m.text_msg, c);
-                TelegramAPI.SendMessage(m.chatID, "Removed birthday for " + m.text_msg + " " + (success ? "successfully" : "but fell on my ass"));
+                Messaging.SendMessage(m.chatID, "Removed birthday for " + m.text_msg + " " + (success ? "successfully" : "but fell on my ass"));
                 return true;
             }
             return false;
@@ -215,7 +199,7 @@ namespace RobotoChatBot.Modules
                     {
                         if (b.birthday.Day == DateTime.Now.Day && b.birthday.Month == DateTime.Now.Month)
                         {
-                            TelegramAPI.SendMessage(c.chatID, "Happy Birthday to " + b.name + "!");
+                            Messaging.SendMessage(c.chatID, "Happy Birthday to " + b.name + "!");
                         }
                     }
 

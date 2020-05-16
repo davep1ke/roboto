@@ -100,7 +100,7 @@ namespace RobotoChatBot
         public long sendMessage()
         {
             //lets restamp the users chat Presence (in case it took a long time on the queue)
-            Roboto.Settings.markPresence(userID, chatID, userName);
+            Presence.markPresence(userID, chatID, userName);
             outboundMessageID = TelegramAPI.postExpectedReplyToPlayer(this);
 
             timeSentToUser = DateTime.Now;

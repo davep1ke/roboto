@@ -100,10 +100,10 @@ namespace RobotoChatBot.Helpers
                 //is the start or the end next? 
                 TimeSpan timeToStart = startQuietHours.Subtract(currentTimePart);
                 if (timeToStart == TimeSpan.Zero) { timeToStart = oneDay; }
-                if (timeToStart < TimeSpan.Zero) { timeToStart = timeToStart + oneDay; }
+                if (timeToStart < TimeSpan.Zero) { timeToStart += oneDay; }
                 TimeSpan timeToEnd = endQuietHours.Subtract(currentTimePart);
                 if (timeToEnd == TimeSpan.Zero) { timeToEnd = oneDay; }
-                if (timeToEnd < TimeSpan.Zero) { timeToEnd = timeToEnd + oneDay; }
+                if (timeToEnd < TimeSpan.Zero) { timeToEnd += oneDay; }
 
                 //Roboto.log.log("Currently " + endTime.ToString("f") + (timeToStart < timeToEnd? "(L)" : "(Q)")  + ". Start is in " + timeToStart.ToString("c") + ", end in " + timeToEnd.ToString("c") + ". " + timeToAdd.ToString("c") + " remaining" , logging.loglevel.verbose);
                 

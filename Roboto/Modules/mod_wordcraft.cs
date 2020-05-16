@@ -15,15 +15,16 @@ namespace RobotoChatBot.Modules
     [Serializable]
     public class mod_wordcraft_data : RobotoModuleDataTemplate
     {
-        public List<String> words = new List<String>();
-        //internal mod_wordcraft_data() { }
+        public List<String> words = new List<String>()
+        {
+              "Bilge","Rabbit","Moose","Ramp","Clown","Glimp","Hop","Mop"
+        };
     }
 
     
     public class mod_wordcraft : RobotoModuleTemplate
     {
-        private mod_wordcraft_data localData;
-
+      
         public override void init()
         {
             pluginDataType = typeof(mod_wordcraft_data);
@@ -49,22 +50,6 @@ namespace RobotoChatBot.Modules
 
         }
 
-        public override void initData()
-        {
-            try
-            {
-                localData = Roboto.Settings.getPluginData<mod_wordcraft_data>();
-            }
-            catch (InvalidDataException)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                localData = new mod_wordcraft_data();
-                sampleData();
-                Roboto.Settings.registerData(localData);
-            }
-
-        }
-        
       
         public override bool chatEvent(message m, chat c = null)
         {
@@ -72,17 +57,17 @@ namespace RobotoChatBot.Modules
 
             if (m.text_msg.StartsWith("/craft_add"))
             {
-                TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the word to add", true, GetType(), "AddWord");
+                Messaging.SendQuestion(m.chatID, m.userID, "Enter the word to add", true, GetType(), "AddWord");
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/craft_remove"))
             {
-                TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the word to remove", true, GetType(), "RemWord");
+                Messaging.SendQuestion(m.chatID, m.userID, "Enter the word to remove", true, GetType(), "RemWord");
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/craft"))
             {
-                TelegramAPI.SendMessage(m.chatID, craftWord());
+                Messaging.SendMessage(m.chatID, craftWord());
                 processed = true;
             }
            
@@ -95,45 +80,30 @@ namespace RobotoChatBot.Modules
             if (e.messageData == "AddWord")
             {
                 addCraftWord(m.text_msg);
-                TelegramAPI.SendMessage(m.chatID, "Added " + m.text_msg + " for " + m.userFirstName);
+                Messaging.SendMessage(m.chatID, "Added " + m.text_msg + " for " + m.userFirstName);
                 return true;
             }
             
             else if (e.messageData == "RemWord")
             {
                 bool success = removeCraftWord(m.text_msg);
-                TelegramAPI.SendMessage(m.chatID, "Removed " + m.text_msg + " for " + m.userFirstName + " " + (success ? "successfully" : "but fell on my ass"));
+                Messaging.SendMessage(m.chatID, "Removed " + m.text_msg + " for " + m.userFirstName + " " + (success ? "successfully" : "but fell on my ass"));
                 return true;
             }
             
             return false;
         }
 
-        
-
-        public override void sampleData()
-        {
-            
-            addCraftWord("Bilge");
-            addCraftWord("Rabbit");
-            addCraftWord("Moose");
-            addCraftWord("Ramp");
-            addCraftWord("Clown");
-            addCraftWord("Glimp");
-            addCraftWord("Hop");
-            addCraftWord("Mop");
-
-        }
-
+       
 
         public void addCraftWord(string word)
         {
-            localData.words.Add(word);
+            ((mod_wordcraft_data)localData).words.Add(word);
         }
 
         public bool removeCraftWord(string word)
         {
-            return localData.words.Remove(word);
+            return ((mod_wordcraft_data)localData).words.Remove(word);
         }
 
         public String craftWord()
@@ -146,8 +116,8 @@ namespace RobotoChatBot.Modules
             int words = settings.getRandom(4) + 1;
             for (int i = 0; i < words; i++)
             {
-                int wordID = settings.getRandom(localData.words.Count);
-                String word = localData.words[wordID];
+                int wordID = settings.getRandom(((mod_wordcraft_data)localData).words.Count);
+                String word = ((mod_wordcraft_data)localData).words[wordID];
                 if (!pickedWords.Contains(word))
                 {
                     if (result != "") { result += " "; }

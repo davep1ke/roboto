@@ -1,0 +1,181 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<DirectedGraph GraphDirection="LeftToRight" Layout="Sugiyama" ZoomLevel="-1" xmlns="http://schemas.microsoft.com/vs/2009/dgml">
+  <Nodes>
+    <Node Id="(@1 @2 Type=chat)" Category="CodeSchema_Class" Bounds="969.812786221462,199.250257775896,63.5066666666667,26" CodeSchemaProperty_IsPublic="True" CommonLabel="chat" Icon="Microsoft.VisualStudio.Class.Public" Label="chat" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Storage/chat.cs StartLineNumber=10 StartCharacterOffset=17 EndLineNumber=10 EndCharacterOffset=21)" UseManualLocation="True" />
+    <Node Id="(@1 @4 Type=RobotoModuleChatDataTemplate)" Category="CodeSchema_Class" Bounds="1183.23371620692,199.215688767168,218.11,26" CodeSchemaProperty_IsAbstract="True" CodeSchemaProperty_IsPublic="True" CommonLabel="RobotoModuleChatDataTemplate" Icon="Microsoft.VisualStudio.Class.Public" Label="RobotoModuleChatDataTemplate" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleChatDataTemplate.cs StartLineNumber=8 StartCharacterOffset=26 EndLineNumber=8 EndCharacterOffset=54)" UseManualLocation="True" />
+    <Node Id="(@3 @2 Type=Plugins)" Category="CodeSchema_Class" Bounds="245.815756875319,-136.666571105657,99.2733333333333,25.0038" CodeSchemaProperty_IsInternal="True" CommonLabel="Plugins" Group="Collapsed" Icon="Microsoft.VisualStudio.Class.Internal" Label="Plugins" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Plugins.cs StartLineNumber=13 StartCharacterOffset=10 EndLineNumber=13 EndCharacterOffset=17)" UseManualLocation="True" />
+    <Node Id="(@3 @2 Type=Roboto)" Category="CodeSchema_Class" Bounds="-69.2584875911657,-136.815390315009,100.036666666667,25.038912" CodeSchemaProperty_IsPublic="True" CommonLabel="Roboto" Group="Collapsed" Icon="Microsoft.VisualStudio.Class.Public" Label="Roboto" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Roboto.cs StartLineNumber=21 StartCharacterOffset=17 EndLineNumber=21 EndCharacterOffset=23)" UseManualLocation="True" />
+    <Node Id="(@3 @4 @5)" Category="CodeSchema_Class" Bounds="514.73712597436,-148.203941023218,189.023333333334,44" CodeSchemaProperty_IsAbstract="True" CodeSchemaProperty_IsPublic="True" CommonLabel="RobotoModuleTemplate" Group="Expanded" Icon="Microsoft.VisualStudio.Class.Public" Label="RobotoModuleTemplate" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleTemplate.cs StartLineNumber=9 StartCharacterOffset=26 EndLineNumber=9 EndCharacterOffset=46)" UseManualLocation="True" />
+    <Node Id="(@3 @4 Type=RobotoModuleDataTemplate)" Category="CodeSchema_Class" Bounds="1202.43839519963,-144.704914451686,213.716666666667,44" CodeSchemaProperty_IsAbstract="True" CodeSchemaProperty_IsPublic="True" CommonLabel="RobotoModuleDataTemplate" Group="Expanded" Icon="Microsoft.VisualStudio.Class.Public" Label="RobotoModuleDataTemplate" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleDataTemplate.cs StartLineNumber=8 StartCharacterOffset=26 EndLineNumber=8 EndCharacterOffset=50)" UseManualLocation="True" />
+    <Node Id="@10" Category="CodeSchema_Method" Bounds="962.216399502712,255.250357775896,135.106666666667,26" CodeSchemaProperty_IsPublic="True" CommonLabel="initPlugins" Icon="Microsoft.VisualStudio.Method.Public" Label="initPlugins() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Storage/chat.cs StartLineNumber=32 StartCharacterOffset=20 EndLineNumber=32 EndCharacterOffset=31)" UseManualLocation="True" />
+    <Node Id="@11" Category="CodeSchema_Method" Bounds="-80.0992926670548,1.26822311637585,167.08,26" CodeSchemaProperty_IsPrivate="True" CodeSchemaProperty_IsStatic="True" CommonLabel="startBackground" Icon="Microsoft.VisualStudio.Method.Private" Label="startBackground() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Roboto.cs StartLineNumber=113 StartCharacterOffset=28 EndLineNumber=113 EndCharacterOffset=43)" UseManualLocation="True" />
+    <Node Id="@13" Category="CodeSchema_Method" Bounds="238.510536499023,333.399795205246,154.61,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="startupChecks" Icon="Microsoft.VisualStudio.Method.Public" Label="startupChecks() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Plugins.cs StartLineNumber=56 StartCharacterOffset=27 EndLineNumber=56 EndCharacterOffset=40)" UseManualLocation="True" />
+    <Node Id="@14" Category="CodeSchema_Method" Bounds="1464.46806850466,364.936918268475,154.61,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsVirtual="True" CommonLabel="startupChecks" Icon="Microsoft.VisualStudio.Method.Public" Label="startupChecks() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleChatDataTemplate.cs StartLineNumber=31 StartCharacterOffset=28 EndLineNumber=31 EndCharacterOffset=41)" UseManualLocation="True" />
+    <Node Id="@15" Category="CodeSchema_Method" Bounds="1449.13445513574,-24.0742716778476,154.61,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsVirtual="True" CommonLabel="startupChecks" Icon="Microsoft.VisualStudio.Method.Public" Label="startupChecks() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleDataTemplate.cs StartLineNumber=28 StartCharacterOffset=28 EndLineNumber=28 EndCharacterOffset=41)" UseManualLocation="True" />
+    <Node Id="@16" Category="CodeSchema_Method" Bounds="712.970316842359,452.586021096359,154.61,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsVirtual="True" CommonLabel="startupChecks" Icon="Microsoft.VisualStudio.Method.Public" Label="startupChecks() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleTemplate.cs StartLineNumber=65 StartCharacterOffset=28 EndLineNumber=65 EndCharacterOffset=41)" UseManualLocation="True" />
+    <Node Id="@6" Category="CodeSchema_Method" Bounds="769.542717173749,111.265114959701,168.426666666667,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsVirtual="True" CommonLabel="initChatData" Icon="Microsoft.VisualStudio.Method.Public" Label="initChatData(chat) : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleTemplate.cs StartLineNumber=70 StartCharacterOffset=28 EndLineNumber=70 EndCharacterOffset=40)" UseManualLocation="True" />
+    <Node Id="@7" Category="CodeSchema_Method" Bounds="763.661549886068,-0.505478066253673,96.8333333333334,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsVirtual="True" CommonLabel="init" Icon="Microsoft.VisualStudio.Method.Public" Label="init() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleTemplate.cs StartLineNumber=29 StartCharacterOffset=28 EndLineNumber=29 EndCharacterOffset=32)" UseManualLocation="True" />
+    <Node Id="@8" Category="CodeSchema_Method" Bounds="239.93246887207,4.49283759002686,188.79,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="initPluginAssemblies" Icon="Microsoft.VisualStudio.Method.Public" Label="initPluginAssemblies() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Plugins.cs StartLineNumber=23 StartCharacterOffset=27 EndLineNumber=23 EndCharacterOffset=47)" UseManualLocation="True" />
+    <Node Id="@9" Category="CodeSchema_Method" Bounds="513.636534830729,84.8480027496338,154.706666666667,26" CodeSchemaProperty_IsInternal="True" CommonLabel="initPluginData" Icon="Microsoft.VisualStudio.Method.Internal" Label="initPluginData() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleTemplate.cs StartLineNumber=164 StartCharacterOffset=22 EndLineNumber=164 EndCharacterOffset=36)" UseManualLocation="True" />
+    <Node Id="ChatDataCreatedHere.*MOVETOCHAT*" Category="Comment" Bounds="990.183175911381,46.5901472804134,238.1,25.96" Label="ChatData created here. *MOVE TO CHAT*" UseManualLocation="True">
+      <Category Ref="Category1" />
+    </Node>
+    <Node Id="CreateThePlugin" Category="Comment" Bounds="176.946694946289,-51.4672624099731,111.55,25.96" Label="Create the plugin" UseManualLocation="True">
+      <Category Ref="Category7" />
+    </Node>
+    <Node Id="CreateThePluginDataObject" Category="Comment" Bounds="337.90549235026,140.848102749634,172.406666666667,25.96" Label="Create the pluginData object" UseManualLocation="True">
+      <Category Ref="Category7" />
+    </Node>
+    <Node Id="DataImplementation" Category="Category10" Bounds="1446.15506186629,-136.701437614127,128.83,25.96" UseManualLocation="True" />
+    <Node Id="Datafixes" Category="Comment" Bounds="1657.30959086749,325.663912040949,66.8866666666668,25.96" Label="datafixes" UseManualLocation="True" />
+    <Node Id="Implementation" Category="Category10" Bounds="1459.94955630012,197.57479743047,104.136666666667,25.96" Label="Implementation" UseManualLocation="True" />
+    <Node Id="LoadXML" Category="Comment" Bounds="114.105141645018,61.3986329590728,88.2433333333333,25.96" Label="...Load XML..." UseManualLocation="True" />
+    <Node Id="OverrideAnyPluginAttribs" Category="Comment" Bounds="827.450268479772,-62.7908471613949,161.21,25.96" Label="Override any plugin attribs" UseManualLocation="True" />
+    <Node Id="PluginImplementation" Category="Category10" Bounds="765.378939935256,-142.514328233658,140.603333333333,25.96" Label="Plugin Implementation" UseManualLocation="True" />
+    <Node Id="ScansChatdata-MoveToChatsClass" Category="Comment" Bounds="83.1565764045332,389.399895205246,214.996666666667,25.96" Label="Scans Chatdata - move to chats class" UseManualLocation="True">
+      <Category Ref="Category1" />
+    </Node>
+    <Node Id="SetupStats,Datafixes," Category="Comment" Bounds="1447.45828000554,-80.0343716778476,66.8866666666668,25.96" Label="datafixes" UseManualLocation="True" />
+    <Node Id="SetupStats,Datafixes,1" Category="Comment" Bounds="839.495853951734,508.586121096359,84.16,25.96" Label="Setup stats, " UseManualLocation="True" />
+  </Nodes>
+  <Links>
+    <Link Source="(@1 @4 Type=RobotoModuleChatDataTemplate)" Target="Implementation" Bounds="1401.34371620692,211.016399488969,49.6060971925033,0.374963122964544" />
+    <Link Source="(@3 @4 @5)" Target="PluginImplementation" Bounds="703.760459307694,-128.367963798053,52.6194539497568,0.773933456563114" />
+    <Link Source="(@3 @4 Type=RobotoModuleDataTemplate)" Target="DataImplementation" Bounds="1416.1550618663,-123.350658584148,21.0001147800103,0.106060265084636" />
+    <Link Source="@10" Target="@6" Bounds="874.740539550781,143.314376831055,135.294128417969,111.935974121094" />
+    <Link Source="@11" Target="@13" Bounds="15.6674063896444,27.2682231163759,281.755447635278,299.575609268938" />
+    <Link Source="@11" Target="@8" Bounds="86.9807073329452,15.0823514661344,143.952188883896,1.40286758415347" />
+    <Link Source="@11" Target="LoadXML" Bounds="36.9160956723259,27.2682231163759,79.49724242769,30.8723573594573" />
+    <Link Source="@13" Target="@10" Bounds="393.120536499023,276.624037616337,560.149300016328,61.3139510872152" />
+    <Link Source="@13" Target="@14" Bounds="393.120536499023,348.388426323988,1062.350508399,27.3284170495304" />
+    <Link Source="@13" Target="@15" Bounds="359.84141809514,4.47446471026717,1113.94058879503,328.925330494979" />
+    <Link Source="@13" Target="@16" Bounds="367.566291238907,359.399795205246,362.229466919563,90.9935148506183" />
+    <Link Source="@13" Target="@9" Bounds="330.207974695921,116.880675775677,239.710618833597,216.519119429569" />
+    <Link Source="@8" Target="@7" Bounds="428.72246887207,13.0952204435191,325.939573531277,3.41003940086291" />
+    <Link Source="ChatDataCreatedHere.*MOVETOCHAT*" Target="@6" Bounds="913.817000306617,72.5501522827149,144.158821243458,36.5056136440103" />
+    <Link Source="CreateThePlugin" Target="@8" Bounds="256.280833739479,-25.5072624099731,46.5684298493521,25.657059230846" />
+    <Link Source="CreateThePluginDataObject" Target="@9" Bounds="462.803217644245,113.710295613794,80.8999188187042,27.1378071358404" />
+    <Link Source="Datafixes" Target="@14" Bounds="1599.76511586038,347.464494520341,57.5444750071119,15.1771889175779" />
+    <Link Source="OverrideAnyPluginAttribs" Target="@7" Bounds="839.652661110594,-36.8308471613949,48.4078275916825,31.4248823509038" />
+    <Link Source="ScansChatdata-MoveToChatsClass" Target="@13" Bounds="219.675667745798,363.07438898696,58.8587169027098,26.3255062182859" />
+    <Link Source="SetupStats,Datafixes," Target="@15" Bounds="1491.46038666231,-54.0743716778476,18.7246356821104,23.0183718987802" />
+    <Link Source="SetupStats,Datafixes,1" Target="@16" Bounds="819.150217216688,483.290405556974,41.2559537284113,25.2957155393854" />
+  </Links>
+  <Categories>
+    <Category Id="Category1" Label="Category 1" Background="#FFE51400" IsTag="True" />
+    <Category Id="Category10" Label="Category 10" Background="#FF672878" IsTag="True" />
+    <Category Id="Category7" Label="Category 7" Background="#FF347A30" IsTag="True" />
+    <Category Id="CodeSchema_Class" Label="Class" BasedOn="CodeSchema_Type" CanBeDataDriven="True" DefaultAction="Node:Both:CodeSchema_Member" Icon="CodeSchema_Class" NavigationActionLabel="Classes" />
+    <Category Id="CodeSchema_Member" Label="Member" CanBeDataDriven="True" DefaultAction="Microsoft.Contains" Icon="CodeSchema_Field" NavigationActionLabel="Members" />
+    <Category Id="CodeSchema_Method" Label="Method" BasedOn="CodeSchema_Member" CanBeDataDriven="True" DefaultAction="Link:Forward:CodeSchema_Calls" Icon="CodeSchema_Method" NavigationActionLabel="Methods" />
+    <Category Id="CodeSchema_Type" Label="Type" CanBeDataDriven="True" DefaultAction="Node:Both:CodeSchema_Member" Icon="CodeSchema_Class" NavigationActionLabel="Types" />
+    <Category Id="Comment" Label="Comment" Description="Represents a user defined comment on the diagram" CanBeDataDriven="True" IsProviderRoot="False" NavigationActionLabel="Comments" />
+  </Categories>
+  <Properties>
+    <Property Id="Background" Label="Background" Description="The background color" DataType="System.Windows.Media.Brush" />
+    <Property Id="Bounds" DataType="System.Windows.Rect" />
+    <Property Id="CanBeDataDriven" Label="CanBeDataDriven" Description="CanBeDataDriven" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsAbstract" Label="Is Abstract" Description="Flag to indicate member is 'Abstract' does not provide a full implementation" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsInternal" Label="Is Internal" Description="Flag to indicate the method is 'Internal'" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsPrivate" Label="Is Private" Description="Flag to indicate the scope is Private" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsPublic" Label="Is Public" Description="Flag to indicate the scope is Public" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsStatic" Label="Is Static" Description="Flag to indicate the member is a static member" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsVirtual" Label="Is Virtual" Description="Flag to indicate the method can be overridden" DataType="System.Boolean" />
+    <Property Id="CommonLabel" DataType="System.String" />
+    <Property Id="DefaultAction" Label="DefaultAction" Description="DefaultAction" DataType="System.String" />
+    <Property Id="Expression" DataType="System.String" />
+    <Property Id="GraphDirection" DataType="Microsoft.VisualStudio.Diagrams.Layout.LayoutOrientation" />
+    <Property Id="Group" Label="Group" Description="Display the node as a group" DataType="Microsoft.VisualStudio.GraphModel.GraphGroupStyle" />
+    <Property Id="GroupLabel" DataType="System.String" />
+    <Property Id="Icon" Label="Icon" Description="Icon" DataType="System.String" />
+    <Property Id="IsEnabled" DataType="System.Boolean" />
+    <Property Id="IsProviderRoot" Label="IsProviderRoot" Description="IsProviderRoot" DataType="System.Boolean" />
+    <Property Id="IsTag" DataType="System.Boolean" />
+    <Property Id="Label" Label="Label" Description="Displayable label of an Annotatable object" DataType="System.String" />
+    <Property Id="Layout" DataType="System.String" />
+    <Property Id="NavigationActionLabel" Label="NavigationActionLabel" Description="NavigationActionLabel" DataType="System.String" />
+    <Property Id="SourceLocation" Label="Start Line Number" DataType="Microsoft.VisualStudio.GraphModel.CodeSchema.SourceLocation" />
+    <Property Id="TargetType" DataType="System.Type" />
+    <Property Id="ToolTip" DataType="System.String" />
+    <Property Id="UseManualLocation" DataType="System.Boolean" />
+    <Property Id="Value" DataType="System.String" />
+    <Property Id="ValueLabel" DataType="System.String" />
+    <Property Id="ZoomLevel" DataType="System.String" />
+  </Properties>
+  <QualifiedNames>
+    <Name Id="Assembly" Label="Assembly" ValueType="Uri" />
+    <Name Id="Member" Label="Member" ValueType="System.Object" />
+    <Name Id="Name" Label="Name" ValueType="System.String" />
+    <Name Id="Namespace" Label="Namespace" ValueType="System.String" />
+    <Name Id="OverloadingParameters" Label="Parameter" ValueType="Microsoft.VisualStudio.GraphModel.GraphNodeIdCollection" Formatter="NameValueNoEscape" />
+    <Name Id="Type" Label="Type" ValueType="System.Object" />
+  </QualifiedNames>
+  <IdentifierAliases>
+    <Alias n="1" Uri="Assembly=$(4e78688d-017e-412b-a7be-41b7376a145f.OutputPathUri)" />
+    <Alias n="2" Id="Namespace=RobotoChatBot" />
+    <Alias n="3" Uri="Assembly=$(VsSolutionUri)/Roboto/bin/x64/Run - CAHLive/Roboto.exe" />
+    <Alias n="4" Id="Namespace=RobotoChatBot.Modules" />
+    <Alias n="5" Id="Type=RobotoModuleTemplate" />
+    <Alias n="6" Id="(@1 @4 @5 Member=(Name=initChatData OverloadingParameters=[(@1 @2 Type=chat)]))" />
+    <Alias n="7" Id="(@3 @4 @5 Member=init)" />
+    <Alias n="8" Id="(@3 @2 Type=Plugins Member=initPluginAssemblies)" />
+    <Alias n="9" Id="(@3 @4 @5 Member=initPluginData)" />
+    <Alias n="10" Id="(@1 @2 Type=chat Member=initPlugins)" />
+    <Alias n="11" Id="(@3 @2 Type=Roboto Member=startBackground)" />
+    <Alias n="12" Id="Member=startupChecks" />
+    <Alias n="13" Id="(@3 @2 Type=Plugins @12)" />
+    <Alias n="14" Id="(@1 @4 Type=RobotoModuleChatDataTemplate @12)" />
+    <Alias n="15" Id="(@3 @4 Type=RobotoModuleDataTemplate @12)" />
+    <Alias n="16" Id="(@3 @4 @5 @12)" />
+  </IdentifierAliases>
+  <Styles>
+    <Style TargetType="Node" GroupLabel="Category 10" ValueLabel="Has category">
+      <Condition Expression="HasCategory('Category10')" />
+      <Setter Property="Background" Value="#FF672878" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Category 7" ValueLabel="Has category">
+      <Condition Expression="HasCategory('Category7')" />
+      <Setter Property="Background" Value="#FF347A30" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Category 1" ValueLabel="Has category">
+      <Condition Expression="HasCategory('Category1')" />
+      <Setter Property="Background" Value="#FFE51400" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Circular References" ToolTip="Node is part of a strongly coupled component" ValueLabel="Nodes">
+      <Condition Expression="IsStronglyConnected" />
+      <Setter Property="Stroke" Value="#D02030" />
+      <Setter Property="StrokeThickness" Value="2" />
+    </Style>
+    <Style TargetType="Link" GroupLabel="Circular References" ToolTip="Node is part of a strongly coupled component" ValueLabel="Links">
+      <Condition Expression="IsCircularLink" />
+      <Setter Property="Stroke" Value="#D02030" />
+      <Setter Property="StrokeThickness" Value="2" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Is Abstract" ValueLabel="True">
+      <Condition Expression="CodeSchemaProperty_IsAbstract = 'True'" />
+      <Setter Property="Background" Value="#FFE900FF" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Is Abstract" ValueLabel="False">
+      <Condition Expression="CodeSchemaProperty_IsAbstract = 'False'" />
+      <Setter Property="Background" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Class" ValueLabel="True">
+      <Condition Expression="HasCategory('CodeSchema_Class')" />
+      <Setter Property="Background" Value="#FF54F445" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Comment" ValueLabel="Has comment">
+      <Condition Expression="HasCategory('Comment')" />
+      <Setter Property="Background" Value="#FFFFFACD" />
+      <Setter Property="Stroke" Value="#FFE5C365" />
+      <Setter Property="StrokeThickness" Value="1" />
+      <Setter Property="NodeRadius" Value="2" />
+      <Setter Property="MaxWidth" Value="250" />
+    </Style>
+  </Styles>
+  <Paths>
+    <Path Id="4e78688d-017e-412b-a7be-41b7376a145f.OutputPath" Value="C:\Code\Roboto\Roboto\bin\x64\Debug\Roboto.exe" />
+    <Path Id="4e78688d-017e-412b-a7be-41b7376a145f.OutputPathUri" Value="file:///C:/Code/Roboto/Roboto/bin/x64/Debug/Roboto.exe" />
+    <Path Id="VsSolution" Value="C:\Code\Roboto" />
+    <Path Id="VsSolutionUri" Value="file:///C:/Code/Roboto" />
+  </Paths>
+</DirectedGraph>

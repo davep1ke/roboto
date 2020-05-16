@@ -26,7 +26,19 @@ namespace RobotoChatBot.Modules
         public int packDormantThresholdDays = 90;
         public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
         public List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
-        public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>();
+        //Add packs for the standard CaH packs.
+        public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>()
+        { 
+            new Helpers.cardcast_pack("Cards Against Humanity", "CAHBS", "Cards Against Humanity"),
+            new Helpers.cardcast_pack("Expansion 1 - CAH", "CAHE1", "Expansion 1 - CAH"),
+            new Helpers.cardcast_pack("Expansion 2 - CAH", "CAHE2", "Expansion 2 - CAH"),
+            new Helpers.cardcast_pack("Expansion 3 - CAH", "CAHE3", "Expansion 3 - CAH"),
+            new Helpers.cardcast_pack("Expansion 4 - CAH", "CAHE4", "Expansion 4 - CAH"),
+            new Helpers.cardcast_pack("CAH Fifth Expansion", "EU6CJ", "CAH Fifth Expansion"),
+            new Helpers.cardcast_pack("CAH Sixth Expansion", "PEU3Q", "CAH Sixth Expansion")
+
+        };
+
 
         public mod_xyzzy_card getQuestionCard(string cardUID)
         {
@@ -54,28 +66,34 @@ namespace RobotoChatBot.Modules
             return packs;
         }
 
-        public Helpers.cardcast_pack getPack (string packTitle)
+        public Helpers.cardcast_pack getPackByCode (string packCode)
         {
-            List<Helpers.cardcast_pack> matches = getPacks(packTitle);
+            List<Helpers.cardcast_pack> matches = getPacksByCode(packCode);
             if (matches.Count > 0) { return matches[0]; }
             return null;
         }
 
-        public Helpers.cardcast_pack getPack(Guid packID)
+        public Helpers.cardcast_pack getPackByGuid(Guid packID)
         {
-            List<Helpers.cardcast_pack> matches = getPacks(packID);
+            List<Helpers.cardcast_pack> matches = getPacksByGuid(packID);
             if (matches.Count > 0) { return matches[0]; }
             return null;
         }
 
-        public List<Helpers.cardcast_pack> getPacks(string packTitle)
+
+        public List<Helpers.cardcast_pack> getPacksByTitle(string packTitle)
         {
             return packs.Where(x => x.name == packTitle).ToList();
         }
 
-        public List<Helpers.cardcast_pack> getPacks(Guid packID)
+        public List<Helpers.cardcast_pack> getPacksByGuid(Guid packID)
         {
             return packs.Where(x => x.packID == packID).ToList();
+        }
+
+        public List<Helpers.cardcast_pack> getPacksByCode(string packCode)
+        {
+            return packs.Where(x => x.packCode == packCode).ToList();
         }
 
         public override void startupChecks()
@@ -87,8 +105,27 @@ namespace RobotoChatBot.Modules
             int success = 0;
             int fail = 0;
 
+            Helpers.cardcast_pack primaryPack = getPackByCode("CAHBS");
+            
+            //check that our primary pack has the correct guid
+            //does it exist? 
+            if (primaryPack != null)
+            {
+                primaryPack.overrideGUID(mod_xyzzy.primaryPackID); //override this one's guid so we can add it by default to new poacks. 
+                log("OK - Primary pack exists", logging.loglevel.verbose);
+            }
+            else
+            {
+               
+                log("No copy of the primary CAH pack could be found!", logging.loglevel.critical);
+
+            }
+
+
+
+
             //Disable warnings for use of deprecated category field - this is a datafix to ensure it is properly wiped. 
-            #pragma warning disable 612, 618
+            /*#pragma warning disable 612, 618
             foreach (mod_xyzzy_card q in questions.Where(x => x.packID == Guid.Empty) )
             {
                 cardcast_pack pack = getPack(q.category);
@@ -115,6 +152,7 @@ namespace RobotoChatBot.Modules
             foreach (mod_xyzzy_card q in questions.Where(x => x.packID != null)){ q.category = null; q.TempCategory = null; success++; }
             foreach (mod_xyzzy_card a in answers.Where(x => x.packID != null)) { a.category = null; a.TempCategory = null; success++; }
             #pragma warning restore 612, 618
+            */
 
             if (success + fail > 0)
             {
@@ -126,7 +164,7 @@ namespace RobotoChatBot.Modules
             //lets see if packs with null Cardcast Pack codes can be populated by looking through our other packs
             foreach (cardcast_pack p in packs.Where(x => string.IsNullOrEmpty(x.packCode)))
             {
-                List<cardcast_pack> matchingPacks = getPacks(p.name).Where(x => x.packID != p.packID).ToList();
+                List<cardcast_pack> matchingPacks = getPacksByTitle(p.name).Where(x => x.packID != p.packID).ToList();
                 if (matchingPacks.Count >0 )
                 {
                     log("DATAFIX: Orphaned pack " + p.name + " has been matched against an existing pack, and packcode set to " + p.packCode, logging.loglevel.warn);
@@ -224,7 +262,7 @@ namespace RobotoChatBot.Modules
             {
 
                 if (i%100 == 0) { log("Remaining " + (answers.Count() - i) + ". Removed " + removed, logging.loglevel.high); lo_answers.addone(); }
-                if (getPacks(answers[i].packID).Count() == 0)
+                if (getPacksByGuid(answers[i].packID).Count() == 0)
                 {
                     //log("Removing " + answers[i].text, logging.loglevel.verbose);
                     removed++;
@@ -246,7 +284,7 @@ namespace RobotoChatBot.Modules
             while (i < questions.Count())
             {
                 if (i % 100 == 0) { log("Remaining " + (questions.Count() - i) + ". Removed " + removed, logging.loglevel.high);lo_questions.addone(); }
-                if (getPacks(questions[i].packID).Count() == 0)
+                if (getPacksByGuid(questions[i].packID).Count() == 0)
                 {
                     removed++;
                     questions.RemoveAt(i);
@@ -257,6 +295,7 @@ namespace RobotoChatBot.Modules
             lo_startup.addone();
             lo_questions.complete();
 
+            /*TODO - move this somewhere else - daft to dump every startup
             //Dump the packlist and stats to the log window in verbose mode. Flag anything removable
             logging.longOp lo_dump = new logging.longOp("Dump packlist", packs.Count());
             log("Packs Loaded:", logging.loglevel.verbose);
@@ -287,7 +326,7 @@ namespace RobotoChatBot.Modules
                 //NB: No longer removing packs here - instead moved to background sync so ran occasionally. 
             }
             lo_dump.complete();
-            
+            */
             lo_startup.complete();
 
         }
@@ -989,7 +1028,7 @@ namespace RobotoChatBot.Modules
 
 
             }
-        }*/
+        }
 
         private void replaceCardReferences(mod_xyzzy_card old, mod_xyzzy_card newcard, string cardType)
         {
@@ -1001,6 +1040,6 @@ namespace RobotoChatBot.Modules
                     chatdata.replaceCard(old, newcard, cardType);
                 }
             }
-        }
+        }*/
     }
 }

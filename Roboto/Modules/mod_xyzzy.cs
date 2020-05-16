@@ -9,224 +9,6 @@ using System.Xml.Serialization;
 namespace RobotoChatBot.Modules
 {
 
-    /*
-    Moved to settings / telegramAPI
-    /// <summary>
-    /// Represents a reply we are expecting
-    /// TODO - maybe genericise this?
-    /// </summary>
-    public class mod_xyzzy_expectedReply
-    {
-        public int messageID;
-        public int chatID;
-        public int playerID;
-        public string replyData; //somewhere to store stuff about the reply
-        internal mod_xyzzy_expectedReply() { }
-        public mod_xyzzy_expectedReply(int messageID, int playerID, int chatID, string replyData)
-        {
-            this.messageID = messageID;
-            this.playerID = playerID;
-            this.chatID = chatID;
-            this.replyData = replyData;
-        }
-    }
-    */
-
-    /// <summary>
-    /// Represents a xyzzy player
-    /// </summary>
-    public class mod_xyzzy_player
-    {
-        public string name;
-
-        public string name_markdownsafe
-        {
-            get
-            {
-                return Helpers.common.removeMarkDownChars(name);
-            }
-        }
-
-
-        public bool fuckedWith = false;
-        public string handle = "";
-        public long playerID;
-        public int wins = 0;
-        public List<String> cardsInHand = new List<string>();
-        public List<String> selectedCards = new List<string>();
-        internal mod_xyzzy_player() { }
-        public mod_xyzzy_player(string name, string handle, long playerID)
-        {
-            this.name = name;
-            this.handle = handle;
-            this.playerID = playerID;
-        }
-
-        public override string ToString()
-        {
-
-            string response = " " + name;
-            if (handle != "") { response += " (@" + handle + ")"; }
-
-            return response;
-        }
-
-        public string ToString(bool markdownSafe)
-        {
-            if (markdownSafe)
-            {
-                string response = " " + name_markdownsafe ;
-                String handle_safe =  Helpers.common.removeMarkDownChars(handle);
-                if (handle != "" && handle == handle_safe)
-                {
-                    response += " (@" + handle_safe + ")";
-                }
-                else if (handle != handle_safe)
-                {
-                    Roboto.log.log("Skipping handle for " + handle + " as contains markdown", logging.loglevel.low);
-                }
-                return response;
-            }
-            else
-            {
-                return ToString();
-            }
-        }
-
-        internal void topUpCards(int nrCards, List<string> availableAnswers, long chatID)
-        {
-            
-            while (cardsInHand.Count < nrCards)
-            {
-                //have we reached the end of the pack?
-                if (availableAnswers.Count == 0)
-                {
-                    //get the chatData and top up the cards. 
-                    mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)Roboto.Settings.getChat(chatID).getPluginData(typeof(mod_xyzzy_chatdata));
-                    chatData.addAllAnswers();
-                    TelegramAPI.SendMessage(chatID, "All answers have been used up, pack has been refilled!");
-                }
-
-                //pick a card
-                string cardUID = availableAnswers[settings.getRandom(availableAnswers.Count)];
-                cardsInHand.Add(cardUID);
-
-                //remove it from the available list
-                availableAnswers.Remove(cardUID);
-            }
-        }
-
-
-
-        public bool SelectAnswerCard(string cardUID)
-        {
-            bool success = cardsInHand.Remove(cardUID);
-            if (success)
-            {
-                selectedCards.Add(cardUID);
-            }
-            return success;
-
-        }
-
-        public string getAnswerKeyboard(mod_xyzzy_coredata localData)
-        {
-            List<string> answers = new List<string>();
-
-            List<string> invalidCards = new List<string>();
-            foreach (string cardID in cardsInHand)
-            {
-                mod_xyzzy_card c = localData.getAnswerCard(cardID);
-                if (c != null)
-                {
-
-                   answers.Add(c.text);
-                }
-                else
-                {
-                    Roboto.log.log("Answer card " + cardID + " not found! Removing from " + name + "'s hand", logging.loglevel.critical);
-                    invalidCards.Add(cardID);
-                }
-            }
-            //remove any invalid cards
-            foreach(string cardID in invalidCards) { cardsInHand.Remove(cardID); }
-
-            return (TelegramAPI.createKeyboard(answers,1));
-         }
-
-        public void toggleFuckWith()
-        {
-
-            if (fuckedWith == true) { fuckedWith = false; }
-            else { fuckedWith = true; }
-        }
-
-        public string getPointsMessage()
-        {
-            
-            string response = "\n\r" + name_markdownsafe + " - ";
-            if (!fuckedWith) { return response + wins + " points."; }
-            else
-            {
-                string[] suffixes = { "INT", "XP", "Points", "Sq. Ft.", "ft, 6 inches", "mm", "out of 10. Must try harder.", "Buzzards", "Buzzards/m/s²", "m/s²" };
-
-                //want a multipler between -1 and 0.5.
-                float multiplier = (50 - settings.getRandom(150))/100f ;
-                int randomSuffix = settings.getRandom(suffixes.Count() - 1);
-                int newscore = Convert.ToInt32(wins * multiplier);
-                response += newscore.ToString() + " " + suffixes[randomSuffix];
-                
-            }
-            return response;
-        }
-
-        public bool setScore(int playerScore)
-        {
-            Roboto.log.log("Overwrote " + this.ToString() + "'s points with " + playerScore, logging.loglevel.warn);
-            wins = playerScore;
-            return true;
-        }
-    }
-
-
-    /// <summary>
-    /// Represents a xyzzy card
-    /// </summary>
-    public class mod_xyzzy_card
-    {
-        public string uniqueID = Guid.NewGuid().ToString();
-        public String text;
-        [System.Obsolete("use Pack (Guid)")]
-        public String category; //what pack did the card come from
-
-        //shitty workaround to allow us to load in the cateogry info temporarily. - http://stackoverflow.com/questions/5096926/what-is-the-get-set-syntax-in-c
-        [XmlElement("category")]
-        public string TempCategory
-        {
-            #pragma warning disable 612, 618
-            get { return category; }
-            set { category = value; }
-            #pragma warning restore 612, 618
-        }
-
-        public Guid packID;
-        public int nrAnswers = -1; 
-
-        internal mod_xyzzy_card() { }
-        public mod_xyzzy_card(String text, Guid packID, int nrAnswers = -1)
-        {
-            this.text = text;
-            this.packID = packID;
-            this.nrAnswers = nrAnswers;
-        }
-
-        public override string ToString()
-        {
-            return text;
-        }
-
-    }
-
 
     /// <summary>
     /// The XXZZY Plugin
@@ -236,8 +18,14 @@ namespace RobotoChatBot.Modules
         public static Guid primaryPackID = new Guid("FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE");
         public static Guid AllPacksEnabledID = Guid.Empty;
 
-        private mod_xyzzy_coredata localData;
-        
+        /// <summary>
+        /// Provide a handier way of accessing the plugin data stored in the template. 
+        /// </summary>
+        private mod_xyzzy_coredata localPluginData
+        {
+            get { return (mod_xyzzy_coredata)localData;  }
+            set { localData = value; }
+        }
 
         public override void init()
         {
@@ -250,7 +38,7 @@ namespace RobotoChatBot.Modules
 
             backgroundHook = true;
             backgroundMins = 1; //every 1 min, check the latest 20 chats
-            
+
         }
 
         public override string getMethodDescriptions()
@@ -273,37 +61,6 @@ namespace RobotoChatBot.Modules
 
         }
 
-        public override void initData()
-        {
-            try
-            {
-                localData = Roboto.Settings.getPluginData<mod_xyzzy_coredata>();
-            }
-            catch (InvalidDataException)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                localData = new mod_xyzzy_coredata();
-                sampleData();
-                Roboto.Settings.registerData(localData);
-            }
-
-            Roboto.Settings.stats.registerStatType("New Games Started", this.GetType(), System.Drawing.Color.Aqua);
-            Roboto.Settings.stats.registerStatType("Games Ended", this.GetType(), System.Drawing.Color.Orange);
-            Roboto.Settings.stats.registerStatType("Hands Played", this.GetType(), System.Drawing.Color.Olive);
-            Roboto.Settings.stats.registerStatType("Packs Synced", this.GetType(), System.Drawing.Color.DarkBlue );
-            Roboto.Settings.stats.registerStatType("Packs Total", this.GetType(), System.Drawing.Color.LawnGreen, stats.displaymode.line, stats.statmode.absolute);
-            Roboto.Settings.stats.registerStatType("Dormant Packs Removed", this.GetType(), System.Drawing.Color.Bisque);
-            Roboto.Settings.stats.registerStatType("Dormant Packs Total", this.GetType(), System.Drawing.Color.CadetBlue, stats.displaymode.line, stats.statmode.absolute);
-            Roboto.Settings.stats.registerStatType("Bad Responses", this.GetType(), System.Drawing.Color.Olive);
-            Roboto.Settings.stats.registerStatType("Active Games", this.GetType(), System.Drawing.Color.Green, stats.displaymode.line, stats.statmode.absolute);
-            Roboto.Settings.stats.registerStatType("Active Players", this.GetType(), System.Drawing.Color.Blue, stats.displaymode.line, stats.statmode.absolute);
-            Roboto.Settings.stats.registerStatType("Background Wait", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
-            Roboto.Settings.stats.registerStatType("Background Wait (Quickcheck)", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
-            Roboto.Settings.stats.registerStatType("Background Wait (Pack Sync)", this.GetType(), System.Drawing.Color.Cyan, stats.displaymode.line, stats.statmode.absolute);
-
-            Console.WriteLine(localData.questions.Count.ToString() + " questions and " + localData.answers.Count.ToString() + " answers loaded for xyzzy");
-
-        }
 
         public override void initChatData(chat c)
         {
@@ -360,12 +117,12 @@ namespace RobotoChatBot.Modules
                     //use defaults or configure game
                     string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
                     
-                    long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1,false,kb);
+                    long messageID = Messaging.SendQuestion(c.chatID, m.userID, "Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1,false,kb);
 
                     if (messageID == long.MinValue)
                     {
                         //no private message session
-                        TelegramAPI.SendMessage(m.chatID, m.userFullName + " needs to open a private chat to @" +
+                        Messaging.SendMessage(m.chatID, m.userFullName + " needs to open a private chat to @" +
                             Roboto.Settings.botUserName + " to be able to start a game", m.userFullName, false, -1, true);
                     }
                     else
@@ -377,7 +134,7 @@ namespace RobotoChatBot.Modules
                         chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
 
                         //send out invites
-                        TelegramAPI.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
+                        Messaging.SendMessage(m.chatID, m.userFullName + " is starting a new game of xyzzy! Type /xyzzy_join to join. You can join / leave " +
                             "at any time - you will be included next time a question is asked. You will need to open a private chat to @" +
                             Roboto.Settings.botUserName + " if you haven't got one yet - unfortunately I am a stupid bot and can't do it myself :("
                             , m.userFullName, false, -1, true);
@@ -401,18 +158,18 @@ namespace RobotoChatBot.Modules
                     long i = -1;
                     try
                     {
-                        i = TelegramAPI.SendMessage(m.userID, "You joined the xyzzy game in " + m.chatName);
+                        i = Messaging.SendMessage(m.userID, "You joined the xyzzy game in " + m.chatName);
                         if (i == -1)
                         {
                             log("Adding user, but the outbound message is still queued", logging.loglevel.verbose);
-                            TelegramAPI.SendMessage(m.chatID, "Sent " + m.userFullName + " a message, but I'm waiting for them to reply to another question. "
+                            Messaging.SendMessage(m.chatID, "Sent " + m.userFullName + " a message, but I'm waiting for them to reply to another question. "
                                 + m.userFullName + " is in the game, but will need to clear their other PMs before they see any questions. ", m.userFullName, false, m.message_id);
 
                         }
                         else if (i < 0)
                         {
                             log("Adding user, but message blocked, abandoning", logging.loglevel.warn);
-                            TelegramAPI.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
+                            Messaging.SendMessage(m.chatID, "Couldn't add " + m.userFullName + " to the game, as I couldnt send them a message. "
                                + m.userFullName + " probably needs to open a chat session with me. "
                                + "Create a message session, then try /xyzzy_join again.", m.userFullName, false, m.message_id);
                         }
@@ -422,8 +179,8 @@ namespace RobotoChatBot.Modules
                         {
                             log("Adding user processing", logging.loglevel.verbose);
                             bool added = chatData.addPlayer(new mod_xyzzy_player(m.userFullName, m.userHandle, m.userID));
-                            if (added) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
-                            else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
+                            if (added) { Messaging.SendMessage(c.chatID, m.userFullName + " has joined the game"); }
+                            else { Messaging.SendMessage(c.chatID, m.userFullName + " is already in the game"); }
                         }
                     }
                     catch
@@ -444,8 +201,8 @@ namespace RobotoChatBot.Modules
                 else if (m.text_msg.StartsWith("/xyzzy_leave"))
                 {
                     bool removed = chatData.removePlayer(m.userID);
-                    //if (removed) { TelegramAPI.SendMessage(c.chatID, m.userFullName + " has left the game"); }
-                    //else { TelegramAPI.SendMessage(c.chatID, m.userFullName + " isnt part of the game, and can't be removed!"); }
+                    //if (removed) { Messaging.SendMessage(c.chatID, m.userFullName + " has left the game"); }
+                    //else { Messaging.SendMessage(c.chatID, m.userFullName + " isnt part of the game, and can't be removed!"); }
                     processed = true;
                 }
                
@@ -478,7 +235,7 @@ namespace RobotoChatBot.Modules
                 {
                     string response = "The following pack filters are currently set. These can be changed when starting a new game : " + "\n\r" +
         chatData.getPackFilterStatus();
-                    TelegramAPI.SendMessage(m.chatID, response, false, m.message_id);
+                    Messaging.SendMessage(m.chatID, response, false, m.message_id);
                     processed = true;
                 }
                 //set the filter (inflight)
@@ -491,7 +248,7 @@ namespace RobotoChatBot.Modules
                 //set the filter (inflight)
                 else if (m.text_msg.StartsWith("/xyzzy_reDeal"))
                 {
-                    TelegramAPI.SendMessage(m.chatID, "Resetting everyone's cards, and shuffled the decks", false, m.message_id);
+                    Messaging.SendMessage(m.chatID, "Resetting everyone's cards, and shuffled the decks", false, m.message_id);
                     chatData.reDeal();
                     
                     processed = true;
@@ -500,7 +257,7 @@ namespace RobotoChatBot.Modules
                 else if (m.text_msg.StartsWith("/xyzzy_reset"))
                 {
                     chatData.resetScores();
-                    TelegramAPI.SendMessage(m.chatID, "Scores have been reset!", false, m.message_id);
+                    Messaging.SendMessage(m.chatID, "Scores have been reset!", false, m.message_id);
                     processed = true;
                 }
 
@@ -536,11 +293,11 @@ namespace RobotoChatBot.Modules
                         //make a keyboard and send leave message to user.
                         activeGames.Add("Cancel");
                         string kb = TelegramAPI.createKeyboard(activeGames, 1);
-                        long messageID = TelegramAPI.GetExpectedReply(0, m.userID, "Which game would you like to leave?", true, typeof(mod_xyzzy), "leaveGamePickGroup", m.userFullName, -1, false, kb, false, false, true);
+                        long messageID = Messaging.SendQuestion(0, m.userID, "Which game would you like to leave?", true, typeof(mod_xyzzy), "leaveGamePickGroup", m.userFullName, -1, false, kb, false, false, true);
                     }
                     else
                     {
-                        TelegramAPI.SendMessage(m.userID, "You are not in any active games.", null, false, m.message_id, true, true);
+                        Messaging.SendMessage(m.userID, "You are not in any active games.", null, false, m.message_id, true, true);
                     }
 
 
@@ -550,7 +307,7 @@ namespace RobotoChatBot.Modules
 
                 else if (m.text_msg.StartsWith("/xyzzy_"))
                 {
-                    TelegramAPI.SendMessage(m.chatID, "To start a game, add me to a group chat, and type /xyzzy_start");
+                    Messaging.SendMessage(m.chatID, "To start a game, add me to a group chat, and type /xyzzy_start");
                     processed = true;
                 }
             }
@@ -675,7 +432,7 @@ namespace RobotoChatBot.Modules
 
             
             string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games\n\r";
-            result += localData.packs.Count().ToString() + " packs loaded containing " + (localData.questions.Count() + localData.answers.Count()) + " cards";
+            result += localPluginData.packs.Count().ToString() + " packs loaded containing " + (localPluginData.questions.Count() + localPluginData.answers.Count()) + " cards";
 
             return result;
 
@@ -698,13 +455,13 @@ namespace RobotoChatBot.Modules
                     string chatID = m.text_msg.Substring(m.text_msg.LastIndexOf("(")+1);
                     chatID = chatID.Substring(0, chatID.Length - 1);
                     e.chatID = long.Parse(chatID);
-                    c = Roboto.Settings.getChat(e.chatID);
+                    c = Chats.getChat(e.chatID);
                     if (c == null) { throw new DataMisalignedException("Couldnt find chat with that ID"); }
                 }
                 catch (Exception)
                 {
                     log("A 'Pick Group' message could not be deciphered properly, no chat was found.", logging.loglevel.warn);
-                    TelegramAPI.SendMessage(m.userID, "Sorry - something went wrong, I cant find that group.");
+                    Messaging.SendMessage(m.userID, "Sorry - something went wrong, I cant find that group.");
                     return (true);
                 }
             }
@@ -712,7 +469,7 @@ namespace RobotoChatBot.Modules
 
 
 
-            c = Roboto.Settings.getChat(e.chatID);
+            c = Chats.getChat(e.chatID);
             if (c != null)
             {
                 mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata), true);
@@ -764,7 +521,7 @@ namespace RobotoChatBot.Modules
                     else if (m.text_msg == "Change Score") { chatData.askChangeScoreMessage(m); }
                     else if (m.text_msg == "Abandon")
                     {
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", m.userFullName, -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
+                        Messaging.SendQuestion(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", m.userFullName, -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
                     }
                     return true;
                 }
@@ -780,7 +537,7 @@ namespace RobotoChatBot.Modules
                         chatData.addQuestions();
                         chatData.addAllAnswers();
                         string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                         chatData.setStatus(xyzzy_Statuses.Invites);
                     }
                     else if (m.text_msg == "Configure Game")
@@ -791,13 +548,13 @@ namespace RobotoChatBot.Modules
                     else if (m.text_msg == "Cancel")
                     {
 
-                        TelegramAPI.SendMessage(m.userID, "Cancelled setup");
+                        Messaging.SendMessage(m.userID, "Cancelled setup");
                         chatData.setStatus(xyzzy_Statuses.Stopped);
                     }
                     else
                     {
                         string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
-                        long messageID = TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1, false, kb);
+                        long messageID = Messaging.SendQuestion(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1, false, kb);
                     }
                     processed = true;
                 }
@@ -825,7 +582,7 @@ namespace RobotoChatBot.Modules
                     }
                     else
                     {
-                        TelegramAPI.GetExpectedReply(c.chatID, m.userID, m.text_msg + " is not a valid number. How many questions do you want the round to last for? -1 for infinite", true, typeof(mod_xyzzy), "SetGameLength");
+                        Messaging.SendQuestion(c.chatID, m.userID, m.text_msg + " is not a valid number. How many questions do you want the round to last for? -1 for infinite", true, typeof(mod_xyzzy), "SetGameLength");
                     }
                     processed = true;
                 }
@@ -854,7 +611,7 @@ namespace RobotoChatBot.Modules
                     //import a cardcast pack
                     if (m.text_msg == "Import CardCast Pack")
                     {
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
+                        Messaging.SendQuestion(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
                             + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
                         if (chatData.status == xyzzy_Statuses.setPackFilter) { chatData.setStatus(xyzzy_Statuses.cardCastImport); }
                     }
@@ -897,7 +654,7 @@ namespace RobotoChatBot.Modules
                         {
                             //adding as part of a /settings. return to main
                             chatData.sendSettingsMessage(m);
-                            //TelegramAPI.SendMessage(chatData.chatID, "Updated the pack list. New cards won't get added to the game until you restart, or /xyzzy_reDeal" );
+                            //Messaging.SendMessage(chatData.chatID, "Updated the pack list. New cards won't get added to the game until you restart, or /xyzzy_reDeal" );
                         }
                     }
                     processed = true;
@@ -917,11 +674,11 @@ namespace RobotoChatBot.Modules
                     {
                         string importMessage;
                         Helpers.cardcast_pack pack = new Helpers.cardcast_pack();
-                        bool success = localData.importCardCastPack(m.text_msg, out pack, out importMessage);
+                        bool success = localPluginData.importCardCastPack(m.text_msg, out pack, out importMessage);
                         if (success == true)
                         {
                             //reply to user
-                            TelegramAPI.SendMessage(m.userID, importMessage);
+                            Messaging.SendMessage(m.userID, importMessage);
                             //enable the filter
                             chatData.processPackFilterMessage(m, pack.name);
                             //return to plugin selection
@@ -930,7 +687,7 @@ namespace RobotoChatBot.Modules
                         }
                         else
                         {
-                            TelegramAPI.GetExpectedReply(chatData.chatID, m.userID,
+                            Messaging.SendQuestion(chatData.chatID, m.userID,
                             "Couldn't add the pack. " + importMessage + ". To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
                         }
                     }
@@ -952,14 +709,14 @@ namespace RobotoChatBot.Modules
                     else if (success)
                     {
                         //success, called inflite
-                        //TelegramAPI.SendMessage(e.chatID, "Set timeouts to " + (chatData.maxWaitTimeHours == 0 ? "No Timeout" : chatData.maxWaitTimeHours.ToString() + " hours") );
+                        //Messaging.SendMessage(e.chatID, "Set timeouts to " + (chatData.maxWaitTimeHours == 0 ? "No Timeout" : chatData.maxWaitTimeHours.ToString() + " hours") );
                         //adding as part of a /settings. return to main
                         chatData.sendSettingsMessage(m);
 
                     }
                     else {
                         //send message, and retry
-                        TelegramAPI.SendMessage(m.userID, "Not a valid value!");
+                        Messaging.SendMessage(m.userID, "Not a valid value!");
                         chatData.askMaxTimeout(m.userID);
                     }
                     processed = true;
@@ -975,7 +732,7 @@ namespace RobotoChatBot.Modules
 
                         //Ready to start game - tell the player they can start when they want
                         string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                         chatData.setStatus(xyzzy_Statuses.Invites);
 
                     }
@@ -984,13 +741,13 @@ namespace RobotoChatBot.Modules
                         //adding as part of a /settings. return to main
                         chatData.sendSettingsMessage(m);
                         //success, called inflite
-                        //TelegramAPI.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
+                        //Messaging.SendMessage(e.chatID, (chatData.minWaitTimeHours == 0 ? "Game throttling disabled" :  "Set throttle to only allow one round every " + chatData.minWaitTimeHours.ToString() + " hours"));
                     }
 
                     else
                     {
                         //send message, and retry
-                        TelegramAPI.SendMessage(m.userID, "Not a valid number!");
+                        Messaging.SendMessage(m.userID, "Not a valid number!");
                         chatData.askMinTimeout(m.userID);
                     }
                     processed = true;
@@ -1023,12 +780,12 @@ namespace RobotoChatBot.Modules
                     else if (m.text_msg == "Start")
                     {
                         string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        Messaging.SendQuestion(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     }
                     else
                     {
                         string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     }
 
                     processed = true;
@@ -1063,8 +820,8 @@ namespace RobotoChatBot.Modules
                 else if (e.messageData == "Abandon")
                 {
                     chatData.setStatus(xyzzy_Statuses.Stopped);
-                    Roboto.Settings.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
-                    TelegramAPI.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game");
+                    Messaging.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
+                    Messaging.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game");
                     processed = true;
                 }
 
@@ -1095,7 +852,7 @@ namespace RobotoChatBot.Modules
                     else
                     {
                         log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
-                        TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
+                        Messaging.SendMessage(m.userID, "Couldnt find that player.");
                     }
                     chatData.check();
                     //now return to the last settings page
@@ -1109,12 +866,12 @@ namespace RobotoChatBot.Modules
                     mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
                     if (p != null)
                     {
-                        TelegramAPI.GetExpectedReply(chatData.chatID, m.userID, "What should their new score be?", true, typeof(mod_xyzzy), "changescorepoints " + p.playerID.ToString(), m.userFullName, -1, true, "", false, true, true);
+                        Messaging.SendQuestion(chatData.chatID, m.userID, "What should their new score be?", true, typeof(mod_xyzzy), "changescorepoints " + p.playerID.ToString(), m.userFullName, -1, true, "", false, true, true);
                     }
                     else
                     {
                         log("Couldnt find player " + m.text_msg, logging.loglevel.warn);
-                        TelegramAPI.SendMessage(m.userID, "Couldnt find that player.");
+                        Messaging.SendMessage(m.userID, "Couldnt find that player.");
                         //now return to the last settings page
                         chatData.sendSettingsMessage(m);
                     }
@@ -1140,7 +897,7 @@ namespace RobotoChatBot.Modules
                         if (!success)
                         {
                             log("Error changing points value", logging.loglevel.high);
-                            TelegramAPI.SendMessage(m.userID, "Sorry, something went wrong.");
+                            Messaging.SendMessage(m.userID, "Sorry, something went wrong.");
                             chatData.sendSettingsMessage(m);
                         }
                     }
@@ -1166,74 +923,34 @@ namespace RobotoChatBot.Modules
         }
 
 
-        public override void sampleData()
-        {
-            log("Adding stub sample packs");
 
-            //Add packs for the standard CaH packs. These should be synced when we do startupChecks()
-            Helpers.cardcast_pack primaryPack = new Helpers.cardcast_pack("Cards Against Humanity", "CAHBS", "Cards Against Humanity");
-            primaryPack.overrideGUID(mod_xyzzy.primaryPackID); //override this one's guid so we can add it by default to new poacks. 
-
-            localData.packs.Add(primaryPack);
-            localData.packs.Add(new Helpers.cardcast_pack("Expansion 1 - CAH", "CAHE1", "Expansion 1 - CAH"));
-            localData.packs.Add(new Helpers.cardcast_pack("Expansion 2 - CAH", "CAHE2", "Expansion 2 - CAH"));
-            localData.packs.Add(new Helpers.cardcast_pack("Expansion 3 - CAH", "CAHE3", "Expansion 3 - CAH"));
-            localData.packs.Add(new Helpers.cardcast_pack("Expansion 4 - CAH", "CAHE4", "Expansion 4 - CAH"));
-            localData.packs.Add(new Helpers.cardcast_pack("CAH Fifth Expansion", "EU6CJ", "CAH Fifth Expansion"));
-            localData.packs.Add(new Helpers.cardcast_pack("CAH Sixth Expansion", "PEU3Q", "CAH Sixth Expansion"));
-
-        }
 
         /// <summary>
         /// Startup checks and housekeeping
         /// </summary>
         public override void startupChecks()
         {
-            logging.longOp lo_s = new logging.longOp("XYZZY - Startup Checks", 5);
-            //check that our primary pack has the correct guid
-            //does it exist? 
-            if (localData.getPack(primaryPackID) != null)
-            {
-                log("OK - Primary pack exists", logging.loglevel.verbose);
-            }
-            else
-            {
-                Helpers.cardcast_pack primaryPack = localData.getPack("Cards Against Humanity");
-                if (primaryPack != null)
-                {
-                    //swap all guids over to the correct one
-                    Guid masterID = primaryPack.packID;
 
-                    foreach(mod_xyzzy_card qc in localData.questions.Where(x => x.packID == masterID )) { qc.packID = primaryPackID; log(qc.ToString() + " has been shuffled", logging.loglevel.high); }
-                    foreach(mod_xyzzy_card qa in localData.answers.Where(x => x.packID == masterID))    { qa.packID = primaryPackID; log(qa.ToString() + " has been shuffled", logging.loglevel.high); }
+            Roboto.Settings.stats.registerStatType("New Games Started", this.GetType(), System.Drawing.Color.Aqua);
+            Roboto.Settings.stats.registerStatType("Games Ended", this.GetType(), System.Drawing.Color.Orange);
+            Roboto.Settings.stats.registerStatType("Hands Played", this.GetType(), System.Drawing.Color.Olive);
+            Roboto.Settings.stats.registerStatType("Packs Synced", this.GetType(), System.Drawing.Color.DarkBlue);
+            Roboto.Settings.stats.registerStatType("Packs Total", this.GetType(), System.Drawing.Color.LawnGreen, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Dormant Packs Removed", this.GetType(), System.Drawing.Color.Bisque);
+            Roboto.Settings.stats.registerStatType("Dormant Packs Total", this.GetType(), System.Drawing.Color.CadetBlue, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Bad Responses", this.GetType(), System.Drawing.Color.Olive);
+            Roboto.Settings.stats.registerStatType("Active Games", this.GetType(), System.Drawing.Color.Green, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Active Players", this.GetType(), System.Drawing.Color.Blue, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Background Wait", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Background Wait (Quickcheck)", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Background Wait (Pack Sync)", this.GetType(), System.Drawing.Color.Cyan, stats.displaymode.line, stats.statmode.absolute);
 
-                    //swap any filters
-                    foreach (chat c in Roboto.Settings.chatData)
-                    {
-                        mod_xyzzy_chatdata cd = c.getPluginData<mod_xyzzy_chatdata>();
-                        if (cd != null)
-                        {
-                            int filtercopies = cd.packFilterIDs.RemoveAll(x => x == masterID);
-                            if (filtercopies > 0)
-                            {
-                                log("Chat " + c.ToString() + " filter updated with correct guid", logging.loglevel.warn);
-                                cd.packFilterIDs.Add(primaryPackID);
-                            }
-                        }
+            Console.WriteLine(localPluginData.questions.Count.ToString() + " questions and " + localPluginData.answers.Count.ToString() + " answers loaded for xyzzy");
 
-                    }
+            //logging.longOp lo_s = new logging.longOp("XYZZY - Startup Checks", 5);
+            
 
-                    //replace the pack ID
-                    primaryPack.packID = primaryPackID;
-
-                }
-                else
-                {
-                    log("No copy of the primary CAH pack could be found!", logging.loglevel.critical);
-                }
-            }
-
-
+            /*TODO - move this somewhere else, dumping the chat list is daft
             //check through our chatData and log some stats
             lo_s.totalLength = Roboto.Settings.chatData.Count();
             log("XYZZY Chatdata:", logging.loglevel.verbose);
@@ -1253,8 +970,8 @@ namespace RobotoChatBot.Modules
                 }
                 lo_s.addone();
             }
-            
-            lo_s.complete();
+            */
+            //lo_s.complete();
             
             
         }

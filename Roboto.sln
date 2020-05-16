@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.24720.0
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.30011.22
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Roboto", "Roboto\Roboto.csproj", "{4E78688D-017E-412B-A7BE-41B7376A145F}"
 EndProject
@@ -34,6 +34,9 @@ Global
 		Release|Any CPU = Release|Any CPU
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
+		Run - CAHLive|Any CPU = Run - CAHLive|Any CPU
+		Run - CAHLive|x64 = Run - CAHLive|x64
+		Run - CAHLive|x86 = Run - CAHLive|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Debug - CAHLive|Any CPU.ActiveCfg = Debug - CAHLive|x86
@@ -82,8 +85,16 @@ Global
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release|x64.Build.0 = Release|x64
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release|x86.ActiveCfg = Release|x86
 		{4E78688D-017E-412B-A7BE-41B7376A145F}.Release|x86.Build.0 = Release|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Run - CAHLive|Any CPU.ActiveCfg = Run - CAHLive|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Run - CAHLive|x64.ActiveCfg = Run - CAHLive|x64
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Run - CAHLive|x64.Build.0 = Run - CAHLive|x64
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Run - CAHLive|x86.ActiveCfg = Run - CAHLive|x86
+		{4E78688D-017E-412B-A7BE-41B7376A145F}.Run - CAHLive|x86.Build.0 = Run - CAHLive|x86
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {728637F9-559D-4A4B-A682-3188EB31BE45}
 	EndGlobalSection
 EndGlobal

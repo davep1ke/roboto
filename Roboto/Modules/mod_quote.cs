@@ -120,8 +120,7 @@ namespace RobotoChatBot.Modules
 
     public class mod_quote : RobotoModuleTemplate
     {
-        //TODO - Chat announcements? How do you know when someone is "back" though? 
-        private mod_quote_core_data localData;
+
 
         public override void init()
         {
@@ -149,20 +148,7 @@ namespace RobotoChatBot.Modules
         {
             return "Chat quote database - type /quote_add to add a quote to the db, or /quote_config to change settings";
         }
-        public override void initData()
-        {
-            try
-            {
-                localData = Roboto.Settings.getPluginData<mod_quote_core_data>();
-            }
-            catch (InvalidDataException)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                localData = new mod_quote_core_data();
-                sampleData();
-                Roboto.Settings.registerData(localData);
-            }
-        }
+
 
         public override void initChatData(chat c)
         {
@@ -201,11 +187,11 @@ namespace RobotoChatBot.Modules
 
         private bool addQuote(List<mod_quote_quote_line> lines, chat c)
         {
-            mod_quote_data localData = c.getPluginData<mod_quote_data>();
+            mod_quote_data localChatData = c.getPluginData<mod_quote_data>();
 
             if (!quoteExists(lines, c))
             {
-                localData.multiquotes.Add(new mod_quote_multiquote(lines));
+                localChatData.multiquotes.Add(new mod_quote_multiquote(lines));
                 Roboto.Settings.save();
                 return true;
             }
@@ -214,8 +200,8 @@ namespace RobotoChatBot.Modules
 
         private bool quoteExists(List<mod_quote_quote_line> lines, chat c)
         {
-            mod_quote_data localData = c.getPluginData<mod_quote_data>();
-            foreach (mod_quote_multiquote q in localData.multiquotes)
+            mod_quote_data localChatData = c.getPluginData<mod_quote_data>();
+            foreach (mod_quote_multiquote q in localChatData.multiquotes)
             {
                 if (q.lines == lines)
                 {
@@ -231,11 +217,11 @@ namespace RobotoChatBot.Modules
         /// <returns></returns>
         private string getQuote(chat c)
         {
-            mod_quote_data localData = c.getPluginData<mod_quote_data>();
-            if (localData.multiquotes.Count > 0)
+            mod_quote_data localChatData = c.getPluginData<mod_quote_data>();
+            if (localChatData.multiquotes.Count > 0)
             {
 
-                mod_quote_multiquote q = localData.multiquotes[settings.getRandom(localData.multiquotes.Count)];
+                mod_quote_multiquote q = localChatData.multiquotes[settings.getRandom(localChatData.multiquotes.Count)];
 
                 return (q.getText());
                 
@@ -252,16 +238,16 @@ namespace RobotoChatBot.Modules
             bool processed = false;
             if (c != null)
             {
-                mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
+                mod_quote_data localChatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
 
                 if (m.text_msg.StartsWith("/quote_add"))
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID,  "Who is the quote by? Or enter 'cancel'", true, typeof(mod_quote), "WHO", m.userFullName, -1, true);
+                    Messaging.SendQuestion(c.chatID, m.userID,  "Who is the quote by? Or enter 'cancel'", true, typeof(mod_quote), "WHO", m.userFullName, -1, true);
                     processed = true;
                 }
                 else if (m.text_msg.StartsWith("/quote_conv"))
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID,  "Enter the first speaker's name, a \\, then the text (e.g. Bob\\I like Bees).\n\rOr enter 'cancel' to cancel", true, typeof(mod_quote), "WHO_M", m.userFullName, -1, true);
+                    Messaging.SendQuestion(c.chatID, m.userID,  "Enter the first speaker's name, a \\, then the text (e.g. Bob\\I like Bees).\n\rOr enter 'cancel' to cancel", true, typeof(mod_quote), "WHO_M", m.userFullName, -1, true);
                     processed = true;
                 }
 
@@ -271,14 +257,14 @@ namespace RobotoChatBot.Modules
                     options.Add("Set Duration");
                     options.Add("Toggle automatic quotes");
                     string keyboard = TelegramAPI.createKeyboard(options, 1);
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID,
-                        "Quotes are currently " + (chatData.autoQuoteEnabled == true? "enabled" : "disabled") 
-                        + " and set to announce every " + chatData.autoQuoteHours.ToString() + " hours"
+                    Messaging.SendQuestion(c.chatID, m.userID,
+                        "Quotes are currently " + (localChatData.autoQuoteEnabled == true? "enabled" : "disabled") 
+                        + " and set to announce every " + localChatData.autoQuoteHours.ToString() + " hours"
                         , false, typeof(mod_quote), "CONFIG", m.userFullName, m.message_id, true, keyboard);
                 }
                 else if (m.text_msg.StartsWith("/quote"))
                 {
-                    TelegramAPI.SendMessage(m.chatID, getQuote(c), m.userFullName, true, m.message_id);
+                    Messaging.SendMessage(m.chatID, getQuote(c), m.userFullName, true, m.message_id);
                     processed = true;
                 }
             }
@@ -294,16 +280,16 @@ namespace RobotoChatBot.Modules
         {
             foreach (chat c in Roboto.Settings.chatData)
             {
-                mod_quote_data localData = c.getPluginData<mod_quote_data>();
+                mod_quote_data localChatData = c.getPluginData<mod_quote_data>();
                 
-                if (localData != null && localData.autoQuoteEnabled && DateTime.Now > localData.nextAutoQuoteAfter && localData.multiquotes.Count > 0)
+                if (localChatData != null && localChatData.autoQuoteEnabled && DateTime.Now > localChatData.nextAutoQuoteAfter && localChatData.multiquotes.Count > 0)
                 {
-                    TelegramAPI.SendMessage(c.chatID, getQuote(c), null, true);
-                    int maxMins = localData.autoQuoteHours * 60;
+                    Messaging.SendMessage(c.chatID, getQuote(c), null, true);
+                    int maxMins = localChatData.autoQuoteHours * 60;
                     //go back 1/8, then add rand 1/4 on
-                    int randomMins = settings.getRandom((localData.autoQuoteHours * 60) /4);
+                    int randomMins = settings.getRandom((localChatData.autoQuoteHours * 60) /4);
                     maxMins = maxMins - ( maxMins / 8) + randomMins;
-                    localData.nextAutoQuoteAfter = DateTime.Now.AddMinutes(maxMins);
+                    localChatData.nextAutoQuoteAfter = DateTime.Now.AddMinutes(maxMins);
                     
                 }
 
@@ -312,15 +298,15 @@ namespace RobotoChatBot.Modules
 
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
-            chat c = Roboto.Settings.getChat(e.chatID);
-            mod_quote_data chatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
+            chat c = Chats.getChat(e.chatID);
+            mod_quote_data localChatData = (mod_quote_data)c.getPluginData(typeof(mod_quote_data));
 
             //Adding quotes
             if (e.messageData.StartsWith("WHO_M"))
             {
                 if (m.text_msg.ToLower() == "cancel")
                 {
-                    TelegramAPI.SendMessage(m.userID, "Cancelled adding a new quote");
+                    Messaging.SendMessage(m.userID, "Cancelled adding a new quote");
                 }
                 else if (m.text_msg.ToLower() == "done")
                 {
@@ -346,13 +332,13 @@ namespace RobotoChatBot.Modules
                     if (lines.Count > 0)
                     {
                         mod_quote_multiquote q = new mod_quote_multiquote(lines);
-                        chatData.multiquotes.Add(q);
-                        TelegramAPI.SendMessage(e.chatID, "Added quote \n\r" + q.getText(), m.userFullName, true);
+                        localChatData.multiquotes.Add(q);
+                        Messaging.SendMessage(e.chatID, "Added quote \n\r" + q.getText(), m.userFullName, true);
 
                     }
                     else
                     {
-                        TelegramAPI.SendMessage(m.userID, "Couldnt add quote - no lines to add?");
+                        Messaging.SendMessage(m.userID, "Couldnt add quote - no lines to add?");
                     }
                     
                 }
@@ -360,7 +346,7 @@ namespace RobotoChatBot.Modules
                 {
                     //this should have a "\" in the middle of it to split the user from the text
                     int pos = m.text_msg.IndexOf("\\"[0]);
-                    if (pos == -1) { TelegramAPI.SendMessage(m.userID, "Couldn't work out where the name and text were. Cancelled adding a new quote"); }
+                    if (pos == -1) { Messaging.SendMessage(m.userID, "Couldn't work out where the name and text were. Cancelled adding a new quote"); }
                     else
                     {
                         //need to store the whole set of messages in messagedata until we are finished
@@ -368,7 +354,7 @@ namespace RobotoChatBot.Modules
                         //replace the "\" with something less likely to come up accidentally
                         newMsgData = newMsgData + m.text_msg.Substring(0, pos) + "<<#::#>>" + m.text_msg.Substring(pos+1) + "<<#::#>>";
 
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the next line, 'cancel' or 'done'", true, typeof(mod_quote), newMsgData, m.userFullName, m.message_id, true);
+                        Messaging.SendQuestion(e.chatID, m.userID, "Enter the next line, 'cancel' or 'done'", true, typeof(mod_quote), newMsgData, m.userFullName, m.message_id, true);
 
 
                     }
@@ -383,11 +369,11 @@ namespace RobotoChatBot.Modules
             {
                 if (m.text_msg.ToLower() == "cancel")
                 {
-                    TelegramAPI.SendMessage(m.userID, "Cancelled adding a new quote");
+                    Messaging.SendMessage(m.userID, "Cancelled adding a new quote");
                 }
                 else
                 {
-                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.userFullName, m.message_id, true, "", false,false,true);
+                    Messaging.SendQuestion(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.userFullName, m.message_id, true, "", false,false,true);
                 }
                 return true;
             }
@@ -399,7 +385,7 @@ namespace RobotoChatBot.Modules
             {
                 string quoteBy = e.messageData.Substring(5);    //.TrimStart("TEXT ".ToCharArray());
                 bool success = addQuote(new List<mod_quote_quote_line>() { new mod_quote_quote_line(quoteBy, m.text_msg) }, c);
-                TelegramAPI.SendMessage(e.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
+                Messaging.SendMessage(e.chatID, "Added " + m.text_msg + " by " + quoteBy + " " + (success ? "successfully" : "but fell on my ass"));
                 return true;
             }
 
@@ -408,13 +394,13 @@ namespace RobotoChatBot.Modules
             {
                 if (m.text_msg == "Set Duration")
                 {
-                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "How long between updates?" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
+                    Messaging.SendQuestion(e.chatID, m.userID, "How long between updates?" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
                     return true;
                 }
                 else if (m.text_msg == "Toggle automatic quotes")
                 {
-                    chatData.autoQuoteEnabled = !chatData.autoQuoteEnabled;
-                    TelegramAPI.SendMessage(c.chatID, "Quotes are now " + (chatData.autoQuoteEnabled == true ? "enabled" : "disabled"), m.userFullName, false, -1, true);
+                    localChatData.autoQuoteEnabled = !localChatData.autoQuoteEnabled;
+                    Messaging.SendMessage(c.chatID, "Quotes are now " + (localChatData.autoQuoteEnabled == true ? "enabled" : "disabled"), m.userFullName, false, -1, true);
                     return true;
                 }
             }
@@ -425,12 +411,12 @@ namespace RobotoChatBot.Modules
                 int hours = -1;
                 if (int.TryParse(m.text_msg, out hours) && hours >= -1)
                 {
-                    chatData.autoQuoteHours = hours;
-                    TelegramAPI.SendMessage(c.chatID, "Quote schedule set to every " + hours.ToString() + " hours.", m.userFullName, false, -1, true);
+                    localChatData.autoQuoteHours = hours;
+                    Messaging.SendMessage(c.chatID, "Quote schedule set to every " + hours.ToString() + " hours.", m.userFullName, false, -1, true);
                 }
                 else if (m.text_msg != "Cancel")
                 {
-                    TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Not a number. How many hours between updates, or 'Cancel' to cancel" + m.text_msg ,false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
+                    Messaging.SendQuestion(e.chatID, m.userID, "Not a number. How many hours between updates, or 'Cancel' to cancel" + m.text_msg ,false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
                 }
                 return true;
 

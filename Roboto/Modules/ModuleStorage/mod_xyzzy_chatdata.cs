@@ -84,7 +84,7 @@ namespace RobotoChatBot.Modules
             remainingAnswers.Clear();
             remainingQuestions.Clear();
             lastPlayerAsked = -1;
-            Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+            Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy));
         }
 
         /*/when the status is changed, make a note of the date.
@@ -115,7 +115,7 @@ namespace RobotoChatBot.Modules
 
         public mod_xyzzy_coredata getLocalData()
         {
-            return Roboto.Settings.getPluginData<mod_xyzzy_coredata>();
+            return Plugins.getPluginData<mod_xyzzy_coredata>();
         }
 
         internal bool addPlayer(mod_xyzzy_player newPlayer)
@@ -146,21 +146,21 @@ namespace RobotoChatBot.Modules
             if (players.Count == 0)
             {
                 log("No players in game", logging.loglevel.high);
-                TelegramAPI.SendMessage(chatID, "No players in the game to kick");
+                Messaging.SendMessage(chatID, "No players in the game to kick");
                 return false;
             }
             else if (existing == null)
             {
                 //check everything OK
                 log("Couldnt find player to remove, checking consistency", logging.loglevel.warn);
-                TelegramAPI.SendMessage(chatID, "Couldn't find player to kick");
+                Messaging.SendMessage(chatID, "Couldn't find player to kick");
                 check();
                 return false;
             }
             else if (players.Count <= 2 && existing != null)
             {
                 //removing last player
-                TelegramAPI.SendMessage(chatID, "Not enough players to continue, ending game.");
+                Messaging.SendMessage(chatID, "Not enough players to continue, ending game.");
                 wrapUp();
                 players.Remove(existing);
                 return true;
@@ -194,7 +194,7 @@ namespace RobotoChatBot.Modules
             if (existing != null)
             {
                 players.Remove(existing);
-                TelegramAPI.SendMessage(chatID, "Removed " + existing.ToString());
+                Messaging.SendMessage(chatID, "Removed " + existing.ToString());
 
                 //reset the judge ID. Judge should really be populated by this point
                 if (judge != null && existing == judge)
@@ -208,7 +208,7 @@ namespace RobotoChatBot.Modules
                     if (judge != null)
                     {
                         judge.selectedCards.Clear();
-                        TelegramAPI.SendMessage(chatID, "Judge " + existing.ToString() + " has left, judge is now " + judge.ToString());
+                        Messaging.SendMessage(chatID, "Judge " + existing.ToString() + " has left, judge is now " + judge.ToString());
                         log("Judge " + existing.ToString() + " has left, judge is now " + judge.ToString(), logging.loglevel.verbose);
                         //if we were in the middle of judging, resend the judge message.
                         if (status == xyzzy_Statuses.Judging)
@@ -239,7 +239,8 @@ namespace RobotoChatBot.Modules
                     log("Soemthing went really wrong and couldnt find judge to reset", logging.loglevel.critical);
                 }
                 //clear any expected replies for the player we removed
-                List<ExpectedReply> matchedReplies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, existing.playerID);
+                //TODO - move to Messaging class. 
+                List<ExpectedReply> matchedReplies = Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID, existing.playerID);
                 foreach (ExpectedReply exr in matchedReplies)
                 {
                     Roboto.Settings.expectedReplies.Remove(exr);
@@ -264,7 +265,7 @@ namespace RobotoChatBot.Modules
             Roboto.Settings.stats.logStat(new statItem("Hands Played", typeof(mod_xyzzy)));
             mod_xyzzy_coredata localData = getLocalData();
             //TODO - this causes issues if someone is changing settings in the middle of a round. 
-            Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy)  ); //shouldnt be needed, but handy if we are forcing a question in debug.
+            Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy)  ); //shouldnt be needed, but handy if we are forcing a question in debug.
 
             
             //check that the question card still exists. Remove any dead cards
@@ -283,7 +284,7 @@ namespace RobotoChatBot.Modules
             if (question == null)
             {
                 log("Out of Question Cards, refilling.", logging.loglevel.high);
-                TelegramAPI.SendMessage(chatID, "All questions have been used up, pack has been refilled!");
+                Messaging.SendMessage(chatID, "All questions have been used up, pack has been refilled!");
                 addQuestions();
                 question = localData.getQuestionCard(remainingQuestions[0]); //if this doesnt work, it will bomb out later when it checks for a null card, hopefully
             }
@@ -326,14 +327,14 @@ namespace RobotoChatBot.Modules
                         long messageID = long.MaxValue;
                         if (player == tzar)
                         {
-                            messageID =  TelegramAPI.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, player.name,  false, -1, true);
+                            messageID =  Messaging.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, player.name,  false, -1, true);
                         }
                         else
                         {
                             /*int questionMsg = TelegramAPI.GetReply(player.playerID,, -1, true, player.getAnswerKeyboard(localData));*/
                             string questionText = tzar.name + " asks: " + "\n\r" + question.text;
                             //we are expecting a reply to this:
-                            messageID = TelegramAPI.GetExpectedReply(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData));
+                            messageID = Messaging.SendQuestion(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData));
                         }
 
                         if (messageID == -403) //bot doesnt have access to send message. Probably blocked 
@@ -404,9 +405,9 @@ namespace RobotoChatBot.Modules
                 //couldnt find answer, reask
                 string questionText = players[lastPlayerAsked].name + " asks: " + "\n\r" + question.text;
                 //we are expecting a reply to this:
-                TelegramAPI.GetExpectedReply(chatID, player.playerID, "Not a valid answer! Try again. " + questionText, true, typeof(mod_xyzzy), "Question", null,  -1, true, player.getAnswerKeyboard(localData));
+                Messaging.SendQuestion(chatID, player.playerID, "Not a valid answer! Try again. " + questionText, true, typeof(mod_xyzzy), "Question", null,  -1, true, player.getAnswerKeyboard(localData));
 
-                //TelegramAPI.SendMessage(playerID, "Not a valid answer! Reply to the original message again, using the keyboard");
+                //Messaging.SendMessage(playerID, "Not a valid answer! Reply to the original message again, using the keyboard");
                 return false;
             }
             else
@@ -423,7 +424,7 @@ namespace RobotoChatBot.Modules
                     //just check if this needs more responses:
                     if (player.selectedCards.Count != question.nrAnswers)
                     {
-                        TelegramAPI.GetExpectedReply(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData),false,false,true);
+                        Messaging.SendQuestion(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData),false,false,true);
                     }
                 }
             }
@@ -441,7 +442,7 @@ namespace RobotoChatBot.Modules
                 foreach(mod_xyzzy_player p in players )
                 {
                     logtxt += "\n\r" + p.name + " " + p.playerID + " - " + p.selectedCards.Count() + " / " + question.nrAnswers ;
-                    foreach (ExpectedReply e in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, p.playerID))
+                    foreach (ExpectedReply e in Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID, p.playerID))
                     {
                         logtxt += " ExpectedReply: " + e.messageData + " sent= " + e.isSent().ToString();
                     }
@@ -504,12 +505,12 @@ namespace RobotoChatBot.Modules
                 keyboardOptions.Add("Force Question");
 
                 //NB: this needs to be done inside the admin message, to prevent non-admin users getting past this point. Any other messages should be a normal sendMessage.
-                TelegramAPI.GetExpectedReply(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", null, -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
+                Messaging.SendQuestion(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", null, -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
             }
             else
             {
                 message += "\n\r You are not an admin in this group, so you'll need to get someone else to change the game settings. An admin can add you by typing /addadmin in the main group chat.";
-                TelegramAPI.SendMessage(m.userID, message, m.userFullName, true);
+                Messaging.SendMessage(m.userID, message, m.userFullName, true);
             }
 
 
@@ -542,7 +543,7 @@ namespace RobotoChatBot.Modules
                 message += "\n\r \n\r" + "Enabled Packs:" + "\n\r" + getPackFilterStatus();
 
             }
-            TelegramAPI.SendMessage(chatID, message);
+            Messaging.SendMessage(chatID, message);
 
         }
 
@@ -557,7 +558,7 @@ namespace RobotoChatBot.Modules
             addQuestions();
             addAllAnswers();
 
-            TelegramAPI.SendMessage(chatID, "Added additional cards to the game!");
+            Messaging.SendMessage(chatID, "Added additional cards to the game!");
             if (status == xyzzy_Statuses.Stopped && players.Count > 1)
             {
                 Roboto.Settings.stats.logStat(new statItem("New Games Started",typeof(mod_xyzzy) ));
@@ -573,7 +574,7 @@ namespace RobotoChatBot.Modules
             foreach (mod_xyzzy_player p in players ) { playernames.Add(p.name); }
             playernames.Add("Cancel");
             string keyboard = TelegramAPI.createKeyboard(playernames, 2);
-            TelegramAPI.GetExpectedReply(chatID, m.userID, "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", m.userFullName, -1, true, keyboard);
+            Messaging.SendQuestion(chatID, m.userID, "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", m.userFullName, -1, true, keyboard);
 
         }
 
@@ -590,7 +591,7 @@ namespace RobotoChatBot.Modules
             }
             remainingAnswers.Clear();
             remainingQuestions.Clear();
-            Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+            Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy));
 
             //now build back up
             addAllAnswers();
@@ -608,7 +609,7 @@ namespace RobotoChatBot.Modules
         {
             List<mod_xyzzy_player> players = new List<mod_xyzzy_player>();
 
-            List<ExpectedReply> expectedReplies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question");
+            List<ExpectedReply> expectedReplies = Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question");
 
             foreach (ExpectedReply r in expectedReplies)
             {
@@ -621,7 +622,7 @@ namespace RobotoChatBot.Modules
         private void wrapUp()
         {
             Roboto.Settings.stats.logStat(new statItem("Games Ended", typeof(mod_xyzzy)));
-            Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+            Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy));
             setStatus(xyzzy_Statuses.Stopped);
             String message = "Game over!";
             if (players.Count > 1) { message += " You can continue this game with the same players by selecting Extend in /xyzzy_settings"; }
@@ -631,7 +632,7 @@ namespace RobotoChatBot.Modules
                 message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
             }
 
-            TelegramAPI.SendMessage(chatID, message);
+            Messaging.SendMessage(chatID, message);
         }
 
         /// <summary>
@@ -665,7 +666,7 @@ namespace RobotoChatBot.Modules
 
         public void askGameLength(message m)
         {
-            TelegramAPI.GetExpectedReply(chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
+            Messaging.SendQuestion(chatID, m.userID, "How many questions do you want the round to last for (-1 for infinite)", true, typeof(mod_xyzzy), "SetGameLength");
         }
 
         internal void beginJudging(bool judgesMessageOnly = false)
@@ -755,7 +756,7 @@ namespace RobotoChatBot.Modules
                 if (possibleAnswerCount > 0)
                 {
 
-                    long messageID = TelegramAPI.GetExpectedReply(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", null, -1, true, keyboard);
+                    long messageID = Messaging.SendQuestion(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", null, -1, true, keyboard);
 
                     if (messageID == long.MinValue)
                     {
@@ -764,19 +765,19 @@ namespace RobotoChatBot.Modules
                     else if (messageID == -403)
                     {
                         log("Couldnt send judges message, blocked by user / user doesnt exist. Removing from game", logging.loglevel.warn);
-                        TelegramAPI.SendMessage(chatID, tzar.name + " has blocked the bot, which was particularly douchey of them. " + tzar.name + " is a douche. Or maybe a bag for them. Either way, they've been removed the from the game.");
+                        Messaging.SendMessage(chatID, tzar.name + " has blocked the bot, which was particularly douchey of them. " + tzar.name + " is a douche. Or maybe a bag for them. Either way, they've been removed the from the game.");
                         removePlayer(tzar.playerID);
                     }
 
                     //Send the general chat message
                     else if (!judgesMessageOnly)
                     {
-                        TelegramAPI.SendMessage(chatID, chatMsg);
+                        Messaging.SendMessage(chatID, chatMsg);
                     }
                 }
                 else
                 {
-                    TelegramAPI.SendMessage(chatID, "Not enough answers to judge! Skipping to next question");
+                    Messaging.SendMessage(chatID, "Not enough answers to judge! Skipping to next question");
                     log("Not enough answers to judge! Skipping to next question ", logging.loglevel.warn);
                     askQuestion(true);
                 }
@@ -789,7 +790,7 @@ namespace RobotoChatBot.Modules
             foreach (mod_xyzzy_player p in players) { playernames.Add(p.name); }
             playernames.Add("Cancel");
             string keyboard = TelegramAPI.createKeyboard(playernames, 2);
-            TelegramAPI.GetExpectedReply(chatID, m.userID, "Whose score do you want to alter?", true, typeof(mod_xyzzy), "changescore", m.userFullName, -1, true, keyboard);
+            Messaging.SendQuestion(chatID, m.userID, "Whose score do you want to alter?", true, typeof(mod_xyzzy), "changescore", m.userFullName, -1, true, keyboard);
         }
 
         public void askFuckWithMessage(message m)
@@ -798,7 +799,7 @@ namespace RobotoChatBot.Modules
             foreach (mod_xyzzy_player p in players) { playernames.Add(p.name); }
             playernames.Add("Cancel");
             string keyboard = TelegramAPI.createKeyboard(playernames, 2);
-            TelegramAPI.GetExpectedReply(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", m.userFullName, -1, true, keyboard);
+            Messaging.SendQuestion(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", m.userFullName, -1, true, keyboard);
         }
 
 
@@ -885,7 +886,7 @@ namespace RobotoChatBot.Modules
                             "Still waiting on the following players :";
                         bool unsentMessages = false;
                         bool first = true;
-                        foreach (ExpectedReply r in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question"))
+                        foreach (ExpectedReply r in Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID, -1, "Question"))
                         {
                             if (r.chatID == chatID)
                             {
@@ -924,7 +925,7 @@ namespace RobotoChatBot.Modules
             }
 
 
-            long messageID = TelegramAPI.SendMessage(chatID, response, null, true, -1 , true);
+            long messageID = Messaging.SendMessage(chatID, response, null, true, -1 , true);
             if (messageID == -403)
             {
                 log("Bot blocked - abandoning", logging.loglevel.high);
@@ -975,7 +976,7 @@ namespace RobotoChatBot.Modules
                 , "1","2", "6", "12", "24", "48"
             }, 2);
 
-            TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to set a timeout? Enter how long (in hours) before someone is skipped, or 'Continue' to accept the last value ("
+            Messaging.SendQuestion(chatID, userID, "Do you want to set a timeout? Enter how long (in hours) before someone is skipped, or 'Continue' to accept the last value ("
                 + (maxWaitTimeHours == 0 ? "No Timeout" : maxWaitTimeHours.ToString()) + ")"
                 , true, typeof(mod_xyzzy), "setMaxHours", null, -1, true, kb );
         }
@@ -993,7 +994,7 @@ namespace RobotoChatBot.Modules
                 , "1","2", "6", "12", "24", "48"
             }, 2);
 
-            TelegramAPI.GetExpectedReply(chatID, userID, "Do you want to force a slower game? Enter how long (in hours) before a new round can start, or 'Continue' to accept the last value ("
+            Messaging.SendQuestion(chatID, userID, "Do you want to force a slower game? Enter how long (in hours) before a new round can start, or 'Continue' to accept the last value ("
                 + (minWaitTimeHours == 0 ? "No Limit" : minWaitTimeHours.ToString()) + ")"
                 , true, typeof(mod_xyzzy), "setMinHours", null, -1, true, kb);
         }
@@ -1148,7 +1149,7 @@ namespace RobotoChatBot.Modules
                     //message += "\n\r" + p.name_markdownsafe + " - " + p.wins.ToString() + " points";
                 }
 
-                TelegramAPI.SendMessage(chatID, message, null ,  true);
+                Messaging.SendMessage(chatID, message, null ,  true);
 
                 //ask the next question (will jump to summary if no more questions). 
                 askQuestion(false);
@@ -1157,7 +1158,7 @@ namespace RobotoChatBot.Modules
             {
                 //answer not found?
                 Roboto.Settings.stats.logStat(new statItem("Bad Responses", typeof(mod_xyzzy)));
-                TelegramAPI.SendMessage(tzar.playerID, "Couldnt find your answer, try again?");
+                Messaging.SendMessage(tzar.playerID, "Couldnt find your answer, try again?");
 
                 log("Couldn't match judges response '" + chosenAnswer
                 + "' in chat " + chatID
@@ -1178,7 +1179,7 @@ namespace RobotoChatBot.Modules
             bool success = p.setScore(playerScore);
             if (success)
             {
-                TelegramAPI.SendMessage(chatID, "Player " + p.ToString() + "'s score has been changed to " + playerScore);
+                Messaging.SendMessage(chatID, "Player " + p.ToString() + "'s score has been changed to " + playerScore);
             }
             else
             {
@@ -1190,7 +1191,7 @@ namespace RobotoChatBot.Modules
 
         public override void startupChecks()
         {
-            //TODO - add a longop here
+            
             int i = packFilterIDs.Count();
             if (i > 250) //i.e enough that its stupid
             {
@@ -1215,8 +1216,8 @@ namespace RobotoChatBot.Modules
             if (fullCheck) { statusCheckedTime = DateTime.Now; }
 
 
-            mod_xyzzy_coredata localData = getLocalData();
-            List<ExpectedReply> replies = Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID);
+            //mod_xyzzy_coredata localData = getLocalData();
+            List<ExpectedReply> replies = Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID);
             List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
 
             //find out if our chat has a quiet time set
@@ -1268,12 +1269,12 @@ namespace RobotoChatBot.Modules
             if ((status == xyzzy_Statuses.Judging || status == xyzzy_Statuses.Question) && players.Count < 2)
             {
                 log("Stopping game, not enough players");
-                TelegramAPI.SendMessage(chatID, "Stopping game, not enough players");
+                Messaging.SendMessage(chatID, "Stopping game, not enough players");
                 wrapUp();
             }
 
             //responses from non-existent players, or replies for stopped games
-            foreach (ExpectedReply reply in Roboto.Settings.getExpectedReplies(typeof(mod_xyzzy), chatID ))
+            foreach (ExpectedReply reply in Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID ))
             {
                 if (reply.chatID == chatID)
                 {
@@ -1286,7 +1287,7 @@ namespace RobotoChatBot.Modules
             }
             foreach (ExpectedReply r in repliesToRemove)
             {
-                Roboto.Settings.removeReply(r);
+                Messaging.removeReply(r);
                 log(" Removed expected reply " + r.userID + "\\" + r.pluginType.ToString() + "\\" + r.messageData + ".");
             }
 
@@ -1331,7 +1332,7 @@ namespace RobotoChatBot.Modules
                             //middle
                             else { outstandingPlayers += ", " + p.ToString(); }
                         }
-                        TelegramAPI.SendMessage(chatID, outstandingPlayers + " can suck it for not answering in time:");
+                        Messaging.SendMessage(chatID, outstandingPlayers + " can suck it for not answering in time:");
 
                         log("Skipping to judging for chat" + chatID);
                         beginJudging();
@@ -1362,9 +1363,9 @@ namespace RobotoChatBot.Modules
                                 else { outstandingPlayers += ", " + p.ToString(); }
                             }
                             if (outstanding.Count == 1)
-                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " needs to hurry up! Tick-tock..."); }
+                            { Messaging.SendMessage(chatID, outstandingPlayers + " needs to hurry up! Tick-tock..."); }
                             else
-                            { TelegramAPI.SendMessage(chatID, outstandingPlayers + " need to hurry up! Tick-tock..."); }
+                            { Messaging.SendMessage(chatID, outstandingPlayers + " need to hurry up! Tick-tock..."); }
                         }
 
                         remindersSent = true;
@@ -1382,7 +1383,7 @@ namespace RobotoChatBot.Modules
                     }
                     else if (replies.Count > 1)
                     {
-                        Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+                        Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy));
                         reask = true;
                         log("Cleared multiple expected replies during judging from game " + chatID.ToString(), logging.loglevel.high);
 
@@ -1394,7 +1395,7 @@ namespace RobotoChatBot.Modules
                     }
                     else if (replies.Count == 1 && (replies[0].messageData != "Judging" || replies[0].userID != players[lastPlayerAsked].playerID))
                     {
-                        Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
+                        Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy));
                         reask = true;
                         log("Removed invalid expected reply during judging from game " + chatID.ToString(), logging.loglevel.high);
                     }
@@ -1420,7 +1421,7 @@ namespace RobotoChatBot.Modules
                         {
                             log("Sending judge reminder for chat " + chatID);
 
-                            TelegramAPI.SendMessage(chatID, "Hurry up Judgy Judgerson! (" + players[lastPlayerAsked].ToString() + ")");
+                            Messaging.SendMessage(chatID, "Hurry up Judgy Judgerson! (" + players[lastPlayerAsked].ToString() + ")");
                             remindersSent = true;
                         }
                         //abandon judging, too slow
@@ -1428,7 +1429,7 @@ namespace RobotoChatBot.Modules
                         {
                             log("Skipping judging for chat" + chatID);
 
-                            TelegramAPI.SendMessage(chatID, "Judge was too slow, " + players[lastPlayerAsked].ToString() + " gets docked a point!");
+                            Messaging.SendMessage(chatID, "Judge was too slow, " + players[lastPlayerAsked].ToString() + " gets docked a point!");
                             players[lastPlayerAsked].wins--;
                             askQuestion(false);
                         }
@@ -1477,8 +1478,7 @@ namespace RobotoChatBot.Modules
 
                 case xyzzy_Statuses.Stopped:
                     //do we have any game related ERs outstanding? 
-                    Roboto.Settings.clearExpectedReplies(chatID, typeof(mod_xyzzy));
-
+                    Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy));
 
                     break;
             }
@@ -1588,7 +1588,7 @@ namespace RobotoChatBot.Modules
             }
             else if (matchingPacks.Count == 0 )//      .Contains(packName))
             {
-                TelegramAPI.SendMessage(m.chatID, "Not a valid pack!", m.userFullName,  false, m.message_id);
+                Messaging.SendMessage(m.chatID, "Not a valid pack!", m.userFullName,  false, m.message_id);
             }
             else
             {
@@ -1715,7 +1715,7 @@ namespace RobotoChatBot.Modules
 
             //now send the new list. 
             string keyboard = TelegramAPI.createKeyboard(keyboardResponse, 2);//todo columns
-            TelegramAPI.GetExpectedReply(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter " + pageNr, m.userFullName,  -1, false, keyboard, true);
+            Messaging.SendQuestion(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter " + pageNr, m.userFullName,  -1, false, keyboard, true);
         }
 
 

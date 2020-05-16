@@ -20,7 +20,7 @@ namespace RobotoChatBot.Modules
         public string steamAPIKey = "YOURAPIKEYHERE";
         public string steamCoreURL = "http://api.steampowered.com";
         public List<mod_steam_game> games = new List<mod_steam_game>();
-        internal mod_steam_core_data() { }
+        public mod_steam_core_data() { }
 
         public bool tryAddGame(mod_steam_game g)
         {
@@ -111,7 +111,7 @@ namespace RobotoChatBot.Modules
         public void checkAchievements()
         {
             List<string> announce = new List<string>();
-            mod_steam_core_data localData = Roboto.Settings.getPluginData<mod_steam_core_data>();
+            mod_steam_core_data localData = Plugins.getPluginData<mod_steam_core_data>();
             //get a list of what the player has been playing
             try
             {
@@ -200,7 +200,7 @@ namespace RobotoChatBot.Modules
                 {
                     message += "And (" + (announce.Count - 5).ToString() + ") others";
                 }
-                TelegramAPI.SendMessage(this.chatID, message, null, true, -1,true);
+                Messaging.SendMessage(this.chatID, message, null, true, -1,true);
             }
 
         }
@@ -295,8 +295,7 @@ namespace RobotoChatBot.Modules
 
     public class mod_steam : RobotoModuleTemplate
     {
-        private mod_steam_core_data localData;
-
+      
         public override void init()
         {
             pluginChatDataType = typeof(mod_steam_chat_data);
@@ -345,33 +344,19 @@ namespace RobotoChatBot.Modules
             }
 
             
-            foreach (mod_steam_game g in localData.games)
+            foreach (mod_steam_game g in ((mod_steam_core_data)localData).games)
             {
                 achieves += g.chievs.Count;
             }
 
             string result = "Tracking " + playersTracked.ToString() + " players" + "\n\r" +
                 playerAchieves.ToString() + " player achievements known" + "\n\r" +
-                localData.games.Count.ToString() + " games and " + achieves.ToString() + " achievements cached";
+                ((mod_steam_core_data)localData).games.Count.ToString() + " games and " + achieves.ToString() + " achievements cached";
             
             return result;
 
         }
 
-        public override void initData()
-        {
-            try
-            {
-                localData = Roboto.Settings.getPluginData<mod_steam_core_data>();
-            }
-            catch (InvalidDataException)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                localData = new mod_steam_core_data();
-                sampleData();
-                Roboto.Settings.registerData(localData);
-            }
-        }
 
         public override void initChatData(chat c)
         {
@@ -397,7 +382,7 @@ namespace RobotoChatBot.Modules
 
                 if (m.text_msg.StartsWith("/steam_addplayer"))
                 {
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID
+                    Messaging.SendQuestion(c.chatID, m.userID
                         , "Enter the steamID of the player you want to add. /steam_help to find out how to get this."
                         , false
                         , typeof(mod_steam)
@@ -406,7 +391,7 @@ namespace RobotoChatBot.Modules
                 }
                 else if (m.text_msg.StartsWith("/steam_help"))
                 {
-                    TelegramAPI.SendMessage(m.chatID, "You are looking for an ID from the Steam Community site, try http://steamcommunity.com/ and find your profile. You should have something like http://steamcommunity.com/profiles/01234567890132456 . Take this number on the end of the URL." 
+                    Messaging.SendMessage(m.chatID, "You are looking for an ID from the Steam Community site, try http://steamcommunity.com/ and find your profile. You should have something like http://steamcommunity.com/profiles/01234567890132456 . Take this number on the end of the URL." 
                         , m.userFullName, false, m.message_id);
                     processed = true;
                 }
@@ -424,13 +409,13 @@ namespace RobotoChatBot.Modules
                         announce += "*" + p.playerName + "* - " + p.chievs.Count().ToString() + " known achievements" + "\n\r";
                     }
                     int achievements = 0;
-                    foreach (mod_steam_game g in localData.games)
+                    foreach (mod_steam_game g in ((mod_steam_core_data)localData).games)
                     {
                         achievements += g.chievs.Count();
                     }
-                    announce += "Tracking " + achievements.ToString() + " achievements across " + localData.games.Count().ToString() + " games";
+                    announce += "Tracking " + achievements.ToString() + " achievements across " + ((mod_steam_core_data)localData).games.Count().ToString() + " games";
 
-                    TelegramAPI.SendMessage(m.chatID, announce , m.userFullName, true, m.message_id);
+                    Messaging.SendMessage(m.chatID, announce , m.userFullName, true, m.message_id);
                 }
 
 
@@ -443,7 +428,7 @@ namespace RobotoChatBot.Modules
                     }
                     playerKeyboard.Add("Cancel");
                     string playerKeyboardText = TelegramAPI.createKeyboard(playerKeyboard, 2);
-                    TelegramAPI.GetExpectedReply(c.chatID, m.userID, "Which player do you want to stop tracking?", false, typeof(mod_steam), "REMOVEPLAYER", m.userFullName, m.message_id, true, playerKeyboardText);
+                    Messaging.SendQuestion(c.chatID, m.userID, "Which player do you want to stop tracking?", false, typeof(mod_steam), "REMOVEPLAYER", m.userFullName, m.message_id, true, playerKeyboardText);
                     
                 }
             }
@@ -478,7 +463,7 @@ namespace RobotoChatBot.Modules
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         { 
             bool processed = false;
-            chat c = Roboto.Settings.getChat(e.chatID);
+            chat c = Chats.getChat(e.chatID);
             mod_steam_chat_data chatData = c.getPluginData<mod_steam_chat_data>();
 
             //Adding a player to the chat. We should have a player ID in our message. 
@@ -493,19 +478,19 @@ namespace RobotoChatBot.Modules
 
                     if (player.isPrivate)
                     {
-                        TelegramAPI.SendMessage(c.chatID, "Couldn't add " + player.playerName + " as their profile is set to private", m.userFullName, false, m.message_id);
+                        Messaging.SendMessage(c.chatID, "Couldn't add " + player.playerName + " as their profile is set to private", m.userFullName, false, m.message_id);
                     }
                     else
                     {
                         chatData.addPlayer(player);
-                        TelegramAPI.SendMessage(c.chatID, "Added " + player.playerName + ". Any steam achievements will be announced.", m.userFullName, false, m.message_id);
+                        Messaging.SendMessage(c.chatID, "Added " + player.playerName + ". Any steam achievements will be announced.", m.userFullName, false, m.message_id);
 
                     }
 
                 }
                 else if (m.text_msg.ToUpper() != "CANCEL")
                 {
-                    TelegramAPI.GetExpectedReply(m.chatID, m.userID, m.text_msg + " is not a valid playerID. Enter a valid playerID or 'Cancel'", false, typeof(mod_steam), "ADDPLAYER", m.userFullName, m.message_id, true);
+                    Messaging.SendQuestion(m.chatID, m.userID, m.text_msg + " is not a valid playerID. Enter a valid playerID or 'Cancel'", false, typeof(mod_steam), "ADDPLAYER", m.userFullName, m.message_id, true);
                 }
                 processed = true;
             }
@@ -515,11 +500,11 @@ namespace RobotoChatBot.Modules
 
                 if (success)
                 {
-                    TelegramAPI.SendMessage(c.chatID, "Player " + m.text_msg + " removed.", m.userFullName, false, m.message_id, true);
+                    Messaging.SendMessage(c.chatID, "Player " + m.text_msg + " removed.", m.userFullName, false, m.message_id, true);
                 }
                 else
                 {
-                    TelegramAPI.SendMessage(c.chatID, "Sorry, something went wrong removing " + m.text_msg, m.userFullName, false, m.message_id,true);
+                    Messaging.SendMessage(c.chatID, "Sorry, something went wrong removing " + m.text_msg, m.userFullName, false, m.message_id,true);
                 }
                 processed = true;
             }

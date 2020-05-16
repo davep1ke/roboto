@@ -63,7 +63,6 @@ namespace RobotoChatBot.Modules
 
     public class mod_standard : RobotoModuleTemplate
     {
-        private mod_standard_data localData;
 
         public override void init()
         {
@@ -80,25 +79,12 @@ namespace RobotoChatBot.Modules
 
             backgroundHook = true;
             backgroundMins = 5;
-            
 
         }
 
-        public override void initData()
+        public override void startupChecks()
         {
             Roboto.Settings.stats.registerStatType("Expected Replies", this.GetType(), System.Drawing.Color.LawnGreen, stats.displaymode.line, stats.statmode.absolute);
-            try
-            {
-                //TODO - should move away from needing this local object. 
-                localData = Roboto.Settings.getPluginData<mod_standard_data>();
-            }
-            catch (InvalidDataException)
-            {
-                //Data doesnt exist, create, populate with sample data and register for saving
-                localData = new mod_standard_data();
-                sampleData();
-                Roboto.Settings.registerData(localData);
-            }
         }
 
         public override void initChatData(chat c)
@@ -136,7 +122,7 @@ namespace RobotoChatBot.Modules
         public static String getAllMethodDescriptions()
         {
             String methods = "The following commands are available:";
-            foreach (RobotoModuleTemplate plugin in settings.plugins)
+            foreach (RobotoModuleTemplate plugin in Plugins.plugins)
             {
                 methods += "\n\r" + plugin.getMethodDescriptions(); 
             }
@@ -158,16 +144,17 @@ namespace RobotoChatBot.Modules
         protected override void backgroundProcessing()
         {
             //do we need to save? 
-            if (localData.lastSaveToDiskDateTime.AddMinutes(Roboto.Settings.saveXMLeveryXMins) < DateTime.Now)
+            if (((mod_standard_data)localData).lastSaveToDiskDateTime.AddMinutes(Roboto.Settings.saveXMLeveryXMins) < DateTime.Now)
             {
-                localData.lastSaveToDiskDateTime = DateTime.Now;
+                ((mod_standard_data)localData).lastSaveToDiskDateTime = DateTime.Now;
                 Roboto.Settings.save();
             }
 
             //do general housekeeping
             Roboto.Settings.stats.houseKeeping();
-            Roboto.Settings.expectedReplyBackgroundProcessing();
-            Roboto.Settings.removeDormantChats();
+            Presence.backgroundProcessing();
+            Messaging.backgroundProcessing();
+            Chats.removeDormantChats();
 
         }
 
@@ -185,19 +172,19 @@ namespace RobotoChatBot.Modules
                     openingMessage += "Quiet time set between " + chatData.quietHoursStartTime.ToString("c") + " and " + chatData.quietHoursEndTime.ToString("c") + ". \n\r";
                 }
 
-                TelegramAPI.SendMessage(m.chatID, openingMessage +  getAllMethodDescriptions());
+                Messaging.SendMessage(m.chatID, openingMessage +  getAllMethodDescriptions());
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/save"))
             {
                 Roboto.Settings.save();
-                TelegramAPI.SendMessage(m.chatID, "Saved settings");
+                Messaging.SendMessage(m.chatID, "Saved settings");
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/stop") && c != null)
             {
                 c.muted = true;
-                TelegramAPI.SendMessage(m.chatID, "I am now ignoring all messages in this chat until I get a /start command. ");
+                Messaging.SendMessage(m.chatID, "I am now ignoring all messages in this chat until I get a /start command. ");
                 //TODO - make sure we abandon any games
 
                 processed = true;
@@ -205,13 +192,13 @@ namespace RobotoChatBot.Modules
             else if (m.text_msg.StartsWith("/start") && c != null && c.muted == true)
             {
                 c.muted = false;
-                TelegramAPI.SendMessage(m.chatID, "I am listening for messages again. Type /help for a list of commands." + "\n\r" + getAllWelcomeDescriptions());
+                Messaging.SendMessage(m.chatID, "I am listening for messages again. Type /help for a list of commands." + "\n\r" + getAllWelcomeDescriptions());
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/start"))
             {
                 //a default /start message where we arent on pause. Might be in group or private chat. 
-                TelegramAPI.SendMessage(m.chatID, getAllWelcomeDescriptions());
+                Messaging.SendMessage(m.chatID, getAllWelcomeDescriptions());
 
             }
 
@@ -219,12 +206,12 @@ namespace RobotoChatBot.Modules
             else if (m.text_msg.StartsWith("/background"))
             {
                 //kick off the background loop. 
-                Roboto.Settings.backgroundProcessing(true);
+                Plugins.backgroundProcessing(true);
             }
 
             else if (m.text_msg.StartsWith("/setquiethours") && c != null)
             {
-                TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours");
+                Messaging.SendQuestion(m.chatID, m.userID, "Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours");
                 processed = true;
             }
 
@@ -237,13 +224,13 @@ namespace RobotoChatBot.Modules
                     "I currently know about " + Roboto.Settings.chatData.Count().ToString() + " chats." + "\n\r" +
                     "The following plugins are currently loaded:" + "\n\r";
 
-                foreach (RobotoModuleTemplate plugin in settings.plugins)
+                foreach (RobotoModuleTemplate plugin in Plugins.plugins)
                 {
                     statstxt += "*" + plugin.GetType().ToString() + "*" + "\n\r";
                     statstxt += plugin.getStats() + "\n\r";
                 }
 
-                TelegramAPI.SendMessage(m.chatID, statstxt, m.userFullName, true);
+                Messaging.SendMessage(m.chatID, statstxt, m.userFullName, true);
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/addadmin") && c != null)
@@ -257,11 +244,11 @@ namespace RobotoChatBot.Modules
                         bool added = c.addAdmin(m.userID, m.userID);
                         if (added)
                         {
-                            TelegramAPI.SendMessage(m.chatID, "Added " + m.userFullName + " as admin.");
+                            Messaging.SendMessage(m.chatID, "Added " + m.userFullName + " as admin.");
                         }
                         else
                         {
-                            TelegramAPI.SendMessage(m.chatID, "Something went wrong! ");
+                            Messaging.SendMessage(m.chatID, "Something went wrong! ");
                             log("Error adding user as an admin", logging.loglevel.high);
                         }
                     }
@@ -271,7 +258,7 @@ namespace RobotoChatBot.Modules
                         List<string> members = new List<string>();
                         foreach (chatPresence p in c.getRecentChatUsers()) { members.Add(p.ToString()); }
                         //send keyboard to player requesting admin. 
-                        TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Who do you want to add as admin?", true, typeof(mod_standard), "ADDADMIN", m.userFullName, -1, false, TelegramAPI.createKeyboard(members, 2));
+                        Messaging.SendQuestion(m.chatID, m.userID, "Who do you want to add as admin?", true, typeof(mod_standard), "ADDADMIN", m.userFullName, -1, false, TelegramAPI.createKeyboard(members, 2));
                     }
 
                 }
@@ -289,7 +276,7 @@ namespace RobotoChatBot.Modules
                     //if there is no admin, add player
                     if (!c.chatHasAdmins())
                     {
-                        TelegramAPI.SendMessage(m.chatID, "Group currently doesnt have any admins!");
+                        Messaging.SendMessage(m.chatID, "Group currently doesnt have any admins!");
                     }
                     else
                     {
@@ -297,7 +284,7 @@ namespace RobotoChatBot.Modules
                         List<string> members = new List<string>();
                         foreach (long userID in c.chatAdmins) { members.Add(userID.ToString()); }
                         //send keyboard to player requesting admin. 
-                        TelegramAPI.GetExpectedReply(m.chatID, m.userID, "Who do you want to remove as admin?", true, typeof(mod_standard), "REMOVEADMIN", m.userFullName, -1, false, TelegramAPI.createKeyboard(members, 2));
+                        Messaging.SendQuestion(m.chatID, m.userID, "Who do you want to remove as admin?", true, typeof(mod_standard), "REMOVEADMIN", m.userFullName, -1, false, TelegramAPI.createKeyboard(members, 2));
                     }
 
                 }
@@ -329,11 +316,11 @@ namespace RobotoChatBot.Modules
                 //Sending image...
                 if (image != null)
                 {
-                    TelegramAPI.SendPhoto(m.chatID, "Stats", image, "StatsGraph.jpg", "application/octet-stream", m.message_id, false);
+                    Messaging.SendPhoto(m.chatID, "Stats", image, "StatsGraph.jpg", "application/octet-stream", m.message_id, false);
                 }
                 else
                 {
-                    TelegramAPI.SendMessage(m.chatID, "No statistics were found that matched your input, sorry!");
+                    Messaging.SendMessage(m.chatID, "No statistics were found that matched your input, sorry!");
                 }
                 processed = true;
 
@@ -347,7 +334,7 @@ namespace RobotoChatBot.Modules
         {
             {
                 String description = "Welcome to " + Roboto.Settings.botUserName + ".";
-                foreach (RobotoModuleTemplate plugin in settings.plugins)
+                foreach (RobotoModuleTemplate plugin in Plugins.plugins)
                 {
                     string moduleDesc = plugin.getWelcomeDescriptions();
                     if (moduleDesc != null) { description += "\n\r" + moduleDesc; }
@@ -357,7 +344,7 @@ namespace RobotoChatBot.Modules
         }
         public override bool replyReceived(ExpectedReply e, message m, bool messageFailed = false)
         {
-            chat c = Roboto.Settings.getChat(e.chatID);
+            chat c = Chats.getChat(e.chatID);
             mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
 
             if (e.messageData == "setQuietHours")
@@ -370,7 +357,7 @@ namespace RobotoChatBot.Modules
                 {
                     chatData.quietHoursEndTime = TimeSpan.MinValue;
                     chatData.quietHoursStartTime = TimeSpan.MinValue;
-                    TelegramAPI.SendMessage(e.chatID, "Quiet hours have been disabled");
+                    Messaging.SendMessage(e.chatID, "Quiet hours have been disabled");
                 }
                 else
                 {
@@ -380,11 +367,11 @@ namespace RobotoChatBot.Modules
                     if (success && s > TimeSpan.Zero && s.TotalDays < 1)
                     {
                         chatData.quietHoursStartTime = s;
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID, "Enter the wake time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setWakeHours", m.userFullName, -1, false, "", false, false, true);
+                        Messaging.SendQuestion(e.chatID, m.userID, "Enter the wake time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setWakeHours", m.userFullName, -1, false, "", false, false, true);
                     }
                     else
                     {
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID,  "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
+                        Messaging.SendQuestion(e.chatID, m.userID,  "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
                     }
 
 
@@ -402,7 +389,7 @@ namespace RobotoChatBot.Modules
                 {
                     chatData.quietHoursEndTime = TimeSpan.MinValue;
                     chatData.quietHoursStartTime = TimeSpan.MinValue;
-                    TelegramAPI.SendMessage(e.chatID, "Quiet hours have been disabled");
+                    Messaging.SendMessage(e.chatID, "Quiet hours have been disabled");
                 }
                 else
                 {
@@ -412,11 +399,11 @@ namespace RobotoChatBot.Modules
                     if (success && s > TimeSpan.Zero && s.TotalDays < 1)
                     {
                         chatData.quietHoursEndTime = s;
-                        TelegramAPI.SendMessage(e.chatID, "Quiet time set from " + chatData.quietHoursStartTime.ToString("c") + " to " + chatData.quietHoursEndTime.ToString("c"));   
+                        Messaging.SendMessage(e.chatID, "Quiet time set from " + chatData.quietHoursStartTime.ToString("c") + " to " + chatData.quietHoursEndTime.ToString("c"));   
                     }
                     else
                     {
-                        TelegramAPI.GetExpectedReply(e.chatID, m.userID,"Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
+                        Messaging.SendQuestion(e.chatID, m.userID,"Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
                     }
                 }
                 return true;
@@ -428,11 +415,11 @@ namespace RobotoChatBot.Modules
                 if (members.Count > 0)
                 {
                     bool success = c.addAdmin(members[0].userID, m.userID);
-                    TelegramAPI.SendMessage(m.chatID, success ? "Successfully added admin" : "Failed to add admin");
+                    Messaging.SendMessage(m.chatID, success ? "Successfully added admin" : "Failed to add admin");
                 }
                 else
                 {
-                    TelegramAPI.SendMessage(m.chatID, "Failed to add admin");
+                    Messaging.SendMessage(m.chatID, "Failed to add admin");
                 }
                 return true;
             }
@@ -443,7 +430,7 @@ namespace RobotoChatBot.Modules
                 bool success = long.TryParse(m.text_msg, out playerID);
                 if (success) { success = c.removeAdmin(playerID, m.userID); }
                 
-                TelegramAPI.SendMessage(m.chatID, success ? "Successfully removed admin" : "Failed to remove admin");
+                Messaging.SendMessage(m.chatID, success ? "Successfully removed admin" : "Failed to remove admin");
                 return true;
             }
 
@@ -452,13 +439,13 @@ namespace RobotoChatBot.Modules
 
         public static void getQuietTimes (long chatID, out TimeSpan startQuietHours, out TimeSpan endQuietHours )
         {
-            chat c = Roboto.Settings.getChat(chatID);
+            chat c = Chats.getChat(chatID);
             mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
 
             if (chatData == null)
             {
                 //create the chat data. Get the plugin instance (we are in a static method). 
-                RobotoModuleTemplate plugin = settings.getPlugin(typeof(mod_standard));
+                RobotoModuleTemplate plugin = Plugins.getPlugin(typeof(mod_standard));
                 plugin.initChatData(c);
                 chatData = c.getPluginData<mod_standard_chatdata>();
 

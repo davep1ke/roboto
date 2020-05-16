@@ -3,6 +3,7 @@ using System.Windows.Media;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Net.PeerToPeer.Collaboration;
 
 namespace RobotoChatBot.Modules
 {
@@ -20,14 +21,18 @@ namespace RobotoChatBot.Modules
         public Type pluginDataType;
         public Type pluginChatDataType;
 
+        //cache the plugin data locally. May need casting in implementations
+        internal RobotoModuleDataTemplate localData { get; set; }
+
+
         /// <summary>
         /// Initialise any code
         /// </summary>
         public virtual void init() { }
-        /// <summary>
+        /*// <summary>
         /// Initialise general data
         /// </summary>
-        public virtual void initData() { }
+        public virtual void initData() { }*/
         /// <summary>
         /// Return the list of valid commands for the plugin (returned during /operations, and on startup for sending to BotFather
         /// </summary>
@@ -61,9 +66,9 @@ namespace RobotoChatBot.Modules
         /// </summary>
         public virtual void startupChecks() { }
         /// <summary>
-        /// Initialise chat specific data
+        /// Initialise chat specific data. Chatdata object should already exist. 
         /// </summary>
-        public virtual void initChatData(chat c) { }
+        public fvirtual void initChatData(chat c) { }
         /// <summary>
         /// If creating a sample settings file, populate some dummy data in a RobotoModuleDataTemplate class, and store in settings
         /// using storeModuleData
@@ -81,7 +86,7 @@ namespace RobotoChatBot.Modules
             return false;
         }
 
-       
+
         /// <summary>
         /// A reply that was expected from a call to getExpectedReply
         /// </summary>
@@ -109,7 +114,7 @@ namespace RobotoChatBot.Modules
             }
         }
 
-       
+
 
         /// <summary>
         /// Logging wrapper
@@ -118,26 +123,28 @@ namespace RobotoChatBot.Modules
         /// <param name="level"></param>
         /// <param name="colour"></param>
         /// <param name="noLineBreak"></param>
-        public void log (string text, logging.loglevel level = logging.loglevel.normal, Color? colour = null, bool noLineBreak = false)
+        public void log(string text, logging.loglevel level = logging.loglevel.normal, Color? colour = null, bool noLineBreak = false)
         {
-            Roboto.log.log( text, level, colour, noLineBreak, false, false, false, 2);
+            Roboto.log.log(text, level, colour, noLineBreak, false, false, false, 2);
         }
 
         //Helper Methods
-        public T getPluginData<T>()
+        /*public T getPluginData<T>()
         {
-            return Roboto.Settings.getPluginData<T>();
-        }
+            return Plugins.getPluginData<T>();
+        }*/
         public RobotoModuleDataTemplate getPluginData()
         {
-            return Roboto.Settings.getPluginData(pluginDataType);
+            return localData;
         }
+
+
 
 
         public DateTime getLastUpdate()
         {
             RobotoModuleDataTemplate data = getPluginData();
-            if (data == null )
+            if (data == null)
             {
                 Roboto.log.log("Error - background processing requires a LocalData object to be defined!", logging.loglevel.critical);
                 return DateTime.MinValue;
@@ -153,17 +160,35 @@ namespace RobotoChatBot.Modules
 
         }
 
-        internal void validateChatData(chat chat)
+        /// <summary>
+        /// Create a pluginData object and stash locally & in the Plugins / Settings module so it can be saved.  
+        /// </summary>
+        internal void initPluginData()
         {
+            if (this.localData != null) { return; } //already valid. 
+
+            else
+            {
+                localData = (Modules.RobotoModuleDataTemplate)Activator.CreateInstance(pluginDataType);
+                Plugins.registerData(localData);
+                Roboto.log.log("Created & Stored Plugin Data " + localData.GetType().ToString() + " for module " + this.GetType().ToString(), logging.loglevel.low);
+            }
+        }
+
+
+/*        public void initChatPluginData(chat chat)
+        {
+
             if (pluginChatDataType != null)
             {
                 RobotoModuleChatDataTemplate chatData = chat.getPluginData(pluginChatDataType);
                 if (chatData == null || !chatData.isValid())
                 {
+                    
                     Console.WriteLine("chat data was invalid!");
                     throw new InvalidOperationException("Chat Data was Invalid");
                 }
             }
-        }
+        }*/
     }
 }
