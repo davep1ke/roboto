@@ -1054,37 +1054,40 @@ namespace RobotoChatBot.Modules
             string possiblematches = "";
 
             foreach (mod_xyzzy_player p in players)
-            { 
-                //handle multiple answers for a question 
-                string answer = "";
-                
-                foreach (string cardUID in p.selectedCards)
+            {
+                if (p != tzar) //dont check the judge for submitted answers! Prevent issue with them entering a symbol and comparing it to an empty answer. 
                 {
-                    
-                    mod_xyzzy_card card = localData.getAnswerCard(cardUID);
-                    if (answer != "")
+                    //handle multiple answers for a question 
+                    string answer = "";
+
+                    foreach (string cardUID in p.selectedCards)
                     {
-                        answer += " >> ";
+
+                        mod_xyzzy_card card = localData.getAnswerCard(cardUID);
+                        if (answer != "")
+                        {
+                            answer += " >> ";
+                        }
+                        answer += card.text;
+
                     }
-                    answer += card.text;
-                    
-                }
-                possiblematches += answer + ", ";
+                    possiblematches += answer + ", ";
 
-                //Keyboard seems to trim the answers at about 110 chars, so ignore anything after that point. 
-                //cleanse text and match
-                //if ( answer.Substring(0, Math.Min(answer.Length, 100)) == chosenAnswer.Substring(0, Math.Min(chosenAnswer.Length, 100)))
-                //if (answer == chosenAnswer)
+                    //Keyboard seems to trim the answers at about 110 chars, so ignore anything after that point. 
+                    //cleanse text and match
+                    //if ( answer.Substring(0, Math.Min(answer.Length, 100)) == chosenAnswer.Substring(0, Math.Min(chosenAnswer.Length, 100)))
+                    //if (answer == chosenAnswer)
 
-                //exact match
-                //OR First 100 match - for lenny faces  ( ͡° ͜ʖ ͡°) 
-                //OR cleansed strings match 
+                    //exact match
+                    //OR First 100 match - for lenny faces  ( ͡° ͜ʖ ͡°) 
+                    //OR cleansed strings match 
 
-                if (answer == chosenAnswer 
-                    || (answer.Length > 100? answer.Substring(0,100) : answer) == (chosenAnswer.Length > 100? chosenAnswer.Substring(0,100) : chosenAnswer) 
-                    || Helpers.common.cleanseText(answer, 100) == Helpers.common.cleanseText(chosenAnswer, 100))
-                {
-                    winner = p;
+                    if (answer == chosenAnswer
+                        || (answer.Length > 100 ? answer.Substring(0, 100) : answer) == (chosenAnswer.Length > 100 ? chosenAnswer.Substring(0, 100) : chosenAnswer)
+                        || Helpers.common.cleanseText(answer, 100) == Helpers.common.cleanseText(chosenAnswer, 100))
+                    {
+                        winner = p;
+                    }
                 }
             }
 

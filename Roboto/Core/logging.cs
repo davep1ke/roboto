@@ -364,6 +364,7 @@ namespace RobotoChatBot
                 //Setup our logging
                 currentLogFileDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, DateTime.Now.Hour, 0, 0);
                 string logfile = settings.foldername + Roboto.Settings.botUserName + " " + DateTime.Now.ToString("yyyy-MM-dd HH") + ".log";
+                if (!Directory.Exists(settings.foldername)) { Directory.CreateDirectory(settings.foldername); }
                 textWriter = new StreamWriter(logfile, true, new UTF8Encoding(),65536);
                 for (int i = 0; i < 10; i++) { textWriter.WriteLine(); }
                 initialised = true;
