@@ -261,6 +261,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />
+    <None Include="CallGraphs\Messaging.dgml" />
     <None Include="CallGraphs\Plugin Creation.dgml" />
     <None Include="packages.config" />
     <None Include="Properties\app.manifest" />

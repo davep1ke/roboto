@@ -51,7 +51,7 @@ namespace RobotoChatBot
             ExpectedReply e = new ExpectedReply(chatID, chatID, userName, text, isPM, null, null, replyToMessageID, false, "", markDown, clearKeyboard, false);
 
             //add the message to the stack. If it is sent, get the messageID back.
-            long messageID = newExpectedReply(e, trySendImmediately);
+            long messageID = processNewExpectedReply(e, trySendImmediately);
             return messageID;
 
         }
@@ -114,7 +114,7 @@ namespace RobotoChatBot
             ExpectedReply e = new ExpectedReply(chatID, userID, userName, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard, useMarkdown, clearKeyboard, true);
 
             //add the message to the stack. If it is sent, get the messageID back.
-            long messageID = newExpectedReply(e, trySendImmediately);
+            long messageID = processNewExpectedReply(e, trySendImmediately);
             return messageID;
         }
 
@@ -213,7 +213,7 @@ namespace RobotoChatBot
         /// <param name="e"></param>
         /// <param name="trySendImmediately">Try and send the message immediately, assuming nothing is outstanding. Will jump the queue, but not override any existing messages</param>
         /// <returns>An integer specifying the message id. -1 indicates it is queueed, long.MinValue indicates a failure</returns>
-        private static long newExpectedReply(ExpectedReply e, bool trySendImmediately)
+        private static long processNewExpectedReply(ExpectedReply e, bool trySendImmediately)
         {
             //flag the user as present in the chat
             if (e.isPrivateMessage)
@@ -230,16 +230,21 @@ namespace RobotoChatBot
                 //TODO - doesnt handle group PMs
                 messageID = e.sendMessage();
             }
-            //this is a PM. Does the user have anything in the queue?                
-            else if (!userHasOutstandingMessages(e.userID))
+            
+            else if (
+                //this is a PM. Does the user have anything actively asked that would block us from sending a message immediately?                
+                (trySendImmediately && !userHasOutstandingQuestions(e.userID))
+                ||
+                //or for casual messages, is the queue empty
+                !userHasOutstandingMessages(e.userID)
+                )
             {
                 //send the message.  
                 messageID = e.sendMessage();
 
-                //TODO - I dont see how try send immediately ever worked? 
-                if (trySendImmediately && messageID == long.MinValue)
+                if (messageID == long.MinValue)
                 {
-                    Roboto.log.log("Tried to send message using immediateMode, but it failed.", logging.loglevel.warn);
+                    Roboto.log.log("Tried to send message, but it failed. trySendImmediately was " + trySendImmediately.ToString(), logging.loglevel.warn);
                     return messageID;
                 }
 
@@ -470,8 +475,8 @@ namespace RobotoChatBot
                     Roboto.log.log("Error calling plugin " + pluginToCall.GetType().ToString() + " with expected reply. " + e.ToString(), logging.loglevel.critical);
                 }
 
-                //Do any follow up er actions. 
-                Messaging.backgroundProcessing();
+                //Do any follow up actions for this user. 
+                Messaging.trySendOutstandingMessagesForUser(m.userID);
 
             }
             return processed;

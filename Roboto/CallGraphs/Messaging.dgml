@@ -1,0 +1,172 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<DirectedGraph xmlns="http://schemas.microsoft.com/vs/2009/dgml">
+  <Nodes>
+    <Node Id="(@1 @2 @4)" Category="CodeSchema_Class" Bounds="-8620.48573537978,-9918.59437185545,98.1766666666663,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="Messaging" Icon="Microsoft.VisualStudio.Class.Public" Label="Messaging" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=19 StartCharacterOffset=24 EndLineNumber=19 EndCharacterOffset=33)" UseManualLocation="True" />
+    <Node Id="(@1 @2 @5 Member=getUpdates)" Category="CodeSchema_Method" Bounds="-9512.14237498627,-9470.15038640786,183.896666666667,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="getUpdates" Icon="Microsoft.VisualStudio.Method.Public" Label="getUpdates() : returnCodes" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/APIs/TelegramAPI.cs StartLineNumber=192 StartCharacterOffset=44 EndLineNumber=192 EndCharacterOffset=54)" UseManualLocation="True" />
+    <Node Id="(@1 @2 @5)" Category="CodeSchema_Class" Bounds="-7897.87075968016,-9238.9463610414,106.913333333334,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="TelegramAPI" Icon="Microsoft.VisualStudio.Class.Public" Label="TelegramAPI" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/APIs/TelegramAPI.cs StartLineNumber=21 StartCharacterOffset=24 EndLineNumber=21 EndCharacterOffset=35)" UseManualLocation="True" />
+    <Node Id="(@1 Namespace=RobotoChatBot.Modules Type=mod_standard Member=backgroundProcessing)" Category="CodeSchema_Method" Bounds="-9503.27068656212,-9297.30350873106,200.440000000002,26" CodeSchemaProperty_IsProtected="True" CommonLabel="backgroundProcessing" Icon="Microsoft.VisualStudio.Method.Protected" IsOverloaded="True" Label="backgroundProcessing() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/mod_standard.cs StartLineNumber=132 StartCharacterOffset=32 EndLineNumber=132 EndCharacterOffset=52)" UseManualLocation="True" />
+    <Node Id="(@1 Namespace=RobotoChatBot.Modules Type=mod_standard)" Category="CodeSchema_Class" Bounds="-9416.23098346583,-9358.36382400717,116.883333333331,26" CodeSchemaProperty_IsPublic="True" CommonLabel="mod_standard" Icon="Microsoft.VisualStudio.Class.Public" Label="mod_standard" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/mod_standard.cs StartLineNumber=63 StartCharacterOffset=17 EndLineNumber=63 EndCharacterOffset=29)" UseManualLocation="True" />
+    <Node Id="32a00009-fdfe-431c-903b-0dbd70e9f5e01" Category="Comment" Bounds="-8955.07456642123,-9582.64460438689,249.900000000001,73.8400000000001" Label="Find out if incoming message is a reply to a plugin, and if so call that plugin. Afterwards, call backgroundProcess to try send anything outstanding" UseManualLocation="True" />
+    <Node Id="35bcb730-ee83-43a2-b2fe-bb7b9317d3d01" Category="Comment" Bounds="-8914.97393660905,-9202.71703939577,244.02,57.8799999999974" Label="Find all the users of replies that are still active, then try sendoutstandingmessages. Some housekeeping also" UseManualLocation="True" />
+    <Node Id="@11" Category="CodeSchema_Method" Bounds="-8704.92445313124,-9302.02872279444,302.933333333334,26" CodeSchemaProperty_IsPrivate="True" CodeSchemaProperty_IsStatic="True" CommonLabel="trySendOutstandingMessagesForUser" Icon="Microsoft.VisualStudio.Method.Private" Label="trySendOutstandingMessagesForUser(long) : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=266 StartCharacterOffset=28 EndLineNumber=266 EndCharacterOffset=61)" UseManualLocation="True" />
+    <Node Id="@12" Category="CodeSchema_Method" Bounds="-9027.84270444207,-9478.80450438689,241.586666666666,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="parseExpectedReplies" Icon="Microsoft.VisualStudio.Method.Public" Label="parseExpectedReplies(message) : bool" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=392 StartCharacterOffset=27 EndLineNumber=392 EndCharacterOffset=47)" UseManualLocation="True" />
+    <Node Id="@14" Category="CodeSchema_Method" Bounds="-8717.88197577606,-9679.2380606415,328.763333333336,26" CodeSchemaProperty_IsPrivate="True" CodeSchemaProperty_IsStatic="True" CommonLabel="processNewExpectedReply" Icon="Microsoft.VisualStudio.Method.Private" Label="processNewExpectedReply(ExpectedReply, bool) : long" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=215 StartCharacterOffset=28 EndLineNumber=215 EndCharacterOffset=51)" UseManualLocation="True" />
+    <Node Id="@15" Category="CodeSchema_Method" Bounds="-9505.74979469321,-9659.5170502985,320.583333333336,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsVirtual="True" CommonLabel="replyReceived" Icon="Microsoft.VisualStudio.Method.Public" Label="replyReceived(ExpectedReply, message, [bool]) : bool" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Modules/RobotoModuleTemplate.cs StartLineNumber=91 StartCharacterOffset=28 EndLineNumber=91 EndCharacterOffset=41)" UseManualLocation="True" />
+    <Node Id="@18" Category="CodeSchema_Method" Bounds="-8092.64212947702,-9075.09679394282,474.506666666668,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="sendPOST" Icon="Microsoft.VisualStudio.Method.Public" Label="sendPOST(string, NameValueCollection, [Stream], [string], [string]) : Task&lt;JObject&gt;" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/APIs/TelegramAPI.cs StartLineNumber=344 StartCharacterOffset=65 EndLineNumber=344 EndCharacterOffset=73)" UseManualLocation="True" />
+    <Node Id="@19" Category="CodeSchema_Method" Bounds="-9027.47644793165,-9791.1982656688,405.763333333336,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="SendMessage" Icon="Microsoft.VisualStudio.Method.Public" Label="SendMessage(long, string, [string], [bool], [long], [bool], [bool]) : long" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=46 StartCharacterOffset=27 EndLineNumber=46 EndCharacterOffset=38)" UseManualLocation="True" />
+    <Node Id="@20" Category="CodeSchema_Method" Bounds="-8862.11283376695,-9847.1983656688,613.663333333334,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="SendQuestion" Icon="Microsoft.VisualStudio.Method.Public" Label="SendQuestion(long, long, string, bool, Type, string, [string], [long], [bool], [string], [bool], [bool], [bool]) : long" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=111 StartCharacterOffset=27 EndLineNumber=111 EndCharacterOffset=39)" UseManualLocation="True" />
+    <Node Id="@21" Category="CodeSchema_Method" Bounds="-8029.66852386323,-9617.59940521181,532.24,26" CodeSchemaProperty_IsConstructor="True" CodeSchemaProperty_IsPublic="True" CommonLabel="ExpectedReply" Icon="Microsoft.VisualStudio.Method.Public" Label="ExpectedReply(long, long, string, string, bool, Type, string, long, bool, string, bool, bool, bool)" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Storage/ExpectedReply.cs StartLineNumber=46 StartCharacterOffset=15 EndLineNumber=46 EndCharacterOffset=28)" UseManualLocation="True" />
+    <Node Id="@22" Category="CodeSchema_Method" Bounds="-9006.25801651595,-9304.00409102302,200.440000000002,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="backgroundProcessing" Icon="Microsoft.VisualStudio.Method.Public" Label="backgroundProcessing() : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=311 StartCharacterOffset=27 EndLineNumber=311 EndCharacterOffset=47)" UseManualLocation="True" />
+    <Node Id="@23" Category="CodeSchema_Method" Bounds="-8025.24403383345,-9508.9111330549,153.123333333333,26" CodeSchemaProperty_IsPublic="True" CommonLabel="sendMessage" Icon="Microsoft.VisualStudio.Method.Public" Label="sendMessage() : long" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Storage/ExpectedReply.cs StartLineNumber=99 StartCharacterOffset=20 EndLineNumber=99 EndCharacterOffset=31)" UseManualLocation="True" />
+    <Node Id="@3" Category="CodeSchema_Class" Bounds="-7850.12562161914,-9698.14819219386,117.73,26" CodeSchemaProperty_IsPublic="True" CommonLabel="ExpectedReply" Icon="Microsoft.VisualStudio.Class.Public" Label="ExpectedReply" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Storage/ExpectedReply.cs StartLineNumber=8 StartCharacterOffset=17 EndLineNumber=8 EndCharacterOffset=30)" UseManualLocation="True" />
+    <Node Id="@6" Category="CodeSchema_Method" Bounds="-8993.29514301045,-9082.59775094855,245.18,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="parseFailedReply" Icon="Microsoft.VisualStudio.Method.Public" Label="parseFailedReply(ExpectedReply) : void" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/Core/Messaging.cs StartLineNumber=485 StartCharacterOffset=27 EndLineNumber=485 EndCharacterOffset=43)" UseManualLocation="True" />
+    <Node Id="@7" Category="CodeSchema_Method" Bounds="-8092.8205321987,-9156.88435470674,302.046666666669,26" CodeSchemaProperty_IsPublic="True" CodeSchemaProperty_IsStatic="True" CommonLabel="postExpectedReplyToPlayer" Icon="Microsoft.VisualStudio.Method.Public" Label="postExpectedReplyToPlayer(ExpectedReply) : long" SourceLocation="(Assembly=file:///C:/Code/Roboto/Roboto/APIs/TelegramAPI.cs StartLineNumber=30 StartCharacterOffset=27 EndLineNumber=30 EndCharacterOffset=52)" UseManualLocation="True" />
+    <Node Id="Generic" Category="Category7" Bounds="-9397.753835099,-9902.05273528729,60.2000000000007,25.9599999999991" Label="Generic" UseManualLocation="True" />
+    <Node Id="MiscCalls" Bounds="-9507.21051952376,-9852.41790438243,72.0499999999993,25.9599999999991" Label="Misc Calls" UseManualLocation="True" />
+    <Node Id="PluginProcessesMessage.CouldGenerateMoreOutbounds" Category="Comment" Bounds="-9418.74990737668,-9736.4371502985,245.066666666666,41.9199999999983" Label="Plugin processes message. Could generate more outbounds" UseManualLocation="True" />
+    <Node Id="PresenceStuff" Category="Category3" Bounds="-8288.44765825941,-9645.14533185764,94.7933333333349,25.9599999999991" Label="Presence Stuff" UseManualLocation="True" />
+    <Node Id="PresenceStuff1" Category="Category3" Bounds="-7775.33264073395,-9508.56795563589,94.7933333333331,25.9599999999991" Label="Presence Stuff" UseManualLocation="True" />
+    <Node Id="RenameToOutboundMessage?" Category="Comment" Bounds="-7741.66605361488,-9779.67343075117,190.273333333334,25.9599999999991" Label="Rename to OutboundMessage? " UseManualLocation="True">
+      <Category Ref="Category1" />
+    </Node>
+    <Node Id="SendAMessageIfWeCan,OtherwiseQueue" Category="Comment" Bounds="-8998.89197577607,-9733.1981656688,238.09,57.8799999999974" Label="Send a message if we can, otherwise queue. Once finished, call tryOutstanding to see if there are others. " UseManualLocation="True" />
+    <Node Id="SendOldestAvailableMessage,ThenLoop" Category="Comment" Bounds="-8457.434820571,-9450.96734147735,238.290000000001,25.9599999999991" Label="Send oldest available message, then loop" UseManualLocation="True" />
+    <Node Id="ShouldCallSendPOSTButDoesntYet" Category="Comment" Bounds="-7716.18269219454,-9137.48894368894,214.889999999999,25.9599999999991" Label="Should call sendPOST but doesnt yet" UseManualLocation="True">
+      <Category Ref="Category1" />
+    </Node>
+    <Node Id="ShouldThisGoToTrySendOutstanding?" Category="Comment" Bounds="-8900.10121455243,-9405.59956584397,229.163333333334,25.9599999999991" Label="Should this go to trySendOutstanding? " UseManualLocation="True">
+      <Category Ref="Category1" />
+    </Node>
+    <Node Id="TelegramAPI" Category="Category7" Bounds="-9420.28791535085,-9526.11048640786,85.9133333333339,25.9599999999991" UseManualLocation="True" />
+  </Nodes>
+  <Links>
+    <Link Source="(@1 @2 @5 Member=getUpdates)" Target="@12" Bounds="-9328.24502604167,-9463.61557647627,291.403601236021,4.91448788914022" />
+    <Link Source="(@1 Namespace=RobotoChatBot.Modules Type=mod_standard Member=backgroundProcessing)" Target="@22" Bounds="-9302.83029296875,-9289.531528222,287.573024731513,3.87675675777973" />
+    <Link Source="32a00009-fdfe-431c-903b-0dbd70e9f5e01" Target="@12" Bounds="-8888.29524918607,-9508.8046984375,22.6344482351651,23.5157875765544" />
+    <Link Source="35bcb730-ee83-43a2-b2fe-bb7b9317d3d01" Target="@22" Bounds="-8887.25042876074,-9271.5262422319,66.3717768130955,68.809386763156" />
+    <Link Source="@11" Target="@23" Bounds="-8515.45433590855,-9479.99812867282,520.253484237408,177.968831797823" />
+    <Link Source="@12" Target="@15" Bounds="-9305.59953343206,-9630.08676085932,367.012083214104,151.282162421814" />
+    <Link Source="@12" Target="@22" Bounds="-8906.97411077675,-9452.8045984375,0.808754645140652,139.800842784252" />
+    <Link Source="@14" Target="@11" Bounds="-8553.49851913986,-9653.23828125,0.038981818855973,342.208984433391" />
+    <Link Source="@14" Target="@23" Bounds="-8507.33809305392,-9653.23828125,503.830540689821,141.887488240438" />
+    <Link Source="@14" Target="PresenceStuff" Bounds="-8434.28997616201,-9653.23828125,136.89536004963,14.9286077072175" />
+    <Link Source="@15" Target="MiscCalls" Bounds="-9465.3740234375,-9817.7646484375,90.6357421875,158.248046875" />
+    <Link Source="@19" Target="@14" Bounds="-8793.11712139185,-9765.1982421875,199.821012376835,82.5244851638363" />
+    <Link Source="@19" Target="@21" Bounds="-8745.13788044543,-9765.1982421875,893.250542948129,146.14545663211" />
+    <Link Source="@20" Target="@14" Bounds="-8555.1429318323,-9821.1982421875,1.40968661784609,132.960466734203" />
+    <Link Source="@20" Target="@21" Bounds="-8510.45245335965,-9821.1982421875,693.431687965064,201.091950009208" />
+    <Link Source="@22" Target="@11" Bounds="-8805.8180859375,-9290.44263005852,91.8945291597356,0.514649883702077" />
+    <Link Source="@23" Target="@7" Bounds="-7948.42833325658,-9482.9111328125,6.20116527203118,317.028088418034" />
+    <Link Source="@23" Target="PresenceStuff1" Bounds="-7872.12095052083,-9495.79919176187,87.7880141771329,0.128355128192197" />
+    <Link Source="@6" Target="@15" Bounds="-9329.04184955965,-9626.56712087103,447.638440525623,543.96946462103" />
+    <Link Source="@7" Target="@18" Bounds="-7928.06251958932,-9130.884765625,52.4031875852388,49.6012676414575" />
+    <Link Source="@7" Target="@6" Bounds="-8739.14420925988,-9131.86926855447,647.101891217571,51.7503274696192" />
+    <Link Source="MiscCalls" Target="@19" Bounds="-9435.16005859375,-9836.0259950241,464.346951365405,43.9791441231282" />
+    <Link Source="MiscCalls" Target="@20" Bounds="-9435.16005859375,-9839.23189485678,564.047777480999,3.22682964675187" />
+    <Link Source="PluginProcessesMessage.CouldGenerateMoreOutbounds" Target="@15" Bounds="-9330.94580891192,-9694.5175390625,19.7624809391546,27.6765268971685" />
+    <Link Source="RenameToOutboundMessage?" Target="@3" Bounds="-7760.34621006439,-9753.71343075117,90.7791141513299,51.1471389573635" />
+    <Link Source="SendAMessageIfWeCan,OtherwiseQueue" Target="@14" Bounds="-8760.8016796875,-9690.38932797775,86.7760122140789,10.1095732991162" />
+    <Link Source="SendOldestAvailableMessage,ThenLoop" Target="@11" Bounds="-8527.27901116842,-9425.00779296875,170.240117652627,117.855690112248" />
+    <Link Source="ShouldCallSendPOSTButDoesntYet" Target="@18" Bounds="-7795.28838727509,-9111.52927734375,135.25459862722,34.2248222550115" />
+  </Links>
+  <Categories>
+    <Category Id="Category1" Label="Category 1" Background="#FFE51400" IsTag="True" />
+    <Category Id="Category3" Label="Category 3" Background="#FF3EBCED" IsTag="True" />
+    <Category Id="Category7" Label="Category 7" Background="#FF347A30" IsTag="True" />
+    <Category Id="CodeSchema_Class" Label="Class" BasedOn="CodeSchema_Type" CanBeDataDriven="True" DefaultAction="Node:Both:CodeSchema_Member" Icon="CodeSchema_Class" NavigationActionLabel="Classes" />
+    <Category Id="CodeSchema_Member" Label="Member" CanBeDataDriven="True" DefaultAction="Microsoft.Contains" Icon="CodeSchema_Field" NavigationActionLabel="Members" />
+    <Category Id="CodeSchema_Method" Label="Method" BasedOn="CodeSchema_Member" CanBeDataDriven="True" DefaultAction="Link:Forward:CodeSchema_Calls" Icon="CodeSchema_Method" NavigationActionLabel="Methods" />
+    <Category Id="CodeSchema_Type" Label="Type" CanBeDataDriven="True" DefaultAction="Node:Both:CodeSchema_Member" Icon="CodeSchema_Class" NavigationActionLabel="Types" />
+    <Category Id="Comment" Label="Comment" Description="Represents a user defined comment on the diagram" CanBeDataDriven="True" IsProviderRoot="False" NavigationActionLabel="Comments" />
+  </Categories>
+  <Properties>
+    <Property Id="Background" Label="Background" Description="The background color" DataType="System.Windows.Media.Brush" />
+    <Property Id="Bounds" DataType="System.Windows.Rect" />
+    <Property Id="CanBeDataDriven" Label="CanBeDataDriven" Description="CanBeDataDriven" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsConstructor" Label="Is Constructor" Description="Flag to indicate the method is a constructor" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsPrivate" Label="Is Private" Description="Flag to indicate the scope is Private" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsProtected" Label="Is Protected" Description="Flag to indicate the scope is Protected" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsPublic" Label="Is Public" Description="Flag to indicate the scope is Public" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsStatic" Label="Is Static" Description="Flag to indicate the member is a static member" DataType="System.Boolean" />
+    <Property Id="CodeSchemaProperty_IsVirtual" Label="Is Virtual" Description="Flag to indicate the method can be overridden" DataType="System.Boolean" />
+    <Property Id="CommonLabel" DataType="System.String" />
+    <Property Id="DefaultAction" Label="DefaultAction" Description="DefaultAction" DataType="System.String" />
+    <Property Id="Expression" DataType="System.String" />
+    <Property Id="GroupLabel" DataType="System.String" />
+    <Property Id="Icon" Label="Icon" Description="Icon" DataType="System.String" />
+    <Property Id="IsEnabled" DataType="System.Boolean" />
+    <Property Id="IsOverloaded" Label="IsOverloaded" Description="IsOverloaded" DataType="System.Boolean" />
+    <Property Id="IsProviderRoot" Label="IsProviderRoot" Description="IsProviderRoot" DataType="System.Boolean" />
+    <Property Id="IsTag" DataType="System.Boolean" />
+    <Property Id="Label" Label="Label" Description="Displayable label of an Annotatable object" DataType="System.String" />
+    <Property Id="NavigationActionLabel" Label="NavigationActionLabel" Description="NavigationActionLabel" DataType="System.String" />
+    <Property Id="SourceLocation" Label="Start Line Number" DataType="Microsoft.VisualStudio.GraphModel.CodeSchema.SourceLocation" />
+    <Property Id="TargetType" DataType="System.Type" />
+    <Property Id="UseManualLocation" DataType="System.Boolean" />
+    <Property Id="Value" DataType="System.String" />
+    <Property Id="ValueLabel" DataType="System.String" />
+  </Properties>
+  <QualifiedNames>
+    <Name Id="Assembly" Label="Assembly" ValueType="Uri" />
+    <Name Id="Member" Label="Member" ValueType="System.Object" />
+    <Name Id="Name" Label="Name" ValueType="System.String" />
+    <Name Id="Namespace" Label="Namespace" ValueType="System.String" />
+    <Name Id="OverloadingParameters" Label="Parameter" ValueType="Microsoft.VisualStudio.GraphModel.GraphNodeIdCollection" Formatter="NameValueNoEscape" />
+    <Name Id="Type" Label="Type" ValueType="System.Object" />
+  </QualifiedNames>
+  <IdentifierAliases>
+    <Alias n="1" Uri="Assembly=$(4e78688d-017e-412b-a7be-41b7376a145f.OutputPathUri)" />
+    <Alias n="2" Id="Namespace=RobotoChatBot" />
+    <Alias n="3" Id="(@1 @2 Type=ExpectedReply)" />
+    <Alias n="4" Id="Type=Messaging" />
+    <Alias n="5" Id="Type=TelegramAPI" />
+    <Alias n="6" Id="(@1 @2 @4 Member=(Name=parseFailedReply OverloadingParameters=[@3]))" />
+    <Alias n="7" Id="(@1 @2 @5 Member=(Name=postExpectedReplyToPlayer OverloadingParameters=[@3]))" />
+    <Alias n="8" Uri="Assembly=$(FxReferenceAssembliesUri)/.NETFramework/v4.6.2/mscorlib.dll" />
+    <Alias n="9" Id="Namespace=System" />
+    <Alias n="10" Id="(@8 @9 Type=Int64)" />
+    <Alias n="11" Id="(@1 @2 @4 Member=(Name=trySendOutstandingMessagesForUser OverloadingParameters=[@10]))" />
+    <Alias n="12" Id="(@1 @2 @4 Member=(Name=parseExpectedReplies OverloadingParameters=[(@1 @2 Type=message)]))" />
+    <Alias n="13" Id="(@8 @9 Type=Boolean)" />
+    <Alias n="14" Id="(@1 @2 @4 Member=(Name=processNewExpectedReply OverloadingParameters=[@3,@13]))" />
+    <Alias n="15" Id="(@1 Namespace=RobotoChatBot.Modules Type=RobotoModuleTemplate Member=(Name=replyReceived OverloadingParameters=[@3,(@1 @2 Type=message),@13]))" />
+    <Alias n="16" Id="(@8 @9 Type=String)" />
+    <Alias n="17" Uri="Assembly=$(FxReferenceAssembliesUri)/.NETFramework/v4.6.2/System.dll" />
+    <Alias n="18" Id="(@1 @2 @5 Member=(Name=sendPOST OverloadingParameters=[@16,(@17 Namespace=System.Collections.Specialized Type=NameValueCollection),(@8 Namespace=System.IO Type=Stream),@16,@16]))" />
+    <Alias n="19" Id="(@1 @2 @4 Member=(Name=SendMessage OverloadingParameters=[@10,@16,@16,@13,@10,@13,@13]))" />
+    <Alias n="20" Id="(@1 @2 @4 Member=(Name=SendQuestion OverloadingParameters=[@10,@10,@16,@13,(@8 @9 Type=Type),@16,@16,@10,@13,@16,@13,@13,@13]))" />
+    <Alias n="21" Id="(@1 @2 Type=ExpectedReply Member=(Name=.ctor OverloadingParameters=[@10,@10,@16,@16,@13,(@8 @9 Type=Type),@16,@10,@13,@16,@13,@13,@13]))" />
+    <Alias n="22" Id="(@1 @2 @4 Member=backgroundProcessing)" />
+    <Alias n="23" Id="(@1 @2 Type=ExpectedReply Member=sendMessage)" />
+  </IdentifierAliases>
+  <Styles>
+    <Style TargetType="Node" GroupLabel="Category 3" ValueLabel="Has category">
+      <Condition Expression="HasCategory('Category3')" />
+      <Setter Property="Background" Value="#FF3EBCED" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Category 7" ValueLabel="Has category">
+      <Condition Expression="HasCategory('Category7')" />
+      <Setter Property="Background" Value="#FF347A30" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Category 1" ValueLabel="Has category">
+      <Condition Expression="HasCategory('Category1')" />
+      <Setter Property="Background" Value="#FFE51400" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Class" ValueLabel="True">
+      <Condition Expression="HasCategory('CodeSchema_Class')" />
+      <Setter Property="Background" Value="#FF468B22" />
+    </Style>
+    <Style TargetType="Node" GroupLabel="Comment" ValueLabel="Has comment">
+      <Condition Expression="HasCategory('Comment')" />
+      <Setter Property="Background" Value="#FFFFFACD" />
+      <Setter Property="Stroke" Value="#FFE5C365" />
+      <Setter Property="StrokeThickness" Value="1" />
+      <Setter Property="NodeRadius" Value="2" />
+      <Setter Property="MaxWidth" Value="250" />
+    </Style>
+  </Styles>
+  <Paths>
+    <Path Id="4e78688d-017e-412b-a7be-41b7376a145f.OutputPathUri" Value="file:///C:/OwnCloud/Code/builds/Roboto Beta/Roboto.exe" />
+    <Path Id="FxReferenceAssembliesUri" Value="file:///C:/Program Files (x86)/Reference Assemblies/Microsoft/Framework" />
+  </Paths>
+</DirectedGraph>
