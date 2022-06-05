@@ -41,7 +41,7 @@ namespace RobotoChatBot
             public string classtype { get; set; }
             public string methodName { get; set; }
 
-            public logItem(string text, loglevel level = loglevel.normal, Color? colour = null, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 1)
+            public logItem(string text, loglevel level = loglevel.normal, Color? colour = null, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 2)
             {
                 this.logText = text;
                 this.level = level;
@@ -67,7 +67,7 @@ namespace RobotoChatBot
                 {
                     outputString += DateTime.Now.ToString("dd-MM-yyyy  HH:mm:ss") + " - "
                         + level.ToString().Substring(0, 2).ToUpper() + " - "
-                        + (classtype.ToString() + ":" + methodName).PadRight(45)
+                        + (classtype.ToString().Replace("RobotoChatBot.", "") + ":" + methodName).PadRight(45)
                         + " - ";
                 }
                 else
@@ -199,7 +199,7 @@ namespace RobotoChatBot
         /// <param name="pause"></param>
         /// <param name="skipheader"></param>
         /// <param name="skipLevel">Levels of the stack to skip when getting the calling class</param>
-        public void log(string text, loglevel level = loglevel.normal, Color? colour = null, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 1)
+        public void log(string text, loglevel level = loglevel.normal, Color? colour = null, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 2)
         {
             log(new logItem(text, level, colour, noLineBreak, banner, pause, skipheader, skipLevel));
         }
@@ -229,10 +229,16 @@ namespace RobotoChatBot
 
             if (logLastFlushed < DateTime.Now.AddMinutes(-5) )
             {
-                textWriter.Flush();
-                logLastFlushed = DateTime.Now;
-                log("Flushed logfile", loglevel.low);
-                
+                try
+                {
+                    textWriter.Flush();
+                    logLastFlushed = DateTime.Now;
+                    log("Flushed logfile", loglevel.low);
+                }
+                catch (Exception e)
+                {
+                    log("Failed to flush log. " + e.ToString(), loglevel.critical);
+                }
             }
 
 
@@ -314,7 +320,7 @@ namespace RobotoChatBot
             if (initialised && textWriter != null)
             {
                 if (thisLogItem.banner == true) { textWriter.WriteLine("************************"); }
-                textWriter.WriteLine(thisLogItem.logText);
+                textWriter.WriteLine(thisLogItem.ToString()); //logtext
                 if (thisLogItem.banner == true) { textWriter.WriteLine("************************"); }
             }
         }

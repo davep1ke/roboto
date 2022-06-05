@@ -371,7 +371,7 @@ namespace RobotoChatBot
                             form.Add(c, "photo", fileName);
                         }
 
-                        Roboto.log.log("Calling API: " + postURL + "\n\r" + logtxt, logging.loglevel.verbose);
+                        Roboto.log.log("Calling API: " + postURL + "\r\n" + logtxt, logging.loglevel.verbose);
 
                         response = await client.PostAsync(uri, form).ConfigureAwait(false);
 
@@ -381,11 +381,11 @@ namespace RobotoChatBot
                 }
                 catch (HttpRequestException e) 
                 {
-                    Roboto.log.log("Unable to send Message due to HttpRequestException error:\n\r" + e.ToString(), logging.loglevel.high);
+                    Roboto.log.log("Unable to send Message due to HttpRequestException error:\r\n" + e.ToString(), logging.loglevel.high);
                 }
                 catch (Exception e)
                 {
-                    Roboto.log.log("Unable to send Message due to unknown error:\n\r" + e.ToString(), logging.loglevel.critical);
+                    Roboto.log.log("Unable to send Message due to unknown error:\r\n" + e.ToString(), logging.loglevel.critical);
                 }
 
                 if (responseObject == null || responseObject == "")

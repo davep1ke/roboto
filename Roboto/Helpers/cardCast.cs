@@ -25,6 +25,8 @@ namespace RobotoChatBot.Helpers
         public int nrAnswers;
     }
 
+    public enum packSource{ cardCast, manual, crcast, unknown};
+
     public class cardcast_pack
     {
         public Guid packID = Guid.NewGuid();
@@ -35,6 +37,7 @@ namespace RobotoChatBot.Helpers
         public string description;
         public string language = "Unknown";
         public string category = "Unknown";
+        public packSource packSource = packSource.unknown;
         public DateTime nextSync = DateTime.MinValue;
         public int failCount = 0;
 
@@ -95,15 +98,16 @@ namespace RobotoChatBot.Helpers
     /// </summary>
     public static class cardCast
     {
-        const string cardCastURL = "https://api.cardcastgame.com/v1/decks/";
+        const string cardCastURL = "https://api.crcast.cc/cc/decks/"; // "https://api.cardcastgame.com/v1/decks/"; //Switch to using CRCAST for API calls.
 
         /// <summary>
         /// Boilerplate text for working with cardcast packs
         /// </summary>
         /// <returns></returns>
         public static string boilerPlate =
-                "Cardcast packs are grabbed from cardcastgame.com - you should search for new deck codes (or create your own) there.";
-        
+                //"Cardcast packs are grabbed from cardcastgame.com - you should search for new deck codes (or create your own) there.";
+                "Custom packs are grabbed from cast.clrtd.com - you should search for new deck codes (or create your own) there.";
+
         /// <summary>
         /// Get the cards and pack info from cardcast
         /// </summary>
@@ -121,7 +125,6 @@ namespace RobotoChatBot.Helpers
             {
                 Roboto.log.log("Pack failed regex match and was dropped - " + packCode, logging.loglevel.high);
                 return false;
-
             }
             else
             {

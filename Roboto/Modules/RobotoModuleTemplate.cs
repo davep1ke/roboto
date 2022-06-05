@@ -162,12 +162,22 @@ namespace RobotoChatBot.Modules
         internal void initPluginData()
         {
             if (this.localData != null) { return; } //already valid. 
-
             else
             {
-                localData = (Modules.RobotoModuleDataTemplate)Activator.CreateInstance(pluginDataType);
-                Plugins.registerData(localData);
-                Roboto.log.log("Created & Stored Plugin Data " + localData.GetType().ToString() + " for module " + this.GetType().ToString(), logging.loglevel.low);
+                //see if it exists and we can assign it
+                RobotoModuleDataTemplate data = Plugins.getPluginData(pluginDataType);
+                if (data != null)
+                {
+                    localData = data;
+                }
+                else
+                {
+
+                    //otherwise create a brand new set
+                    localData = (Modules.RobotoModuleDataTemplate)Activator.CreateInstance(pluginDataType);
+                    Plugins.registerData(localData);
+                    Roboto.log.log("Created & Stored Plugin Data " + localData.GetType().ToString() + " for module " + this.GetType().ToString(), logging.loglevel.low);
+                }
             }
         }
 

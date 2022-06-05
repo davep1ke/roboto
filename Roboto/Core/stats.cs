@@ -178,10 +178,10 @@ namespace RobotoChatBot
             List<statType> newTypes = new List<statType>();
             foreach (statType t in statsList)
             {
-                if (t.moduleType.StartsWith("Roboto."))
+                /*if (t.moduleType.StartsWith("Roboto."))
                 {
                     t.moduleType = "RobotoChatBot." + t.moduleType.Remove(0, 7);
-                }
+                }*/
 
                 if (newTypes.Where(x => x.moduleType == t.moduleType && x.name == t.name).ToList().Count() > 0)
                 {
@@ -393,7 +393,7 @@ namespace RobotoChatBot
         }
 
 
-        //TODO Housekeeping
+        
 
     }
 }

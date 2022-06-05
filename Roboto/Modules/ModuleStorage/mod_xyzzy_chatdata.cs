@@ -327,12 +327,12 @@ namespace RobotoChatBot.Modules
                         long messageID = long.MaxValue;
                         if (player == tzar)
                         {
-                            messageID =  Messaging.SendMessage(player.playerID, "Its your question! You ask:" + "\n\r" + question.text, player.name,  false, -1, true);
+                            messageID =  Messaging.SendMessage(player.playerID, "Its your question! You ask:" + "\r\n" + question.text, player.name,  false, -1, true);
                         }
                         else
                         {
                             /*int questionMsg = TelegramAPI.GetReply(player.playerID,, -1, true, player.getAnswerKeyboard(localData));*/
-                            string questionText = tzar.name + " asks: " + "\n\r" + question.text;
+                            string questionText = tzar.name + " asks: " + "\r\n" + question.text;
                             //we are expecting a reply to this:
                             messageID = Messaging.SendQuestion(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData));
                         }
@@ -403,7 +403,7 @@ namespace RobotoChatBot.Modules
                     + ") out - probably an invalid response", logging.loglevel.warn );
                 log("Possible answers for player " + playerID + " were: " + possibleAnswers, logging.loglevel.verbose);
                 //couldnt find answer, reask
-                string questionText = players[lastPlayerAsked].name + " asks: " + "\n\r" + question.text;
+                string questionText = players[lastPlayerAsked].name + " asks: " + "\r\n" + question.text;
                 //we are expecting a reply to this:
                 Messaging.SendQuestion(chatID, player.playerID, "Not a valid answer! Try again. " + questionText, true, typeof(mod_xyzzy), "Question", null,  -1, true, player.getAnswerKeyboard(localData));
 
@@ -441,7 +441,7 @@ namespace RobotoChatBot.Modules
                 string logtxt = "Still waiting for answers. Status is:";
                 foreach(mod_xyzzy_player p in players )
                 {
-                    logtxt += "\n\r" + p.name + " " + p.playerID + " - " + p.selectedCards.Count() + " / " + question.nrAnswers ;
+                    logtxt += "\r\n" + p.name + " " + p.playerID + " - " + p.selectedCards.Count() + " / " + question.nrAnswers ;
                     foreach (ExpectedReply e in Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID, p.playerID))
                     {
                         logtxt += " ExpectedReply: " + e.messageData + " sent= " + e.isSent().ToString();
@@ -477,31 +477,31 @@ namespace RobotoChatBot.Modules
             {
 
                 //pack filter
-                message += "\n\r- " + packFilterIDs.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
+                message += "\r\n- " + packFilterIDs.Count + " packs currently enabled. You can view, enable and disable with *Change Packs* ";
                 keyboardOptions.Add("Change Packs");
                 //length
-                message += "\n\r- " + "Game will " + (this.enteredQuestionCount == -1? "not end." :( "last " + this.enteredQuestionCount + " questions.")) + " You can change with *Game Length* ";
+                message += "\r\n- " + "Game will " + (this.enteredQuestionCount == -1? "not end." :( "last " + this.enteredQuestionCount + " questions.")) + " You can change with *Game Length* ";
                 keyboardOptions.Add("Game Length");
 
                 //Reset/redeal
-                message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. To reset everything to default, and stop the game, use *Reset*";
+                message += "\r\n- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck. If you have added / removed packs from the filter, or you want to empty everyone's current hand, you can do this with *Re-deal*. To reset everything to default, and stop the game, use *Reset*";
                 if (status != xyzzy_Statuses.Stopped) { message += " You can add more cards to the existing deck with *Extend*"; }
                 keyboardOptions.Add("Re-deal");
                 keyboardOptions.Add("Reset");
                 keyboardOptions.Add("Extend");
                 //timeouts / throttle
-                message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players. Change with *Timeout* ";
+                message += "\r\n- " + maxWaitTimeHours + " hour timeouts before the game skips slow players. Change with *Timeout* ";
                 keyboardOptions.Add("Timeout");
-                message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands (i.e. force a slower game). Change with *Delay* ";
+                message += "\r\n- Wait at least " + minWaitTimeHours + " hours between hands (i.e. force a slower game). Change with *Delay* ";
                 keyboardOptions.Add("Delay");
                 //kick
-                message += "\n\r- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon*. *Mess With* will mess with a player's score, where as *Change Score* will change it permanantly";
+                message += "\r\n- " + "You can kick a player with *Kick*, or abandon the whole game with *Abandon*. *Mess With* will mess with a player's score, where as *Change Score* will change it permanantly";
                 keyboardOptions.Add("Kick");
                 keyboardOptions.Add("Abandon");
                 keyboardOptions.Add("Mess With");
                 keyboardOptions.Add("Change Score");
                 //question
-                message += "\n\r- " + "If the game gets stuck, you can try *Force Question* to move things along.";
+                message += "\r\n- " + "If the game gets stuck, you can try *Force Question* to move things along.";
                 keyboardOptions.Add("Force Question");
 
                 //NB: this needs to be done inside the admin message, to prevent non-admin users getting past this point. Any other messages should be a normal sendMessage.
@@ -509,13 +509,13 @@ namespace RobotoChatBot.Modules
             }
             else
             {
-                message += "\n\r You are not an admin in this group, so you'll need to get someone else to change the game settings. An admin can add you by typing /addadmin in the main group chat.";
+                message += "\r\n You are not an admin in this group, so you'll need to get someone else to change the game settings. An admin can add you by typing /addadmin in the main group chat.";
                 Messaging.SendMessage(m.userID, message, m.userFullName, true);
             }
 
 
             //chat settings
-            //message += "\n\rNB: There are also a number of general chat settings that you can change using /settings in the group chat.";
+            //message += "\r\nNB: There are also a number of general chat settings that you can change using /settings in the group chat.";
             
             
 
@@ -535,12 +535,12 @@ namespace RobotoChatBot.Modules
             {
                 message += "Current settings are below. You can change with /xyzzy_settings, or use /xyzzy_status to get the current state of the game.";
                 
-                message += "\n\r- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck";
-                message += "\n\r- " + maxWaitTimeHours + " hour timeouts before the game skips slow players.";
-                message += "\n\r- Wait at least " + minWaitTimeHours + " hours between hands starting.";
-                message += "\n\r- " + packFilterIDs.Count + " packs currently enabled.";
+                message += "\r\n- " + remainingQuestions.Count + " questions and " + remainingAnswers.Count + " answers remain in the deck";
+                message += "\r\n- " + maxWaitTimeHours + " hour timeouts before the game skips slow players.";
+                message += "\r\n- Wait at least " + minWaitTimeHours + " hours between hands starting.";
+                message += "\r\n- " + packFilterIDs.Count + " packs currently enabled.";
                 //add the enabled packs:
-                message += "\n\r \n\r" + "Enabled Packs:" + "\n\r" + getPackFilterStatus();
+                message += "\r\n \r\n" + "Enabled Packs:" + "\r\n" + getPackFilterStatus();
 
             }
             Messaging.SendMessage(chatID, message);
@@ -626,10 +626,10 @@ namespace RobotoChatBot.Modules
             setStatus(xyzzy_Statuses.Stopped);
             String message = "Game over!";
             if (players.Count > 1) { message += " You can continue this game with the same players by selecting Extend in /xyzzy_settings"; }
-            message += "\n\rScores are: ";
+            message += "\r\nScores are: ";
             foreach (mod_xyzzy_player p in players.OrderByDescending(x => x.wins))
             {
-                message += "\n\r" + p.name + " - " + p.wins.ToString() + " points";
+                message += "\r\n" + p.name + " - " + p.wins.ToString() + " points";
             }
 
             Messaging.SendMessage(chatID, message);
@@ -703,8 +703,8 @@ namespace RobotoChatBot.Modules
 
                 //get all the responses for the keyboard, and the chat message
                 List<string> responses = new List<string>();
-                string chatMsg = "All answers received! The honourable " + tzar.name + " presiding." + "\n\r" +
-                    "Question: " + q.text + "\n\r" + "\n\r";
+                string chatMsg = "All answers received! The honourable " + tzar.name + " presiding." + "\r\n" +
+                    "Question: " + q.text + "\r\n" + "\r\n";
                 string missingRepliestxt = "Skipped these chumps: ";
                 bool missingReplies = false;
                 foreach (mod_xyzzy_player p in players)
@@ -738,25 +738,25 @@ namespace RobotoChatBot.Modules
                         else
                         {
                             missingReplies = true;
-                            missingRepliestxt += "\n\r" + " - " + p.name;
+                            missingRepliestxt += "\r\n" + " - " + p.name;
                         }
                     }
                 }
                 responses.Sort(); //sort so that player order isnt same each time.
 
-                foreach (string answer in responses) { chatMsg += "  - " + answer + "\n\r"; }
+                foreach (string answer in responses) { chatMsg += "  - " + answer + "\r\n"; }
 
                 if (missingReplies) { chatMsg += missingRepliestxt; }
 
                 string keyboard = TelegramAPI.createKeyboard(responses, 1);
-                //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \n\r" + q.text, -1, true, keyboard);
+                //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \r\n" + q.text, -1, true, keyboard);
                 //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
                 //TODO - add messageData types to an enum
 
                 if (possibleAnswerCount > 0)
                 {
 
-                    long messageID = Messaging.SendQuestion(chatID, tzar.playerID, "Pick the best answer! \n\r" + q.text, true, typeof(mod_xyzzy), "Judging", null, -1, true, keyboard);
+                    long messageID = Messaging.SendQuestion(chatID, tzar.playerID, "Pick the best answer! \r\n" + q.text, true, typeof(mod_xyzzy), "Judging", null, -1, true, keyboard);
 
                     if (messageID == long.MinValue)
                     {
@@ -821,7 +821,7 @@ namespace RobotoChatBot.Modules
             if ( (quietHoursStart > quietHoursEnd && (currentTime > quietHoursStart || currentTime < quietHoursEnd ))
                 || (quietHoursStart < quietHoursEnd && (currentTime > quietHoursStart && currentTime < quietHoursEnd)))
             {
-                response += "Shhh... its sleepy times" + "\n\r";
+                response += "Shhh... its sleepy times" + "\r\n";
             }
             
 
@@ -870,19 +870,19 @@ namespace RobotoChatBot.Modules
                     response += " There are " + remainingQuestions.Count.ToString() + " questions remaining";
 
                     response += " Say [/xyzzy_join](/xyzzy_join) to join.";
-                    response += " The following players are currently playing: \n\r";
+                    response += " The following players are currently playing: \r\n";
                     //order the list of players
                     List<mod_xyzzy_player> orderedPlayers = players.OrderByDescending(e => e.wins).ToList();
 
                     foreach (mod_xyzzy_player p in orderedPlayers) { response += p.getPointsMessage(); }
-                    response += " \n\r";
+                    response += " \r\n";
                 }
 
                 switch (status)
                 {
                     case xyzzy_Statuses.Question:
-                        response += "The current question is : " + "\n\r" +
-                            Helpers.common.escapeMarkDownChars(getLocalData().getQuestionCard(currentQuestion).text) + "\n\r" +
+                        response += "The current question is : " + "\r\n" +
+                            Helpers.common.escapeMarkDownChars(getLocalData().getQuestionCard(currentQuestion).text) + "\r\n" +
                             "Still waiting on the following players :";
                         bool unsentMessages = false;
                         bool first = true;
@@ -903,7 +903,7 @@ namespace RobotoChatBot.Modules
                                     
                                 }
                             }
-                            response += "\n\r";
+                            response += "\r\n";
                         }
                         if (unsentMessages) { response += "(\\*) These messages have not yet been sent, as I am waiting for a reply to another question!"; }
 
@@ -1095,7 +1095,7 @@ namespace RobotoChatBot.Modules
             {
                 //give the winning player a point. 
                 winner.wins++;
-                string message = winner.name_markdownsafe + " wins a point!\n\r";
+                string message = winner.name_markdownsafe + " wins a point!\r\n";
                 
                 //try and insert the answers into the message. 
                 bool formattedQuestionSuccessfully = false;
@@ -1141,7 +1141,7 @@ namespace RobotoChatBot.Modules
                 if (formattedQuestionSuccessfully == false)
                 {
                     log("Fallback mode for winners message", logging.loglevel.normal);
-                    message += "Question: " + q.text + "\n\rAnswer:" + chosenAnswer + "\n\rThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
+                    message += "Question: " + q.text + "\r\nAnswer:" + chosenAnswer + "\r\nThere are " + remainingQuestions.Count.ToString() + " questions remaining. Current scores are: ";
                 }
             
                 //output the current scores    
@@ -1149,7 +1149,7 @@ namespace RobotoChatBot.Modules
                 foreach (mod_xyzzy_player p in orderedPlayers)
                 {
                     message += p.getPointsMessage();
-                    //message += "\n\r" + p.name_markdownsafe + " - " + p.wins.ToString() + " points";
+                    //message += "\r\n" + p.name_markdownsafe + " - " + p.wins.ToString() + " points";
                 }
 
                 Messaging.SendMessage(chatID, message, null ,  true);
@@ -1570,7 +1570,7 @@ namespace RobotoChatBot.Modules
         { 
             mod_xyzzy_coredata localData = getLocalData();
 
-            List<Helpers.cardcast_pack> matchingPacks = localData.getPackFilterList().Where(x => x.name == packName.Substring(2)).ToList(); //remove the first two chars, as they are the emoji and a space
+            List<Helpers.cardcast_pack> matchingPacks = localData.getPackFilterList().Where(x => (x.name == packName.Substring(2)) || x.name == packName).ToList(); //remove the first two chars, as they are the emoji and a space (uinless its just been imported)
 
             //did they actually give us an answer? 
             if (m.text_msg == "All")
@@ -1651,7 +1651,7 @@ namespace RobotoChatBot.Modules
         {
             mod_xyzzy_coredata localData = getLocalData();
             String response = "The following packs (and their current status) are available. You can toggle the packs using the keyboard "
-                + "below, or click 'Continue' to carry on. You can also import packs from CardCast by clicking 'Import CardCast Pack'";
+                + "below, or click 'Continue' to carry on. You can also import packs from CRCast by clicking 'Import Pack'";
 
             
             int totalPageCount = (localData.getPackFilterList().Count() / maxPacksPerPage) + 1;
@@ -1670,7 +1670,7 @@ namespace RobotoChatBot.Modules
             }
 
             //Now build up keybaord
-            List<String> keyboardResponse = new List<string> { "Continue", "Import CardCast Pack", "All", "None" };
+            List<String> keyboardResponse = new List<string> { "Continue", "Import Pack", "All", "None" };
             if (totalPageCount > 1)
             {
 
@@ -1691,11 +1691,11 @@ namespace RobotoChatBot.Modules
                     //write heading
                     if (currentStatus == "True")
                     {
-                        response += "\n\r*Active Packs:*\n\r";
+                        response += "\r\n*Active Packs:*\r\n";
                     }
                     else
                     {
-                        response += "\n\r*Inactive Packs:*\n\r";
+                        response += "\r\n*Inactive Packs:*\r\n";
                     }
                 }
 
@@ -1704,7 +1704,7 @@ namespace RobotoChatBot.Modules
                 if (packEnabled(pack.packID)) { emoji = emoji_check; }
                 else { emoji = emoji_cross; }
                 string cleanPackName = Helpers.common.removeMarkDownChars(pack.name);
-                response += emoji + cleanPackName + "\n\r";
+                response += emoji + cleanPackName + "\r\n";
             
                 //add item to the keyboard
                 keyboardResponse.Add(emoji + " " + pack.name);
@@ -1749,7 +1749,7 @@ namespace RobotoChatBot.Modules
                 //is it currently enabled
                 if (packEnabled(pack.packID))
                 {
-                    if (recs < 30) { response += pack.name + "\n\r"; } else { extrarecs++; }
+                    if (recs < 30) { response += pack.name + "\r\n"; } else { extrarecs++; }
                     recs++;
                 } 
             }

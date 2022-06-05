@@ -101,67 +101,40 @@ namespace RobotoChatBot.Modules
             //start a logging longop
             logging.longOp lo_startup = new logging.longOp("XYZZY - Coredata Startup", 11);
 
-            //DATAFIX: allocate any cards without a pack guid the correct guid
-            int success = 0;
-            int fail = 0;
-
+            
             Helpers.cardcast_pack primaryPack = getPackByCode("CAHBS");
+            primaryPack.packSource = packSource.manual;
             
             //check that our primary pack has the correct guid
             //does it exist? 
             if (primaryPack != null)
             {
-                primaryPack.overrideGUID(mod_xyzzy.primaryPackID); //override this one's guid so we can add it by default to new poacks. 
+                primaryPack.overrideGUID(mod_xyzzy.primaryPackID); //override this one's guid so we can add it by default to new packs. 
                 log("OK - Primary pack exists", logging.loglevel.verbose);
             }
             else
             {
-               
                 log("No copy of the primary CAH pack could be found!", logging.loglevel.critical);
-
             }
 
+            //set our default packs to manual (JIC)
+            getPackByCode("CAHE1").packSource = packSource.manual;
+            getPackByCode("CAHE2").packSource = packSource.manual;
+            getPackByCode("CAHE3").packSource = packSource.manual;
+            getPackByCode("CAHE4").packSource = packSource.manual;
+            getPackByCode("EU6CJ").packSource = packSource.manual;
+            getPackByCode("PEU3Q").packSource = packSource.manual;
 
-
-
-            //Disable warnings for use of deprecated category field - this is a datafix to ensure it is properly wiped. 
-            /*#pragma warning disable 612, 618
-            foreach (mod_xyzzy_card q in questions.Where(x => x.packID == Guid.Empty) )
+            //DATAFIX: take anything that remains thats unknown and assume its an old cardcast ID
+            foreach (Helpers.cardcast_pack p in packs)
             {
-                cardcast_pack pack = getPack(q.category);
-                if (pack != null) { q.packID = pack.packID; success++; }
-                //log - will be checked every startup
-                else { log("Datafix failed - couldnt find pack for card " + q.text + " from pack " + q.category, logging.loglevel.high); fail++; }
+                if (p.packSource == packSource.unknown) { p.packSource = packSource.cardCast; }
             }
-            foreach (mod_xyzzy_card a in answers.Where(x => x.packID == Guid.Empty))
-            {
-                cardcast_pack pack = getPack(a.category);
-                if (pack != null) { a.packID = pack.packID; success++; }
-                //log - will be checked every startup
-                else { log("Datafix failed - couldnt find pack for card " + a.text + " from pack " + a.category, logging.loglevel.high); fail++; }
-            }
-            if (success + fail > 0)
-            {
-                log("DATAFIX: " + success + " cards have had packIDs populated, " + fail + " couldn't find pack");
-            }
-            lo_startup.addone();
 
-            //now remove category from all cards that have a guid. 
-            success = 0;
-            
-            foreach (mod_xyzzy_card q in questions.Where(x => x.packID != null)){ q.category = null; q.TempCategory = null; success++; }
-            foreach (mod_xyzzy_card a in answers.Where(x => x.packID != null)) { a.category = null; a.TempCategory = null; success++; }
-            #pragma warning restore 612, 618
-            */
 
-            if (success + fail > 0)
-            {
-                log("DATAFIX: Wiped category from " + success + " cards successfully.", logging.loglevel.warn);
-            }
-            lo_startup.addone();
-            
 
             //lets see if packs with null Cardcast Pack codes can be populated by looking through our other packs
+            //TODO - try and match old cardcast packs against new CRTD packs.
             foreach (cardcast_pack p in packs.Where(x => string.IsNullOrEmpty(x.packCode)))
             {
                 List<cardcast_pack> matchingPacks = getPacksByTitle(p.name).Where(x => x.packID != p.packID).ToList();
@@ -295,7 +268,7 @@ namespace RobotoChatBot.Modules
             lo_startup.addone();
             lo_questions.complete();
 
-            /*TODO - move this somewhere else - daft to dump every startup
+            ///*TODO - move this somewhere else - daft to dump every startup
             //Dump the packlist and stats to the log window in verbose mode. Flag anything removable
             logging.longOp lo_dump = new logging.longOp("Dump packlist", packs.Count());
             log("Packs Loaded:", logging.loglevel.verbose);
@@ -326,7 +299,7 @@ namespace RobotoChatBot.Modules
                 //NB: No longer removing packs here - instead moved to background sync so ran occasionally. 
             }
             lo_dump.complete();
-            */
+            //*/
             lo_startup.complete();
 
         }
@@ -464,7 +437,7 @@ namespace RobotoChatBot.Modules
         public void packSyncCheck()
         {
             
-            int backlog = packs.Where(p => (p.packCode != null && p.packCode != "" && p.nextSync < DateTime.Now)).Count();
+            int backlog = packs.Where(p => (p.packCode != null && p.packCode != "" && p.packSource == packSource.crcast && p.nextSync < DateTime.Now)).Count();
             log("There are " + backlog + " packs outstanding to sync. Picking first " + maxPacksToSyncInOneGo, logging.loglevel.normal );
 
             logging.longOp lo_sync = new logging.longOp("XYZZY Background Pack Sync", maxPacksToSyncInOneGo);
@@ -473,7 +446,7 @@ namespace RobotoChatBot.Modules
 
             //take a subset of packs for now. 
             //Packs is already a list, but there is a chance that the importCardCast will update / remove it - so re-list it to prevent mutation errors
-            foreach (Helpers.cardcast_pack p in packs.Where (p => ( p.packCode  != null && p.packCode != "" 
+            foreach (Helpers.cardcast_pack p in packs.Where (p => ( p.packCode  != null && p.packCode != "" && p.packSource == packSource.crcast
             && p.nextSync < DateTime.Now
             )).OrderBy(x => x.nextSync).Take(maxPacksToSyncInOneGo).ToList())
             {
@@ -524,7 +497,7 @@ namespace RobotoChatBot.Modules
 
                 if (!success)
                 {
-                    response = "Failed to import pack from cardcast. Check that the code is valid";
+                    response = "Failed to import pack from CRCAST. Check that the code is valid";
                 }
                 else
                 {
@@ -582,7 +555,7 @@ namespace RobotoChatBot.Modules
                     if (matchingPacks.Count > 1)  // .Contains(pack.name))
                     {
                         log("Multiple packs found for " + l_packID + " - aborting!", logging.loglevel.critical);
-                        response += "/n/r" + "Aborting sync!";
+                        response += "/r/n" + "Aborting sync!";
 
                     }
                     else if (matchingPacks.Count == 1)
@@ -831,12 +804,14 @@ namespace RobotoChatBot.Modules
                             nr_as++;
                             lo_import.addone();
                         }
-                        
-                        response += "\n\r" + "Next sync " + pack.nextSync.ToString("f") + ".";
 
-                        response += "\n\r" + "Added " + nr_qs.ToString() + " questions and " + nr_as.ToString() + " answers.";
+                        pack.packSource = packSource.crcast;
+                        
+                        response += "\r\n" + "Next sync " + pack.nextSync.ToString("f") + ".";
+
+                        response += "\r\n" + "Added " + nr_qs.ToString() + " questions and " + nr_as.ToString() + " answers.";
                         packs.Add(pack);
-                        response += "\n\r" + "Added " + pack.name + " to filter list.";
+                        response += "\r\n" + "Added " + pack.name + " to filter list.";
                         lo_import.complete();
                     }
 

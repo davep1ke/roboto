@@ -44,19 +44,19 @@ namespace RobotoChatBot.Modules
         public override string getMethodDescriptions()
         {
             return
-                "xyzzy_start - Starts a new game of xyzzy with the players in the chat" + "\n\r" +
-                "xyzzy_settings - Change the various game settings" + "\n\r" +
-                "xyzzy_get_settings - Get the current game settings" + "\n\r" +
-                "xyzzy_join - Join a game of xyzzy that is in progress, or about to start" + "\n\r" +
-                "xyzzy_leave - Leave a game of xyzzy" + "\n\r" +
-                //"xyzzy_extend - Extends a running game with more cards, or restarts a game that has just stopped" + "\n\r" +
+                "xyzzy_start - Starts a new game of xyzzy with the players in the chat" + "\r\n" +
+                "xyzzy_settings - Change the various game settings" + "\r\n" +
+                "xyzzy_get_settings - Get the current game settings" + "\r\n" +
+                "xyzzy_join - Join a game of xyzzy that is in progress, or about to start" + "\r\n" +
+                "xyzzy_leave - Leave a game of xyzzy" + "\r\n" +
+                //"xyzzy_extend - Extends a running game with more cards, or restarts a game that has just stopped" + "\r\n" +
                 "xyzzy_status - Gets the current status of the game";
-                //"xyzzy_filter - Shows the filters and their current status" + "\n\r" +
+                //"xyzzy_filter - Shows the filters and their current status" + "\r\n" +
         }
 
         public override string getWelcomeDescriptions()
         {
-            return "To start a new game of Chat Against Humanity, type /xyzzy_start in a group chat window. You'll need a couple of friends, and you will all need to open a private message session with the bot to play." + "\n\r" + 
+            return "To start a new game of Chat Against Humanity, type /xyzzy_start in a group chat window. You'll need a couple of friends, and you will all need to open a private message session with the bot to play." + "\r\n" + 
                 "Chat Against Humanity is a virtual card game you can play with friends over Telegram! Each round, the dealer will ask a question, players will get a private message where they should pick their best answer card from a list of cards in their hand, and the dealer can judge the best answer from the replies.";
 
         }
@@ -215,7 +215,7 @@ namespace RobotoChatBot.Modules
                 
                 else if (m.text_msg.StartsWith("/xyzzy_filter"))
                 {
-                    string response = "The following pack filters are currently set. These can be changed when starting a new game : " + "\n\r" +
+                    string response = "The following pack filters are currently set. These can be changed when starting a new game : " + "\r\n" +
         chatData.getPackFilterStatus();
                     Messaging.SendMessage(m.chatID, response, false, m.message_id);
                     processed = true;
@@ -382,7 +382,7 @@ namespace RobotoChatBot.Modules
             }
 
             //check if we need to remove any dormant packs
-            localdata.removeDormantPacks();
+            //TODO DISABLE AS CARDCAST DEAD - localdata.removeDormantPacks();
             lo_bg.addone();
 
             lo_bg.complete();
@@ -413,7 +413,7 @@ namespace RobotoChatBot.Modules
             log("There are " + dormantGames + " potentially cancelable games", logging.loglevel.normal);
 
             
-            string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games\n\r";
+            string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games\r\n";
             result += localPluginData.packs.Count().ToString() + " packs loaded containing " + (localPluginData.questions.Count() + localPluginData.answers.Count()) + " cards";
 
             return result;
@@ -591,9 +591,9 @@ namespace RobotoChatBot.Modules
                         log("Expected messagedata to contain a page number. Was " + e.messageData, logging.loglevel.high);
                     }
                     //import a cardcast pack
-                    if (m.text_msg == "Import CardCast Pack")
+                    if (m.text_msg == "Import Pack")
                     {
-                        Messaging.SendQuestion(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\n\r"
+                        Messaging.SendQuestion(chatData.chatID, m.userID, Helpers.cardCast.boilerPlate + "\r\n"
                             + "To import a pack, enter the pack code. To cancel, type 'Cancel'", true, typeof(mod_xyzzy), "cardCastImport");
                         if (chatData.status == xyzzy_Statuses.setPackFilter) { chatData.setStatus(xyzzy_Statuses.cardCastImport); }
                     }

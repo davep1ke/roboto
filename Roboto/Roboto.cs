@@ -145,7 +145,7 @@ namespace RobotoChatBot
             //only use for debug: 
             //if (!quickStart)
             //{
-                
+            Settings.stats.startup();
             Plugins.startupChecks();
             //}
 
@@ -168,7 +168,7 @@ namespace RobotoChatBot
             int ABANDONALLHOPE = 1;
             ABANDONALLHOPE++;
             //----------------------------
-
+            
             Settings.save();
 
             if (Settings.isFirstTimeInitialised)

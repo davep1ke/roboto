@@ -73,7 +73,6 @@ namespace RobotoChatBot.Modules
             chatIfMuted = true;
             chatPriority = 1;
 
-
             pluginDataType = typeof(mod_standard_data);
             pluginChatDataType = typeof(mod_standard_chatdata);
 
@@ -91,13 +90,13 @@ namespace RobotoChatBot.Modules
         public override string getMethodDescriptions()
         {
             return
-                "help - Returns this list of commands" + "\n\r" +
-                "start - Starts listening to the chat" + "\n\r" +
-                "stop - Stops listening to the chat, until a START is entered." + "\n\r" +
-                "save - Saves any outstanding in memory stuff to disk." + "\n\r" +
-                "stats - Returns an overview of the currently loaded plugins." + "\n\r" +
-                "setquiethours - Sets quiet hours for the chat." + "\n\r" +
-                "addadmin - adds an chat administrator" + "\n\r" +
+                "help - Returns this list of commands" + "\r\n" +
+                "start - Starts listening to the chat" + "\r\n" +
+                "stop - Stops listening to the chat, until a START is entered." + "\r\n" +
+                "save - Saves any outstanding in memory stuff to disk." + "\r\n" +
+                "stats - Returns an overview of the currently loaded plugins." + "\r\n" +
+                "setquiethours - Sets quiet hours for the chat." + "\r\n" +
+                "addadmin - adds an chat administrator" + "\r\n" +
                 "removeadmin - removes a chat administrator"
                 ;
         }
@@ -113,7 +112,7 @@ namespace RobotoChatBot.Modules
             String methods = "The following commands are available:";
             foreach (RobotoModuleTemplate plugin in Plugins.plugins)
             {
-                methods += "\n\r" + plugin.getMethodDescriptions(); 
+                methods += "\r\n" + plugin.getMethodDescriptions(); 
             }
             return methods;
         }
@@ -155,10 +154,10 @@ namespace RobotoChatBot.Modules
             {
 
                 mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
-                string openingMessage = "This is chat " + (c.chatTitle == null ? "" : c.chatTitle) + " (" + c.chatID + "). " +"\n\r";
+                string openingMessage = "This is chat " + (c.chatTitle == null ? "" : c.chatTitle) + " (" + c.chatID + "). " +"\r\n";
                 if (chatData.quietHoursStartTime != TimeSpan.MinValue && chatData.quietHoursEndTime != TimeSpan.MinValue)
                 {
-                    openingMessage += "Quiet time set between " + chatData.quietHoursStartTime.ToString("c") + " and " + chatData.quietHoursEndTime.ToString("c") + ". \n\r";
+                    openingMessage += "Quiet time set between " + chatData.quietHoursStartTime.ToString("c") + " and " + chatData.quietHoursEndTime.ToString("c") + ". \r\n";
                 }
 
                 Messaging.SendMessage(m.chatID, openingMessage +  getAllMethodDescriptions());
@@ -181,7 +180,7 @@ namespace RobotoChatBot.Modules
             else if (m.text_msg.StartsWith("/start") && c != null && c.muted == true)
             {
                 c.muted = false;
-                Messaging.SendMessage(m.chatID, "I am listening for messages again. Type /help for a list of commands." + "\n\r" + getAllWelcomeDescriptions());
+                Messaging.SendMessage(m.chatID, "I am listening for messages again. Type /help for a list of commands." + "\r\n" + getAllWelcomeDescriptions());
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/start"))
@@ -208,15 +207,15 @@ namespace RobotoChatBot.Modules
             {
                 TimeSpan uptime = DateTime.Now.Subtract(Roboto.startTime);
 
-                String statstxt = "I is *@" + Roboto.Settings.botUserName + "*" + "\n\r" +
-                    "Uptime: " + uptime.Days.ToString() + " days, " + uptime.Hours.ToString() + " hours and " + uptime.Minutes.ToString() + " minutes." + "\n\r" +
-                    "I currently know about " + Roboto.Settings.chatData.Count().ToString() + " chats." + "\n\r" +
-                    "The following plugins are currently loaded:" + "\n\r";
+                String statstxt = "I is *@" + Roboto.Settings.botUserName + "*" + "\r\n" +
+                    "Uptime: " + uptime.Days.ToString() + " days, " + uptime.Hours.ToString() + " hours and " + uptime.Minutes.ToString() + " minutes." + "\r\n" +
+                    "I currently know about " + Roboto.Settings.chatData.Count().ToString() + " chats." + "\r\n" +
+                    "The following plugins are currently loaded:" + "\r\n";
 
                 foreach (RobotoModuleTemplate plugin in Plugins.plugins)
                 {
-                    statstxt += "*" + plugin.GetType().ToString() + "*" + "\n\r";
-                    statstxt += plugin.getStats() + "\n\r";
+                    statstxt += "*" + plugin.GetType().ToString() + "*" + "\r\n";
+                    statstxt += plugin.getStats() + "\r\n";
                 }
 
                 Messaging.SendMessage(m.chatID, statstxt, m.userFullName, true);
@@ -326,7 +325,7 @@ namespace RobotoChatBot.Modules
                 foreach (RobotoModuleTemplate plugin in Plugins.plugins)
                 {
                     string moduleDesc = plugin.getWelcomeDescriptions();
-                    if (moduleDesc != null) { description += "\n\r" + moduleDesc; }
+                    if (moduleDesc != null) { description += "\r\n" + moduleDesc; }
                 }
                 return description;
             }
