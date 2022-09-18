@@ -52,10 +52,30 @@ namespace RobotoChatBot
                 this.skipheader = skipheader;
                 this.skipLevel = skipLevel;
 
-                StackFrame frame = new StackFrame(skipLevel);
-                var method = frame.GetMethod();
-                classtype = method.DeclaringType.ToString();
-                methodName = method.Name;
+                try
+                {
+                    StackFrame frame = new StackFrame(skipLevel);
+                    if (frame == null ) { throw new SystemException("Frame Not Found"); }
+                    var method = frame.GetMethod();
+                    if (method == null) 
+                    {
+                        //not sure why this is an issue. For early calls on the VM this throws an exception so hardcode it if we can't find a method for the frame.
+                        //throw new SystemException("Method Not Found"); 
+                        methodName = "Root";
+                        classtype = "Class";
+                        return;
+                    }
+                    methodName = method.Name;
+                    if(method.DeclaringType == null) { throw new SystemException("Method Declaring Type not found"); }
+                    classtype = method.DeclaringType.ToString();
+                    if (classtype == null) { throw new SystemException("Method Not Found"); }
+
+                }
+                catch (Exception e)
+                {
+                    System.Windows.MessageBox.Show("Couldnt create logItem.\r\n" + e.ToString());
+                    Roboto.log.log("Couldnt create logItem.\r\n" + e.ToString(), loglevel.critical);
+                }
             }
 
             public override string ToString()
