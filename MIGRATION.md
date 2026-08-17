@@ -26,7 +26,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Done, verified | `14beec1` |
 | 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Done, verified | `b68c07d` |
 | 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Done, verified | `b00e43f` |
-| 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | (this commit) |
+| 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | `e641fb6` |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
