@@ -25,7 +25,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.1 `mod_xyzzy`: game skeleton (start/join/leave/status, persistence, no round-play) | Done, verified | `af61ffc` |
 | 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Done, verified | `14beec1` |
 | 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Done, verified | `b68c07d` |
-| 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Not started | — |
+| 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Done, verified | (this commit) |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
@@ -263,6 +263,29 @@ Stable across 8 repeated full runs. Sanity-checked per the established pattern: 
 reminder-already-sent guard, confirmed exactly `ReminderIsSentAt75PercentAndOnlyOnce` failed with a
 clear values-differ message while the other 43 passed, then reverted. `docker compose build`
 unaffected.
+
+## `mod_xyzzy` 8.4: `/xyzzy_settings` admin/moderation menu — done and verified (2026-08-17)
+
+`Xyzzy/Commands/XyzzySettingsCommand.cs` - a single free-text DM command (`abandon`,
+`timeout <hours>`, `throttle <hours>`, `kick`, `score <player> <points>`, `cancel`) rather than
+porting legacy's per-action keyboard sub-flows one at a time. Only `kick` needs a second question
+(which player - there's no message to reply-to inside a DM the way `/addadmin` uses in-group
+replies, so it lists player names and matches the free-text reply). Everything else resolves in one
+round trip. Admin-gated via `ChatState.IsAdmin`, same as `/addadmin`/`/xyzzy_begin`; reuses
+`ReplyRouter` exactly as `/setquiethours` does (single-admin, one-at-a-time - the reason `ReplyRouter`
+was fine to leave as-is back in phase 8.2 rather than extending it for round-play).
+
+This completes the phase-8 `mod_xyzzy` port. `/xyzzy_settings`'s legacy "Mess With" (joke/fake score
+display) and full pack-management sub-menus stay dropped per the v1 scope cuts below - `score`
+covers the one moderation need (correcting a mistake) that isn't purely cosmetic.
+
+**Verified**: 9 new tests in `tests/Roboto.Bot.Tests/Xyzzy/XyzzySettingsTests.cs` (53 total, up from
+44) - admin gating, abandon, timeout/throttle (including an invalid value being rejected without
+touching state), the two-step kick flow (including kicking an unknown name cleanly), score override,
+cancel, and running the command with no game active. Stable across 5 repeated runs. Sanity-checked
+per the established pattern: disabled the admin-gate check, confirmed exactly
+`OnlyAnAdminCanOpenTheMenu` failed with a clear message while the other 52 passed, then reverted.
+`docker compose build` unaffected.
 
 ## Explicitly deferred / blocked work
 
