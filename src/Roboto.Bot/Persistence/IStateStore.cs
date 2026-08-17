@@ -14,4 +14,6 @@ public interface IStateStore
     Task<T?> LoadAsync<T>(string key, CancellationToken cancellationToken);
 
     Task SaveAsync<T>(string key, T value, CancellationToken cancellationToken);
+
+    Task DeleteAsync(string key, CancellationToken cancellationToken);
 }

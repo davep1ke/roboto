@@ -50,6 +50,7 @@ builder.Services.AddSingleton<IStateStore, SqliteStateStore>();
 builder.Services.AddSingleton<ChatRepository>();
 builder.Services.AddSingleton(new AppClock(DateTime.UtcNow));
 builder.Services.AddSingleton<CommandRouter>();
+builder.Services.AddSingleton<ReplyRouter>();
 builder.Services.AddHostedService<TelegramPollingService>();
 
 using var host = builder.Build();

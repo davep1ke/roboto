@@ -112,9 +112,9 @@ live-pointed token, we risk sending bot messages into other people's in-progress
 - This file is for durable orientation (what/where/why at the project level, safety rules, machine
   setup). Active phase-by-phase progress, what's blocked on what, and the TODO list live in
   `MIGRATION.md` — a working document, not meant to be durable forever.
-- Background test runs against the live test bot need a genuinely long window (1800s has worked
-  well) — shorter ones race the user's actual response time and the process exits before they can
-  react.
+- Background test runs against the live test bot must **not** be time-boxed — even a 30-minute
+  window died mid-conversation twice, racing the user's actual pace. Run with no `timeout` at all,
+  and stop it explicitly (`kill`) only once testing is confirmed done, not on a guessed schedule.
 
 ## Notes for future sessions
 

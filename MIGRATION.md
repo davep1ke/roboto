@@ -19,8 +19,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 2. Module framework: command router + DI | Done, verified | `5933fe5` |
 | 3. SQLite persistence layer | Done, verified | `5d54890` |
 | 4. `mod_standard` port, partial (`/start`, `/stop`, real per-chat state) | Done, verified | `f495a0c` |
-| 5. Conversational-flow / `ExpectedReply` system | **In progress** | — |
-| 6. `mod_standard` remainder (`/setquiethours`, `/addadmin`, `/removeadmin`) | Blocked on #5 | — |
+| 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | (this commit) |
+| 6. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Not started | — |
 | 7. `mod_xyzzy` port (the big one, ~3,800 LOC of game logic) | Not started | — |
 | 8. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 9. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
@@ -46,17 +46,36 @@ what was specifically tested and any bugs that were caught along the way.
 - `Dockerfile`, `docker-compose.yml`, `.dockerignore` — Docker packaging. `docker-compose.yml` runs
   as the host UID (bind-mount ownership fix, see its comments) and needs no per-instance host path.
 
-## Now in progress: conversational-flow / `ExpectedReply` replacement
+## Conversational-flow / `ExpectedReply` replacement — done and verified (2026-08-17)
 
-Legacy `ExpectedReply` (`Storage/ExpectedReply.cs`, `Core/Messaging.cs`): a single global
-`List<ExpectedReply>`, linearly scanned to match an incoming reply back to whichever module asked
-the question, tracking whether the message was actually sent yet, queuing follow-up messages per
-user so a player never gets two outstanding questions at once. Needed for `/setquiethours`,
-`/addadmin`, `/removeadmin`, and presumably most of `mod_xyzzy`'s actual turn-by-turn play (picking
-an answer card, judging). This is very likely the single most load-bearing piece of the legacy
-module framework left to replace — worth designing carefully rather than rushing.
+Replaces legacy `ExpectedReply` (`Storage/ExpectedReply.cs`, `Core/Messaging.cs` — a single global
+`List<ExpectedReply>`, linearly scanned, matched by chat/user id + reply-to-message-id, keyed by an
+opaque `messageData` string per handler) with `Commands/PendingReply.cs`/`ReplyRouter.cs`/
+`IReplyHandler.cs` — see those files' own doc comments for the actual design (deliberately
+simplified vs. legacy: one pending reply per user, not a full queue; DM-only matching, not also the
+group reply-to variant; both explicitly justified as "nothing needs more yet, revisit when
+something does" rather than gaps that were missed).
 
-Design notes go here as they're made; implementation notes go in the code once it exists.
+Proved for real with `SetQuietHoursCommand` (`/setquiethours`) — genuinely useful ported
+functionality, not a throwaway demo, and it was already blocked on exactly this system.
+
+**Verified, not just written**, across two rounds (the first round's server logs were too sparse to
+independently confirm the middle of the conversation, which prompted adding explicit step-logging
+inside `SetQuietHoursCommand` before trusting it - see its own comments):
+- No circular-DI exception at startup (a real risk here, same shape as the earlier `HelpCommand`
+  gotcha - `SetQuietHoursCommand` resolves `ReplyRouter` lazily via `IServiceProvider` instead of as
+  a constructor dependency, since `ReplyRouter` needs every `IBotCommand` built first, itself
+  included).
+- Full round trip via the real group chat + DM: `/setquiethours` → asked for start time over DM →
+  `disable` → correctly cleared, with each step now traceable from the command's own log lines, not
+  just "a message arrived."
+- `docker compose build` + `docker compose run` — same six commands registered, clean auth, no
+  regressions.
+- **Process note that actually changed how testing works going forward**: time-boxed background
+  test runs (even a 30-minute window) raced the user's actual pace and died mid-conversation twice.
+  Switched to running the bot **with no timeout at all**, stopped explicitly (`kill`) only once
+  testing is confirmed done - see `CLAUDE.md`'s working-conventions section, which this superseded
+  the previous "1800s has worked well" note.
 
 ## Explicitly deferred / blocked work
 

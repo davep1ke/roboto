@@ -13,7 +13,8 @@ public sealed class TelegramPollingService(
     ILogger<TelegramPollingService> logger,
     IOptions<BotOptions> options,
     IHostApplicationLifetime lifetime,
-    CommandRouter commandRouter) : BackgroundService
+    CommandRouter commandRouter,
+    ReplyRouter replyRouter) : BackgroundService
 {
     private readonly BotOptions _options = options.Value;
     private TelegramBotClient _botClient = null!;
@@ -61,6 +62,14 @@ public sealed class TelegramPollingService(
         }
 
         logger.LogInformation("Message from {User}: {Text}", message.From?.Username ?? message.From?.FirstName, text);
+
+        // Checked first: if this user has a pending question (e.g. mid-way through /setquiethours),
+        // treat whatever they typed as the answer rather than trying to parse it as a fresh command
+        // - matches the legacy app checking parseExpectedReplies before general command dispatch.
+        if (await replyRouter.TryHandleAsync(botClient, message, cancellationToken))
+        {
+            return;
+        }
 
         await commandRouter.TryDispatchAsync(botClient, message, cancellationToken);
     }
