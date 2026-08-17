@@ -194,3 +194,8 @@ FakesAssemblies/
 
 # Visual Studio 6 workspace options file
 *.opt
+
+# --- New .NET/Docker port (src/Roboto.Bot) ---
+# Per-instance secrets and SQLite state live under data/<instance>/ (bot.env, roboto.db),
+# self-created at runtime by InstanceBootstrapper - never commit any of it.
+/data/

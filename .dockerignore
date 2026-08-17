@@ -1,0 +1,13 @@
+# Legacy WinForms/.NET Framework project - not part of the new build, and dragging its checked-in
+# binary DLL + packages into the Docker build context just slows builds down.
+Roboto/
+Roboto.sln
+
+.git/
+.vs/
+**/bin/
+**/obj/
+**/.vscode/
+
+data/
+*.md
