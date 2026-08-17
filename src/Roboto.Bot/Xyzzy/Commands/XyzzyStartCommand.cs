@@ -3,30 +3,33 @@ using Roboto.Bot.Commands;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Xyzzy.Commands;
 
 /// <summary>
-/// Ports legacy mod_xyzzy's /xyzzy_start, including the setup wizard (phase 8.5): "use defaults" vs
-/// "configure" (question limit, timeout, throttle) over DM, same free-text-reply shape as
-/// /xyzzy_settings rather than legacy's keyboard-driven chain. Pack-filter selection specifically
-/// stays cut - v1 only has the one hardcoded pack (CardCatalog), nothing to filter yet.
+/// Ports legacy mod_xyzzy's /xyzzy_start, including the setup wizard (phase 8.5, keyboard-ified in
+/// 8.6 per user feedback): the initial "use defaults / configure / cancel" choice is an inline
+/// keyboard (XyzzySetupCallbackHandler owns the taps), matching legacy's own keyboard for that exact
+/// decision. The three "configure" follow-ups (question limit/timeout/throttle) stay free-text DM
+/// questions through ReplyRouter, same as legacy - those were always plain number prompts even in
+/// the original app, not keyboard-driven. Pack-filter selection specifically stays cut - v1 only has
+/// the one hardcoded pack (CardCatalog), nothing to filter yet.
 ///
 /// The game exists (status SettingUp, starter already added as a player) for the whole setup
-/// conversation, not just once it's finished - matches legacy adding the starter and setting a
-/// setup status before the first question is even answered. If the starter has no open DM at all,
-/// the whole thing is rolled back to Stopped rather than leaving a game stuck in SettingUp nobody
-/// can ever finish.
+/// conversation, not just once it's finished - matches legacy adding the starter and setting a setup
+/// status before the first question is even answered. If the starter has no open DM at all, the
+/// whole thing is rolled back to Stopped rather than leaving a game stuck in SettingUp nobody can
+/// ever finish.
 ///
 /// Resolves ReplyRouter lazily via IServiceProvider rather than as a constructor dependency - see
 /// the warning in ReplyRouter's own doc comment for why a direct dependency here would be circular.
 /// </summary>
-public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameRepository games) : IReplyHandler
+public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds) : IReplyHandler
 {
-    private const string ChooseSetup = "choose-setup";
-    private const string AskQuestionLimit = "question-limit";
-    private const string AskTimeout = "timeout";
-    private const string AskThrottle = "throttle";
+    public const string AskQuestionLimit = "question-limit";
+    public const string AskTimeout = "timeout";
+    public const string AskThrottle = "throttle";
 
     public string Name => "xyzzy_start";
     public string Description => "Starts a new Cards Against Humanity game in this chat.";
@@ -60,11 +63,25 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
         game.StatusChangedUtc = DateTime.UtcNow;
         await games.SaveAsync(game, cancellationToken);
 
-        var replies = services.GetRequiredService<ReplyRouter>();
-        var asked = await replies.AskAsync(context.Bot, chatId, caller.Id, Name, ChooseSetup, data: null,
-            "Start the game with default settings, or configure it first (round length/timeout/throttle)? " +
-            "Reply \"defaults\", \"configure\", or \"cancel\".",
-            cancellationToken);
+        var keyboard = new InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton.WithCallbackData("Use Defaults", $"xy:su:{chatId}:defaults")],
+            [InlineKeyboardButton.WithCallbackData("Configure Game", $"xy:su:{chatId}:configure")],
+            [InlineKeyboardButton.WithCallbackData("Cancel", $"xy:su:{chatId}:cancel")],
+        ]);
+
+        bool asked;
+        try
+        {
+            await context.Bot.SendMessage(caller.Id,
+                "Do you want to start the game with default settings, or set advanced options first?",
+                replyMarkup: keyboard, cancellationToken: cancellationToken);
+            asked = true;
+        }
+        catch (Exception)
+        {
+            asked = false;
+        }
 
         if (!asked)
         {
@@ -77,7 +94,7 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
 
         await context.Bot.SendMessage(chatId,
             $"{caller.FirstName} is starting a new game of Cards Against Humanity! Check your DMs to finish setup, " +
-            "then use /xyzzy_join to play (need at least 3 players).",
+            "then use /xyzzy_join to play.",
             cancellationToken: cancellationToken);
     }
 
@@ -89,9 +106,6 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
 
         switch (pending.Step)
         {
-            case ChooseSetup:
-                await HandleChooseSetupAsync(bot, replies, game, pending.UserId, text, cancellationToken);
-                break;
             case AskQuestionLimit:
                 await HandleQuestionLimitAsync(bot, replies, game, pending.UserId, text, cancellationToken);
                 break;
@@ -100,34 +114,6 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
                 break;
             case AskThrottle:
                 await HandleThrottleAsync(bot, replies, game, pending.UserId, text, cancellationToken);
-                break;
-        }
-    }
-
-    private async Task HandleChooseSetupAsync(ITelegramBotClient bot, ReplyRouter replies, XyzzyGameState game, long userId, string text, CancellationToken cancellationToken)
-    {
-        switch (text.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.ToLowerInvariant())
-        {
-            case "cancel":
-                game.Status = XyzzyStatus.Stopped;
-                game.Players = [];
-                await games.SaveAsync(game, cancellationToken);
-                await bot.SendMessage(userId, "Cancelled.", cancellationToken: cancellationToken);
-                await bot.SendMessage(game.ChatId, "Game setup cancelled.", cancellationToken: cancellationToken);
-                break;
-
-            case "defaults":
-                await FinishSetupAsync(bot, game, userId, cancellationToken);
-                break;
-
-            case "configure":
-                await replies.AskAsync(bot, game.ChatId, userId, Name, AskQuestionLimit, data: null,
-                    "How many questions should the round last for? Enter a number, or -1 for unlimited.", cancellationToken);
-                break;
-
-            default:
-                await replies.AskAsync(bot, game.ChatId, userId, Name, ChooseSetup, data: null,
-                    "Not a valid answer. Reply \"defaults\", \"configure\", or \"cancel\".", cancellationToken);
                 break;
         }
     }
@@ -173,18 +159,6 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
 
         game.MinWaitHours = hours;
         await games.SaveAsync(game, cancellationToken);
-        await FinishSetupAsync(bot, game, userId, cancellationToken);
-    }
-
-    private async Task FinishSetupAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, CancellationToken cancellationToken)
-    {
-        game.Status = XyzzyStatus.Invites;
-        game.StatusChangedUtc = DateTime.UtcNow;
-        await games.SaveAsync(game, cancellationToken);
-
-        await bot.SendMessage(userId, "Setup complete!", cancellationToken: cancellationToken);
-        await bot.SendMessage(game.ChatId,
-            "Setup's done! Use /xyzzy_join to play (need at least 3 players), then an admin can /xyzzy_begin.",
-            cancellationToken: cancellationToken);
+        await rounds.FinishSetupAsync(bot, game, userId, cancellationToken);
     }
 }

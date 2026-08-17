@@ -14,7 +14,8 @@ public class XyzzySettingsTests
     {
         var bot = new TestBot();
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
-        await bot.SendAsync(TestBot.PrivateMessage(Alice, "defaults", firstName: "Alice")); // phase 8.5 setup wizard - quick path to Invites
+        var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, choiceMessage.Buttons!.First(b => b.Text == "Use Defaults").CallbackData); // quick path to Invites
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Bob, "/xyzzy_join", firstName: "Bob"));
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Carol, "/xyzzy_join", firstName: "Carol"));
         return bot;

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Roboto.Bot.Xyzzy;
 
 namespace Roboto.Bot.Tests.Xyzzy;
@@ -13,31 +14,104 @@ public class XyzzyRoundLoopTests
     {
         var bot = new TestBot();
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
-        await bot.SendAsync(TestBot.PrivateMessage(Alice, "defaults", firstName: "Alice")); // phase 8.5 setup wizard - quick path to Invites
+        await TapUseDefaultsAsync(bot, Alice);
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Bob, "/xyzzy_join", firstName: "Bob"));
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Carol, "/xyzzy_join", firstName: "Carol"));
         return bot;
+    }
+
+    /// <summary>Taps the "Use Defaults" button XyzzyStartCommand's setup keyboard sends over DM.</summary>
+    private static async Task TapUseDefaultsAsync(TestBot bot, long userId)
+    {
+        var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
+        var button = choiceMessage.Buttons!.First(b => b.Text == "Use Defaults");
+        await bot.SendCallbackAsync(userId, button.CallbackData);
+    }
+
+    /// <summary>Taps the "Start" button XyzzyRoundService.FinishSetupAsync DMs the starter once
+    /// setup's done - replaces the old group-chat /xyzzy_begin command entirely (phase 8.6).</summary>
+    private static async Task BeginRoundAsync(TestBot bot, long starterId)
+    {
+        var startMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == starterId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Start"));
+        var button = startMessage.Buttons!.First(b => b.Text == "Start");
+        await bot.SendCallbackAsync(starterId, button.CallbackData);
     }
 
     private static SentButton FirstHandButton(TestBot bot, long playerId) =>
         bot.BotClient.SentMessages.Last(m => m.ChatId == playerId && m.Buttons is { Count: > 0 }).Buttons![0];
 
     [Fact]
-    public async Task BeginRequiresAnAdminAndEnoughPlayers()
+    public async Task TappingStartWithTooFewPlayersFillsEmptySlotsWithBots()
     {
-        using var bot = await StartedGameWithThreePlayersAsync();
+        // Replaces the old "/xyzzy_begin force" escape hatch entirely - user's explicit feedback
+        // that solo/two-player testing was always awkward. No admin gate any more either: only the
+        // starter ever receives the Start button (it's in their own DM), so having the button at
+        // all *is* the access control - nothing else to check.
+        using var bot = new TestBot();
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
+        await TapUseDefaultsAsync(bot, Alice);
 
-        // Bob isn't an admin (no admins have ever been set, so per ChatState.IsAdmin, *everyone*
-        // currently counts as admin - bootstrap the chat's own admin list first via /addadmin so
-        // this actually exercises the gate rather than trivially passing).
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/addadmin"));
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Bob, "/xyzzy_begin", firstName: "Bob"));
-        Assert.Contains("Only a chat admin", bot.BotClient.SentMessages[^1].Text);
+        await BeginRoundAsync(bot, Alice); // only the starter has joined so far
+
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_status"));
+        var status = bot.BotClient.SentMessages[^1].Text;
+        Assert.Contains("Round 1", status);
+        Assert.Contains("(bot)", status);
+        Assert.Equal(3, status.Split('\n').Count(line => line.StartsWith("- ", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task SoloPlayerCanCompleteFullRoundsAgainstBots()
+    {
+        // Proves the actual bot-play mechanics, not just that bots get added: a solo starter needs
+        // no other real player at any point - bots answer and judge on their own ("pick randomly
+        // for now" per the original ask). Judge rotation is deterministic here (Players is always
+        // [Alice, Bot1, Bot2] in insertion order), so which round has a human vs. bot judge is
+        // known ahead of time, not just "whichever it happens to be".
+        using var bot = new TestBot();
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
+        await TapUseDefaultsAsync(bot, Alice);
+        await BeginRoundAsync(bot, Alice);
+
+        // Round 1: Alice (the starter) is first in judge rotation - both bots should already have
+        // auto-submitted an answer with no callback from anyone, so her judging keyboard should be
+        // waiting immediately.
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
+        Assert.Equal(2, judgeMessage.Buttons!.Count);
+        await bot.SendCallbackAsync(Alice, judgeMessage.Buttons[0].CallbackData);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins the round"));
+
+        // Round 2: judge rotates to Bot1 (index 1) - Alice just needs to answer, and since the
+        // other non-judge player is also a bot (already auto-submitted), her tap alone should
+        // complete the round: the bot judge auto-picks a winner with no further input from anyone,
+        // chaining all the way to round 3 within this one callback.
+        var handMessage = bot.BotClient.SentMessages.Last(m =>
+            m.ChatId == Alice && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal)));
+        await bot.SendCallbackAsync(Alice, handMessage.Buttons![0].CallbackData);
+
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_status"));
+        Assert.Contains("Round 3", bot.BotClient.SentMessages[^1].Text);
+
+        // Exactly one player wins each completed round - who (Alice or a bot, since judges don't
+        // submit) is random, but the total across the roster after 2 rounds isn't.
+        var game = await bot.Services.GetRequiredService<XyzzyGameRepository>().GetAsync(ChatId, CancellationToken.None);
+        Assert.Equal(2, game.Players.Sum(p => p.Wins));
+    }
+
+    [Fact]
+    public async Task GameEndsWhenOnlyBotsAreLeft()
+    {
+        // Safety guard, not just a nicety: without this, a game that lost all its real players
+        // would otherwise keep dealing itself hands forever with nobody watching (bots always
+        // auto-act, so nothing would ever pause it).
+        using var bot = new TestBot();
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
+        await TapUseDefaultsAsync(bot, Alice);
+        await BeginRoundAsync(bot, Alice);
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_leave"));
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/addadmin"));
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_begin"));
-        Assert.Contains("Need at least 3 players", bot.BotClient.SentMessages[^1].Text);
+
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Not enough real players"));
     }
 
     [Fact]
@@ -45,11 +119,11 @@ public class XyzzyRoundLoopTests
     {
         using var bot = await StartedGameWithThreePlayersAsync();
 
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_begin"));
+        await BeginRoundAsync(bot, Alice);
 
         // Everyone got dealt a hand except whoever's judging this round.
         var judgeId = new[] { Alice, Bob, Carol }.First(id =>
-            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 }));
+            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal))));
         var answerers = new[] { Alice, Bob, Carol }.Where(id => id != judgeId).ToArray();
         Assert.Equal(2, answerers.Length);
 
@@ -86,10 +160,10 @@ public class XyzzyRoundLoopTests
     public async Task AnsweringTwiceInTheSameRoundIsRejected()
     {
         using var bot = await StartedGameWithThreePlayersAsync();
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_begin"));
+        await BeginRoundAsync(bot, Alice);
 
         var judgeId = new[] { Alice, Bob, Carol }.First(id =>
-            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 }));
+            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal))));
         var answerer = new[] { Alice, Bob, Carol }.First(id => id != judgeId);
 
         var button = FirstHandButton(bot, answerer);
@@ -107,10 +181,10 @@ public class XyzzyRoundLoopTests
     public async Task TheJudgeCannotSubmitAnAnswer()
     {
         using var bot = await StartedGameWithThreePlayersAsync();
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_begin"));
+        await BeginRoundAsync(bot, Alice);
 
         var judgeId = new[] { Alice, Bob, Carol }.First(id =>
-            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 }));
+            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal))));
 
         // The judge never got a hand keyboard to tap in the first place, but even a forged
         // callback for a card they don't hold should be rejected cleanly.
@@ -124,10 +198,10 @@ public class XyzzyRoundLoopTests
     public async Task AStaleTapAfterTheRoundHasMovedOnIsRejected()
     {
         using var bot = await StartedGameWithThreePlayersAsync();
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_begin"));
+        await BeginRoundAsync(bot, Alice);
 
         var judgeId = new[] { Alice, Bob, Carol }.First(id =>
-            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 }));
+            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal))));
         var answerers = new[] { Alice, Bob, Carol }.Where(id => id != judgeId).ToArray();
 
         var staleButton = FirstHandButton(bot, answerers[0]);

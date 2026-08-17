@@ -14,7 +14,7 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// "timeout &lt;hours&gt;", "throttle &lt;hours&gt;", "kick", "score &lt;player&gt; &lt;points&gt;", "cancel".
 /// Only "kick" needs a follow-up question (which player - can't use a reply-to-message here like
 /// /addadmin does, there's no message to reply to inside a DM), everything else resolves in one
-/// message. Admin-gated via ChatState.IsAdmin, same as /addadmin/xyzzy_begin.
+/// message. Admin-gated via ChatState.IsAdmin, same as /addadmin.
 ///
 /// Resolves ReplyRouter lazily via IServiceProvider rather than as a constructor dependency - see
 /// the warning in ReplyRouter's own doc comment for why a direct dependency here would be circular.

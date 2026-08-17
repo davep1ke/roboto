@@ -14,12 +14,32 @@ public class XyzzyRoundReconcilerTests
     {
         var bot = new TestBot();
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
-        await bot.SendAsync(TestBot.PrivateMessage(Alice, "defaults", firstName: "Alice")); // phase 8.5 setup wizard - quick path to Invites
+        await TapUseDefaultsAsync(bot, Alice);
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Bob, "/xyzzy_join", firstName: "Bob"));
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Carol, "/xyzzy_join", firstName: "Carol"));
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_begin"));
+        await BeginRoundAsync(bot, Alice);
         return bot;
     }
+
+    private static async Task TapUseDefaultsAsync(TestBot bot, long userId)
+    {
+        var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
+        var button = choiceMessage.Buttons!.First(b => b.Text == "Use Defaults");
+        await bot.SendCallbackAsync(userId, button.CallbackData);
+    }
+
+    private static async Task BeginRoundAsync(TestBot bot, long starterId)
+    {
+        var startMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == starterId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Start"));
+        var button = startMessage.Buttons!.First(b => b.Text == "Start");
+        await bot.SendCallbackAsync(starterId, button.CallbackData);
+    }
+
+    /// <summary>Who's judging - identified by "didn't get a hand-answer keyboard", not just "didn't
+    /// get any message with buttons" (the starter also gets setup/Start keyboards earlier, which
+    /// would otherwise make them look like the judge every time).</summary>
+    private static long JudgeIdOf(TestBot bot) => new[] { Alice, Bob, Carol }.First(id =>
+        !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal))));
 
     /// <summary>Directly backdates StatusChangedUtc to simulate elapsed time deterministically,
     /// rather than actually waiting - the reconciler is driven directly (not via the real
@@ -62,8 +82,7 @@ public class XyzzyRoundReconcilerTests
     {
         using var bot = await ThreePlayerGameInProgressAsync();
 
-        var judgeId = new[] { Alice, Bob, Carol }.First(id =>
-            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 }));
+        var judgeId = JudgeIdOf(bot);
         var answerer = new[] { Alice, Bob, Carol }.First(id => id != judgeId);
         var button = bot.BotClient.SentMessages.Last(m => m.ChatId == answerer && m.Buttons is { Count: > 0 }).Buttons![0];
         await bot.SendCallbackAsync(answerer, button.CallbackData);
@@ -96,8 +115,7 @@ public class XyzzyRoundReconcilerTests
     {
         using var bot = await ThreePlayerGameInProgressAsync();
 
-        var judgeId = new[] { Alice, Bob, Carol }.First(id =>
-            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 }));
+        var judgeId = JudgeIdOf(bot);
         var answerers = new[] { Alice, Bob, Carol }.Where(id => id != judgeId).ToArray();
         foreach (var playerId in answerers)
         {
@@ -122,8 +140,7 @@ public class XyzzyRoundReconcilerTests
         game.MinWaitHours = 2;
         await games.SaveAsync(game, CancellationToken.None);
 
-        var judgeId = new[] { Alice, Bob, Carol }.First(id =>
-            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 }));
+        var judgeId = JudgeIdOf(bot);
         var answerers = new[] { Alice, Bob, Carol }.Where(id => id != judgeId).ToArray();
         foreach (var playerId in answerers)
         {

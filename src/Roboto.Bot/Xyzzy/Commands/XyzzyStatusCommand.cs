@@ -40,7 +40,8 @@ public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
 
         if (game.Status is XyzzyStatus.Invites)
         {
-            sb.AppendLine($"Waiting for players ({game.Players.Count}/3 minimum).");
+            sb.AppendLine($"{game.Players.Count} player(s) so far - the starter can tap Start any time " +
+                           $"(I'll fill up to {XyzzyRoundService.MinPlayers} with bots if needed).");
         }
 
         if (game.Status is XyzzyStatus.Question or XyzzyStatus.Judging && game.CurrentQuestionCardId is not null)
@@ -68,8 +69,8 @@ public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
         sb.AppendLine("Players:");
         foreach (var player in game.Players.OrderByDescending(p => p.Wins))
         {
-            var judgeTag = game.JudgePlayerId == player.PlayerId ? " (judge)" : "";
-            sb.AppendLine($"- {player.DisplayName}: {player.Wins} win(s){judgeTag}");
+            var tags = (player.IsBot ? " (bot)" : "") + (game.JudgePlayerId == player.PlayerId ? " (judge)" : "");
+            sb.AppendLine($"- {player.DisplayName}: {player.Wins} win(s){tags}");
         }
 
         await context.Bot.SendMessage(chatId, sb.ToString().TrimEnd(), cancellationToken: cancellationToken);

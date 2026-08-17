@@ -27,6 +27,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Done, verified | `b68c07d` |
 | 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Done, verified | `b00e43f` |
 | 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | `e641fb6` |
+| 8.6 `mod_xyzzy`: setup/begin keyboards moved to DM, bot players | Done, verified | (this commit) |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
@@ -349,6 +350,58 @@ by temporarily reverting to default JsonSerializerOptions and confirming exactly
 `EnumsArePersistedByNameNotOrdinal` failed with a clear message while the other 62 passed, then
 restored. Full 63/63 suite green, `docker compose build` unaffected.
 
+## `mod_xyzzy` 8.6: setup/begin keyboards moved to DM, bot players — done and verified (2026-08-17)
+
+Direct response to live-testing feedback (round 4, 2026-08-17): "bring back the keyboard options
+for setup", "move /xyzzy_begin over to the private chat", "not add language about forcing the game
+to start", and "populate the empty slots with bots" when a game starts short of players.
+
+**Setup choice is a real inline keyboard again.** `/xyzzy_start`'s "Use Defaults / Configure Game /
+Cancel" question (phase 8.5 had made this free-text) is back to matching legacy's own keyboard for
+that exact decision - new `XyzzySetupCallbackHandler` (`xy:su:<chatId>:<choice>`) owns the taps. The
+three "configure" follow-ups (question limit/timeout/throttle) stay free-text through `ReplyRouter`
+- legacy asked those as plain numbers too, they were never keyboard-driven even in the original app.
+
+**`/xyzzy_begin` (the group command) is gone entirely**, replaced by a "Start" button DM'd to the
+starter once setup finishes (`XyzzyRoundService.FinishSetupAsync` → new `XyzzyBeginCallbackHandler`,
+`xy:sb:<chatId>`). No admin-gate needed any more either - only the starter's own DM ever has the
+button, so *having* it is the access control, same as legacy sending that keyboard specifically to
+`m.userID`.
+
+**Bot players fill empty slots instead of anyone ever needing to force-start.** Tapping Start tops
+the game up to `XyzzyRoundService.MinPlayers` (3) with bots (`XyzzyPlayer.IsBot`, negative synthetic
+`PlayerId`s so they can never collide with a real Telegram user) if it's short - the old
+`/xyzzy_begin force` 2-player escape hatch, and all its messaging, is gone along with the command
+that carried it. Bots get a normal hand and "pick randomly for now" (user's own words) - they
+auto-submit an answer the instant a round deals hands, and auto-pick a winner the instant judging
+would otherwise DM them (which never happens - PlayerId is synthetic, there's no real chat to
+message). `XyzzyRoundService.TryEndGameAsync` now also stops a game if only bots are left, which
+turned out to be load-bearing, not just tidy: a game that lost its last real player would otherwise
+recurse `BeginQuestionAsync → bot auto-submit → BeginJudgingAsync → bot auto-pick → next round → ...`
+forever with nothing to ever pause it - confirmed for real by the sanity check below (a genuine
+`StackOverflowException`, not a hypothetical).
+
+Auditing every place `JudgePlayerId!.Value` was dereferenced surfaced a second, pre-existing latent
+bug this same shape of change made much easier to actually hit: a departing judge (leave or kick)
+sets `JudgePlayerId` to null, and three call sites (`BeginJudgingAsync`, and the reconciler's
+reminder/force-advance) assumed it couldn't be. Fixed with a null-judge guard at the top of
+`BeginJudgingAsync` (redeals with a freshly-rotated judge) and in the reconciler's timeout dispatch;
+`XyzzyLeaveCommand` also resolves it immediately (via `TryEndGameAsync`/`BeginQuestionAsync`) rather
+than waiting up to a minute for the next scheduler tick.
+
+**Verified**: `docker compose down` + rebuild + restart against `@Beefy_Surprise_bot` per the
+standing "leave the bot running" convention. 65 tests (up from 63) - every pre-existing `mod_xyzzy`
+test's helpers updated for the button-based setup/begin flow (a real behavior change, not a
+test-only fixup - same as 8.5's transition), plus new coverage: tapping Start with only the starter
+present fills bots and actually starts a round; a full multi-round game played entirely by a solo
+human against two bots (deterministic judge rotation makes both "human judges, bots auto-answer" and
+"bot judges, human answers, bot auto-picks and chains to the next round" reachable in one test); the
+last-human-leaves safety stop; a tampered/invalid setup callback rejected cleanly with the real
+buttons still working afterward. Stable across 15 repeated full runs. Sanity-checked per the established pattern, with a genuinely
+notable result this time: temporarily reverting the all-bots-end check didn't just fail an
+assertion, it reproduced a real `StackOverflowException` - concrete proof the guard is load-bearing,
+not just tidy defensive code. `docker compose build` unaffected.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
@@ -361,12 +414,6 @@ restored. Full 63/63 suite green, `docker compose build` unaffected.
   (defaults-vs-custom chain, question-limit/timeout/throttle prompts before the game starts) was
   originally cut here too but got built out in phase 8.5, below - pack-filter selection specifically
   stays cut since v1 only has the one hardcoded pack, nothing to filter yet.
-- **Dummy/bot players for solo testing** — user's explicit ask (2026-08-17): testing today means
-  waiting through the setup flow then using `/xyzzy_begin force` with only 2 real players, which
-  the user says they've "always struggled with." Add an option to seed a game with a couple of
-  fake/AI-controlled players that auto-answer/auto-judge, so one person can exercise a full round
-  without needing 2+ other humans on hand. Not started - needs its own design pass (how a fake
-  player picks a card/judges, whether it's a flag on `/xyzzy_start` or a separate command).
 - **Charting** (`/statgraph`) — ScottPlot/SkiaSharp, debian-slim runtime base. Not started at all.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user

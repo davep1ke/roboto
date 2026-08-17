@@ -41,6 +41,19 @@ public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundSe
 
     private async Task ReconcileTimeoutAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
+        // The judge left after judging had already begun (XyzzyLeaveCommand only resolves this
+        // proactively when the departure itself triggers it - a judge leaving isn't the only way
+        // this can happen, e.g. a kick via /xyzzy_settings). Don't wait for the normal reminder/
+        // timeout thresholds with nobody to actually judge - resolve it on the very next tick.
+        if (game.Status is XyzzyStatus.Judging && game.JudgePlayerId is null)
+        {
+            if (!await rounds.TryEndGameAsync(bot, game, cancellationToken))
+            {
+                await rounds.BeginQuestionAsync(bot, game, cancellationToken);
+            }
+            return;
+        }
+
         var elapsed = DateTime.UtcNow - game.StatusChangedUtc;
         var maxWait = TimeSpan.FromHours(game.MaxWaitHours);
 

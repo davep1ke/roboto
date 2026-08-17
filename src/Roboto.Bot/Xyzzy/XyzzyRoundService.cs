@@ -5,10 +5,11 @@ using Telegram.Bot.Types.ReplyMarkups;
 namespace Roboto.Bot.Xyzzy;
 
 /// <summary>
-/// The actual round mechanics (dealing hands, asking a question, collecting answers, judging),
-/// shared between XyzzyBeginCommand (kicks off the first round) and the two callback handlers
-/// (answer submission can trigger judging; a judge's pick triggers the next round) - all three need
-/// the same "deal/ask/advance" logic, so it lives here rather than being duplicated three times.
+/// The actual round mechanics (setup completion, dealing hands, asking a question, collecting
+/// answers, judging), shared between XyzzyStartCommand/the setup and begin callback handlers (kick
+/// off a game) and the answer/judge callback handlers (answering can trigger judging; a judge's pick
+/// triggers the next round) - all of them need the same "deal/ask/advance" logic, so it lives here
+/// rather than being duplicated across every caller.
 ///
 /// Deck refilling: a card is only ever "in play" while it's sitting in a player's Hand (or is the
 /// current question) - once played/judged it's simply removed and never stored anywhere else, so
@@ -20,6 +21,42 @@ namespace Roboto.Bot.Xyzzy;
 public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery quietHours)
 {
     public const int HandSize = 10;
+
+    /// <summary>Below this many real (non-bot) players, FillBotSlots tops the game up with bots
+    /// rather than refusing to start - see the doc comment on FillBotSlots for why "force starting
+    /// with too few players" isn't a thing any more.</summary>
+    public const int MinPlayers = 3;
+
+    /// <summary>
+    /// Finishes the setup wizard (XyzzyStartCommand/XyzzySetupCallbackHandler, phase 8.5/8.6):
+    /// moves the game to Invites and DMs the starter a "Start" button. Starting the actual round is
+    /// a separate step (BeginRoundAsync, triggered by that button) so other players still get a
+    /// window to /xyzzy_join before bots fill any empty slots.
+    /// </summary>
+    public async Task FinishSetupAsync(ITelegramBotClient bot, XyzzyGameState game, long starterId, CancellationToken cancellationToken)
+    {
+        game.Status = XyzzyStatus.Invites;
+        game.StatusChangedUtc = DateTime.UtcNow;
+        await games.SaveAsync(game, cancellationToken);
+
+        var keyboard = new InlineKeyboardMarkup([[InlineKeyboardButton.WithCallbackData("Start", $"xy:sb:{game.ChatId}")]]);
+        await TrySendDmAsync(bot, starterId,
+            "Setup's done! Use /xyzzy_join in the group to gather players, then tap Start whenever you're ready " +
+            $"- I'll fill any empty slots (below {MinPlayers} players) with bots.",
+            keyboard, cancellationToken);
+
+        await bot.SendMessage(game.ChatId,
+            "Setup's done! Use /xyzzy_join to play - the starter can begin whenever they're ready.",
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>Entry point for the "Start" DM button (XyzzyBeginCallbackHandler) - tops the game up
+    /// with bots if it's short of MinPlayers, then deals the first hand.</summary>
+    public async Task BeginRoundAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    {
+        FillBotSlots(game);
+        await BeginQuestionAsync(bot, game, cancellationToken);
+    }
 
     public async Task BeginQuestionAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
@@ -39,25 +76,41 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         await games.SaveAsync(game, cancellationToken);
 
         var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
-        foreach (var player in game.Players)
-        {
-            if (player.PlayerId == game.JudgePlayerId)
-            {
-                await TrySendDmAsync(bot, player.PlayerId,
-                    $"Round {game.RoundNumber}: you're judging! \"{question.Text}\"\nWaiting for everyone else to answer...",
-                    null, cancellationToken);
-                continue;
-            }
+        var judge = game.FindPlayer(game.JudgePlayerId!.Value)!;
 
+        if (!judge.IsBot)
+        {
+            await TrySendDmAsync(bot, judge.PlayerId,
+                $"Round {game.RoundNumber}: you're judging! \"{question.Text}\"\nWaiting for everyone else to answer...",
+                null, cancellationToken);
+        }
+
+        foreach (var player in game.Players.Where(p => p.PlayerId != game.JudgePlayerId && !p.IsBot))
+        {
             var keyboard = BuildHandKeyboard(game, player);
             await TrySendDmAsync(bot, player.PlayerId,
                 $"Round {game.RoundNumber}: \"{question.Text}\"\nPick a card:", keyboard, cancellationToken);
         }
 
-        var judgeName = game.FindPlayer(game.JudgePlayerId!.Value)!.DisplayName;
         await bot.SendMessage(game.ChatId,
-            $"Round {game.RoundNumber}! {judgeName} is judging.\n\"{question.Text}\"\nCheck your DMs to play.",
+            $"Round {game.RoundNumber}! {judge.DisplayName} is judging.\n\"{question.Text}\"\nCheck your DMs to play.",
             cancellationToken: cancellationToken);
+
+        // Bots answer immediately rather than waiting on a callback that'll never come - "pick
+        // randomly for now" per the initial ask. Re-checks Status each time: an earlier bot's
+        // submission may already have completed the round (SubmitAnswerAsync triggers judging once
+        // everyone's in) and moved it past Question, including - if the judge is also a bot - all
+        // the way through to a new Question entirely.
+        foreach (var botPlayer in game.Players.Where(p => p.PlayerId != game.JudgePlayerId && p.IsBot).ToList())
+        {
+            if (game.Status is not XyzzyStatus.Question)
+            {
+                break;
+            }
+
+            var randomCardId = botPlayer.Hand[Random.Shared.Next(botPlayer.Hand.Count)];
+            await SubmitAnswerAsync(bot, game, botPlayer.PlayerId, randomCardId, cancellationToken);
+        }
     }
 
     public async Task<string> SubmitAnswerAsync(ITelegramBotClient bot, XyzzyGameState game, long playerId, string cardId, CancellationToken cancellationToken)
@@ -137,18 +190,19 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         return "Winner picked!";
     }
 
-    /// <summary>Shared "should the game stop here" check (not enough players left, or the
-    /// configured question limit's been reached) - called after a round completes, whether that's
-    /// the normal judged-a-winner path or the reconciler force-advancing an empty round. Returns
-    /// true (and stops the game, with an appropriate message) if it should; false if play should
-    /// continue.</summary>
+    /// <summary>Shared "should the game stop here" check - not enough real players left (either too
+    /// few total, or the only ones remaining are bots, which would otherwise let a fully-bot game
+    /// grind through rounds forever with nobody watching), or the configured question limit's been
+    /// reached. Called after a round completes, whether that's the normal judged-a-winner path or
+    /// the reconciler force-advancing an empty round. Returns true (and stops the game, with an
+    /// appropriate message) if it should; false if play should continue.</summary>
     public async Task<bool> TryEndGameAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
-        if (game.Players.Count < 2)
+        if (game.Players.Count < 2 || game.Players.All(p => p.IsBot))
         {
             game.Status = XyzzyStatus.Stopped;
             await games.SaveAsync(game, cancellationToken);
-            await bot.SendMessage(game.ChatId, "Not enough players left - game over.", cancellationToken: cancellationToken);
+            await bot.SendMessage(game.ChatId, "Not enough real players left - game over.", cancellationToken: cancellationToken);
             return true;
         }
 
@@ -169,10 +223,28 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
     /// that, not just the "everyone answered normally" path.</summary>
     public async Task BeginJudgingAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
+        if (game.JudgePlayerId is null)
+        {
+            // The judge left mid-Question, before enough answers came in to trigger judging at all -
+            // rather than judge with nobody to pick, just re-deal with a freshly-rotated judge
+            // (RotateJudge picks Players[0] when JudgePlayerId is null, same as a brand new game).
+            await BeginQuestionAsync(bot, game, cancellationToken);
+            return;
+        }
+
         game.Status = XyzzyStatus.Judging;
         game.StatusChangedUtc = DateTime.UtcNow;
         game.ReminderSent = false;
         await games.SaveAsync(game, cancellationToken);
+
+        var judge = game.FindPlayer(game.JudgePlayerId!.Value)!;
+
+        if (judge.IsBot)
+        {
+            var randomCardId = game.Submissions.Values.Select(v => v[0]).OrderBy(_ => Random.Shared.Next()).First();
+            await PickWinnerAsync(bot, game, judge.PlayerId, randomCardId, cancellationToken);
+            return;
+        }
 
         var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
         var entries = game.Submissions.Select(kvp => kvp.Value[0]).OrderBy(_ => Random.Shared.Next()).ToList();
@@ -184,7 +256,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             return new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData(card.Text, data) };
         }).ToList();
 
-        await TrySendDmAsync(bot, game.JudgePlayerId!.Value,
+        await TrySendDmAsync(bot, judge.PlayerId,
             $"Everyone's answered! Pick the winner for: \"{question.Text}\"", new InlineKeyboardMarkup(rows), cancellationToken);
 
         await bot.SendMessage(game.ChatId, "All answers are in - the judge is picking a winner.", cancellationToken: cancellationToken);
@@ -214,6 +286,28 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             ? "It's quiet hours here - I'll ask the next question once they're over."
             : $"Next question in at least {game.MinWaitHours}h.";
         await bot.SendMessage(game.ChatId, text, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>Tops the game up to MinPlayers with bots if it's short - replaces the earlier
+    /// "/xyzzy_begin force" escape hatch entirely (user's explicit ask: testing solo/with one other
+    /// person meant always having to force-start with too few players, which "I've always struggled
+    /// with"). Bot IDs are negative (real Telegram user IDs are always positive) so they can never
+    /// collide with a real player and are an unambiguous "don't try to DM this" signal everywhere
+    /// else in this class.</summary>
+    private static void FillBotSlots(XyzzyGameState game)
+    {
+        var needed = MinPlayers - game.Players.Count;
+        if (needed <= 0)
+        {
+            return;
+        }
+
+        var nextBotId = game.Players.Where(p => p.IsBot).Select(p => p.PlayerId).DefaultIfEmpty(0).Min() - 1;
+        for (var i = 0; i < needed; i++)
+        {
+            game.Players.Add(new XyzzyPlayer { PlayerId = nextBotId, DisplayName = $"Bot {-nextBotId}", IsBot = true });
+            nextBotId--;
+        }
     }
 
     /// <summary>Legacy's equivalent (lastPlayerAsked) was an int index into the player list, needing
