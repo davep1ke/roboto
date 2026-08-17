@@ -30,7 +30,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.6 `mod_xyzzy`: setup/begin keyboards moved to DM, bot players | Done, verified | `24571d1` |
 | 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | `eecdd66` |
 | 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, superseded by 8.9 | `7440283` |
-| 8.9 `DmOutbox`: strict per-user one-thing-at-a-time DM serialization | Done, verified | `TBD` |
+| 8.9 `DmOutbox`: strict per-user one-thing-at-a-time DM serialization | Done, verified | `a18c972` |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
 | 10b. Charting (ScottPlot), `/statgraph` | Not started - separate from 10a, see below | — |
