@@ -21,7 +21,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 4. `mod_standard` port, partial (`/start`, `/stop`, real per-chat state) | Done, verified | `f495a0c` |
 | 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | `c6541d3` |
 | 6. Automated test harness (xUnit + fake Telegram client) | Done, verified | `16b4b0b` |
-| 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Done, verified | (this commit) |
+| 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Done, verified | `534f9a8` |
 | 8. `mod_xyzzy` port (the big one, ~3,800 LOC of game logic) | Not started | — |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
