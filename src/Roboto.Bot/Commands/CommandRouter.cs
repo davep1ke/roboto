@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
+using Roboto.Bot.Chats;
 using Roboto.Bot.Persistence;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
 
 namespace Roboto.Bot.Commands;
 
@@ -14,13 +16,23 @@ public sealed class CommandRouter
 {
     public const string UsageStatsKey = "command-usage";
 
+    // Always allowed through even in a muted group chat - matches the legacy mod_standard's own
+    // per-command mute checks (chatIfMuted only got the *module* invoked at all; individual
+    // commands like /stop and /start still worked regardless of mute state).
+    private static readonly HashSet<string> AlwaysAllowedWhileMuted = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "start", "stop",
+    };
+
     private readonly Dictionary<string, IBotCommand> _commands;
     private readonly IStateStore _store;
+    private readonly ChatRepository _chats;
     private readonly ILogger<CommandRouter> _logger;
 
-    public CommandRouter(IEnumerable<IBotCommand> commands, IStateStore store, ILogger<CommandRouter> logger)
+    public CommandRouter(IEnumerable<IBotCommand> commands, IStateStore store, ChatRepository chats, ILogger<CommandRouter> logger)
     {
         _store = store;
+        _chats = chats;
         _logger = logger;
         _commands = commands.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation("Registered commands: {Commands}", string.Join(", ", _commands.Keys));
@@ -43,6 +55,19 @@ public sealed class CommandRouter
         if (!_commands.TryGetValue(name, out var command))
         {
             return false;
+        }
+
+        // Muting only applies to group chats - matches the legacy `chat` class not existing at all
+        // for private chats.
+        var isGroupChat = message.Chat.Type is ChatType.Group or ChatType.Supergroup;
+        if (isGroupChat && !AlwaysAllowedWhileMuted.Contains(name))
+        {
+            var chat = await _chats.GetAsync(message.Chat.Id, cancellationToken);
+            if (chat.Muted)
+            {
+                _logger.LogInformation("Ignoring /{Command} in muted chat {ChatId}", name, message.Chat.Id);
+                return true;
+            }
         }
 
         var args = parts.Skip(1).ToArray();

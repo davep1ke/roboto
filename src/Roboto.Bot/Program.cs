@@ -2,6 +2,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Roboto.Bot;
+using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
 using Serilog;
@@ -46,6 +47,8 @@ foreach (var commandType in typeof(IBotCommand).Assembly.GetTypes()
 }
 
 builder.Services.AddSingleton<IStateStore, SqliteStateStore>();
+builder.Services.AddSingleton<ChatRepository>();
+builder.Services.AddSingleton(new AppClock(DateTime.UtcNow));
 builder.Services.AddSingleton<CommandRouter>();
 builder.Services.AddHostedService<TelegramPollingService>();
 

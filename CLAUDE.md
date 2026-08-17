@@ -280,6 +280,50 @@ layer (surviving a restart, not just working within one process lifetime):
   confirmed the SQLite file on the host ends up owned by the correct (host) user, no permission
   issues from the earlier bind-mount UID fix.
 
+## mod_standard port (partial) — done and verified (2026-08-17)
+
+Legacy `mod_standard` has ten commands. Deliberately scoped this pass down to the two that are
+actually foundational (introduce real per-chat state for the first time) rather than porting
+everything and quietly also building the conversational-flow system on the side:
+
+- **Ported**: `/start`, `/stop`. `/help`, `/stats` already existed (Phase 2) and needed no legacy-
+  parity changes beyond `/stats` gaining an uptime line (`AppClock`, a trivial `DateTime.UtcNow`
+  singleton captured at startup).
+- **Blocked on the still-deferred conversational-flow system** (not attempted): `/setquiethours`,
+  `/addadmin`, `/removeadmin` - all legacy `SendQuestion`/`ExpectedReply` flows.
+- **Blocked on charting** (not attempted, not started at all): `/statgraph`.
+- **Not ported, no longer meaningful**: `/save` (SQLite already writes incrementally per-operation,
+  there's no batched in-memory state to flush) and `/background` (no periodic background-processing
+  loop exists yet to manually trigger).
+
+What got built:
+- `src/Roboto.Bot/Chats/ChatState.cs` / `ChatRepository.cs` — the **first real per-chat state** in
+  the new codebase. `ChatState` deliberately only holds what's genuinely chat-level/module-agnostic
+  (`ChatId`, `Title`, `Muted` - the equivalent of fields that lived directly on the legacy `chat`
+  class itself). A module's own per-chat data (once one exists, e.g. ported `mod_xyzzy`) gets its
+  *own* separate `IStateStore` key/POCO, not a field bolted onto `ChatState` - avoids recreating the
+  legacy problem where one shared chat object had to know about every module's data shape.
+- `StartCommand`/`StopCommand` — private chats get a short explanatory reply instead of touching
+  chat state at all (mirrors the legacy `chat` class not existing for PM chats).
+- `CommandRouter` mute-gating — group chats only (`ChatType.Group`/`Supergroup`), checked after
+  resolving the command but before dispatch. `/start` and `/stop` are always let through by name;
+  everything else (including `/help`, `/ping`, `/stats`) is silently ignored while muted - matches
+  observed legacy behavior (mod_standard's `chatIfMuted=true` kept its own `chatEvent` running while
+  muted, but individual commands still did their own per-command mute checks internally; `/help`
+  explicitly required `muted == false`, `/stop`/`/save` had no mute check at all).
+
+**Verified, not just written** - specifically the new/risky part (mute-gating actually changing
+dispatch behavior), via a real Telegram group chat created for this test:
+- Private chat: `/start` → "Hello! Type /help..."; `/stop` → "This only applies to group chats."
+- New group chat with the bot added: `/ping` → replied normally. `/stop` → silenced. `/ping` again →
+  **silently ignored**, confirmed independently via the router's own log line (`Ignoring /ping in
+  muted chat <id>`), not just the user's report. `/start` → un-silenced. `/ping` again → replied
+  normally again. Full mute/unmute cycle confirmed correct from server-side logs.
+- Repeated `docker compose build` + `docker compose run` against the same instance afterward - same
+  five commands registered, clean auth, no regressions.
+- Process note: background test runs need a genuinely long window (ended up using 1800s) - shorter
+  ones raced against the user's actual response time and the bot kept closing before they could test.
+
 ## Deferred decisions / TODO list
 
 Flagged, deliberately not being solved now — come back to these:
