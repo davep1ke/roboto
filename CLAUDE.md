@@ -144,10 +144,11 @@ live-pointed token, we risk sending bot messages into other people's in-progress
   `-context` flag (same job — which bot identity to run as) — worth a deliberate look at whether
   the two concepts should be reconciled/renamed for consistency once we're deeper into the port,
   rather than just carrying "instance" as an unrelated-sounding new term.
-- Persistence → **SQLite replaces the XML state file only**, not the logs — likely JSON-blob-per-
-  aggregate. **Not started yet** — first-class, must-be-safe deliverable, see the production-data
-  warning above.
-- Module framework → discussion deferred, see above.
+- Persistence → **SQLite replaces the XML state file only**, not the logs — JSON-blob-per-
+  aggregate. **Started 2026-08-17** — see "Persistence layer" below. Still not a *decided* deliverable
+  for the real production XML→SQLite migration itself, though — that's a separate, much higher-
+  stakes piece; see the production-data warning above, which still fully applies.
+- Module framework → decided, Phase 2 built. See dedicated section above.
 
 ## Phase 1 skeleton — done and verified (2026-08-17)
 
@@ -232,20 +233,64 @@ bug, the bind-mount permission bug, or a real Telegram auth failure):
   confirmed clean (exit 0).
 
 Committed 2026-08-17 on `rewrite/dotnet-docker-port` (Phase 1 skeleton + instance-bootstrap
-redesign, one commit).
+redesign, one commit; module framework Phase 2 in a second commit).
+
+## Persistence layer — done and verified (2026-08-17)
+
+`src/Roboto.Bot/Persistence/`:
+- `IStateStore` — `InitializeAsync`, `LoadAsync<T>(key)`, `SaveAsync<T>(key, value)`. Deliberately
+  generic/untyped-by-key rather than one method per aggregate type - callers own their own key
+  scheme and POCO shape, no schema migration needed when a field gets added later. This is the
+  `IModuleStore<T>`-shaped abstraction floated during early planning, now real.
+- `SqliteStateStore` — the only implementation. One `state(key TEXT PRIMARY KEY, json TEXT,
+  updated_utc TEXT)` table, `System.Text.Json` for the blob. **Resolves the deferred JSON-library
+  TODO for this part of the codebase**: went with `System.Text.Json` (built-in, no extra
+  dependency) over `Newtonsoft.Json` - nothing here needed Newtonsoft's extra features. The legacy
+  XML→SQLite *migration importer* is a separate concern and may still want Newtonsoft to match the
+  legacy code's existing `JObject`-style parsing; not decided, not urgent.
+  - Opens a fresh `SqliteConnection` per operation rather than holding one open for the app's
+    lifetime - Microsoft.Data.Sqlite's own recommended pattern (the provider pools the underlying
+    native handles), and it sidesteps `SqliteConnection` not being thread-safe for concurrent
+    access. Relies on Telegram update handling being sequential (one update processed at a time,
+    true today with the current `ReceiveAsync` setup) - revisit if that ever changes.
+  - DB file lives at `{DataDir}/{Instance}/roboto.db` (`BotOptions.InstanceDir`), i.e. inside the
+    same per-instance folder `bot.env` already lives in - no new volume/path concept, same "one
+    shared /data mount, app partitions it by instance" model as the config bootstrap.
+- `BotOptions.InstanceDir` — new computed property (`Path.Combine(DataDir, Instance)`) so this path
+  isn't duplicated between the store and anything else that needs it later. `InstanceBootstrapper`
+  still computes its own copy of this path internally rather than using the property, since it runs
+  *before* `BotOptions` is populated - not worth restructuring startup ordering to dedupe two lines.
+- `CommandRouter` now takes `IStateStore` and records a usage count per command name on every
+  successful dispatch (key `"command-usage"`, a `Dictionary<string,int>` blob) - a genuinely useful
+  cross-cutting feature (mirrors the legacy `/stats` command's spirit), and it's what got used to
+  prove persistence actually works, not a throwaway. New `StatsCommand` (`/stats`) reports the
+  counts. This is a minimal starting point, not the full legacy stats/graphing system (that's still
+  a separate, not-started deliverable - see the working agreement above).
+
+**Verified, not just written** - specifically the thing that actually matters for a persistence
+layer (surviving a restart, not just working within one process lifetime):
+- `dotnet build` clean.
+- Fresh instance, table creation on first run: no errors.
+- Sent `/ping` twice then `/stats` against `@Beefy_Surprise_bot` - correct count reported within the
+  same run.
+- **Killed the process, started a brand new one against the same `data/beefy/roboto.db` file, sent
+  only `/stats` (no `/ping` first)** - the earlier count was still there. Confirms real crash-safe
+  persistence, not just in-memory state.
+- Repeated the whole thing through `docker compose build` + `docker compose run` - same result, and
+  confirmed the SQLite file on the host ends up owned by the correct (host) user, no permission
+  issues from the earlier bind-mount UID fix.
 
 ## Deferred decisions / TODO list
 
 Flagged, deliberately not being solved now — come back to these:
 
-- **Module framework redesign** — see the dedicated section above. Blocks real progress on Phase 2
-  (core services / first module port), so likely the actual next conversation.
-- **JSON library choice for the rewrite**: the legacy app has `Newtonsoft.Json.dll` checked directly
-  into `Roboto/` (not restored via NuGet) — worth a deliberate call on `System.Text.Json` (built
-  into modern .NET, no extra dependency) vs. `Newtonsoft.Json` (NuGet package, more permissive/
-  featureful, what the legacy code already assumes) when the modules that actually parse/produce
-  JSON (Telegram updates, card pack data, stats) get ported. Not urgent — Phase 1 doesn't touch JSON
-  at all yet.
+- ~~Module framework redesign~~ — **done**, see the dedicated section above.
+- **JSON library choice for the rewrite** — **partially resolved**: the new SQLite persistence layer
+  uses `System.Text.Json` (see "Persistence layer" above). Still open for anything that ends up
+  needing to *read* legacy-shaped JSON/data (e.g. the eventual XML→SQLite migration importer,
+  card-pack data) — the legacy app has `Newtonsoft.Json.dll` checked directly into `Roboto/` (not
+  restored via NuGet), and Newtonsoft is more permissive about the kind of loosely-typed JSON that
+  code assumes. Not urgent yet.
 - **Shutdown/cancellation design needs rethinking, not just carried over.** User's words: "the exit
   logic sucks." The legacy app's shutdown (`Messaging.quit()` sets a flag; `Roboto.cs` warns "this
   could take up to `waitDuration` seconds" — `waitDuration` defaults to 60s, the long-poll timeout)

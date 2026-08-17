@@ -13,4 +13,10 @@ public sealed class BotOptions
     // Populated from {DataDir}/{Instance}/bot.env by InstanceBootstrapper, not from ROBOTO_* env vars.
     public string TelegramToken { get; set; } = "";
     public string BotUsername { get; set; } = "";
+
+    /// <summary>
+    /// {DataDir}/{Instance} - holds bot.env and roboto.db. InstanceBootstrapper computes this same
+    /// path itself rather than reading it from here, since it runs before BotOptions is populated.
+    /// </summary>
+    public string InstanceDir => Path.Combine(DataDir, Instance);
 }

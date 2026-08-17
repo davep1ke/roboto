@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Roboto.Bot;
 using Roboto.Bot.Commands;
+using Roboto.Bot.Persistence;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -44,10 +45,13 @@ foreach (var commandType in typeof(IBotCommand).Assembly.GetTypes()
     builder.Services.AddSingleton(typeof(IBotCommand), commandType);
 }
 
+builder.Services.AddSingleton<IStateStore, SqliteStateStore>();
 builder.Services.AddSingleton<CommandRouter>();
 builder.Services.AddHostedService<TelegramPollingService>();
 
 using var host = builder.Build();
+
+await host.Services.GetRequiredService<IStateStore>().InitializeAsync(CancellationToken.None);
 
 await host.RunAsync();
 

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Roboto.Bot.Persistence;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 
@@ -11,11 +12,15 @@ namespace Roboto.Bot.Commands;
 /// </summary>
 public sealed class CommandRouter
 {
+    public const string UsageStatsKey = "command-usage";
+
     private readonly Dictionary<string, IBotCommand> _commands;
+    private readonly IStateStore _store;
     private readonly ILogger<CommandRouter> _logger;
 
-    public CommandRouter(IEnumerable<IBotCommand> commands, ILogger<CommandRouter> logger)
+    public CommandRouter(IEnumerable<IBotCommand> commands, IStateStore store, ILogger<CommandRouter> logger)
     {
+        _store = store;
         _logger = logger;
         _commands = commands.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation("Registered commands: {Commands}", string.Join(", ", _commands.Keys));
@@ -46,6 +51,7 @@ public sealed class CommandRouter
         try
         {
             await command.ExecuteAsync(context, cancellationToken);
+            await RecordUsageAsync(name, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -53,5 +59,19 @@ public sealed class CommandRouter
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Doubles as this project's first proof that SqliteStateStore actually persists across
+    /// restarts, not just within a run - exposed via StatsCommand (/stats).
+    /// </summary>
+    private async Task RecordUsageAsync(string name, CancellationToken cancellationToken)
+    {
+        var counts = await _store.LoadAsync<Dictionary<string, int>>(UsageStatsKey, cancellationToken)
+                     ?? new Dictionary<string, int>();
+
+        counts[name] = counts.GetValueOrDefault(name) + 1;
+
+        await _store.SaveAsync(UsageStatsKey, counts, cancellationToken);
     }
 }
