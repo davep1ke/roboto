@@ -58,6 +58,24 @@ public sealed class TestBot : IDisposable
     public Task SendAsync(Message message, CancellationToken cancellationToken = default) =>
         Dispatcher.DispatchAsync(BotClient, new Update { Message = message }, cancellationToken);
 
+    /// <summary>Simulates a user tapping an inline-keyboard button (a CallbackQuery update) - the
+    /// callback data is normally read off a SentMessage's Buttons (see FakeTelegramBotClient) that
+    /// was sent to that same user, e.g. bot.BotClient.SentMessages.Last(m =&gt; m.ChatId == userId).Buttons![0].CallbackData.</summary>
+    public Task SendCallbackAsync(long userId, string callbackData, string firstName = "Test", CancellationToken cancellationToken = default)
+    {
+        var update = new Update
+        {
+            CallbackQuery = new CallbackQuery
+            {
+                Id = Guid.NewGuid().ToString(),
+                From = new User { Id = userId, FirstName = firstName },
+                Message = new Message { Chat = new Chat { Id = userId, Type = ChatType.Private } },
+                Data = callbackData,
+            },
+        };
+        return Dispatcher.DispatchAsync(BotClient, update, cancellationToken);
+    }
+
     /// <summary>
     /// Simulates a full process restart against the same on-disk data: a fresh service provider
     /// (fresh singletons, nothing carried over in memory) pointed at the same DataDir, so persisted

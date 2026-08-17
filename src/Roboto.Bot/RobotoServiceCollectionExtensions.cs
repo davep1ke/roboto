@@ -28,12 +28,21 @@ public static class RobotoServiceCollectionExtensions
             services.AddSingleton(typeof(IBotCommand), commandType);
         }
 
+        // Same reflection-discovery pattern, for inline-keyboard button handlers.
+        foreach (var callbackType in typeof(ICallbackQueryHandler).Assembly.GetTypes()
+                     .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(ICallbackQueryHandler).IsAssignableFrom(t)))
+        {
+            services.AddSingleton(typeof(ICallbackQueryHandler), callbackType);
+        }
+
         services.AddSingleton<IStateStore, SqliteStateStore>();
         services.AddSingleton<ChatRepository>();
         services.AddSingleton<XyzzyGameRepository>();
+        services.AddSingleton<XyzzyRoundService>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
         services.AddSingleton<ReplyRouter>();
+        services.AddSingleton<CallbackQueryRouter>();
         services.AddSingleton<MessageDispatcher>();
 
         return services;

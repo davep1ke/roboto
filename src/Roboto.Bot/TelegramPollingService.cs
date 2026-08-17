@@ -29,7 +29,9 @@ public sealed class TelegramPollingService(
 
             var receiverOptions = new ReceiverOptions
             {
-                AllowedUpdates = [UpdateType.Message]
+                // CallbackQuery: inline-keyboard button taps - added for mod_xyzzy's card-selection
+                // and judging UX (see CallbackQueryRouter).
+                AllowedUpdates = [UpdateType.Message, UpdateType.CallbackQuery]
             };
 
             await _botClient.ReceiveAsync(

@@ -4,10 +4,15 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Requests;
 using Telegram.Bot.Requests.Abstractions;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Tests;
 
-public sealed record SentMessage(long ChatId, string Text);
+public sealed record SentButton(string Text, string CallbackData);
+
+public sealed record SentMessage(long ChatId, string Text, IReadOnlyList<SentButton>? Buttons = null);
+
+public sealed record AnsweredCallback(string CallbackQueryId, string? Text);
 
 /// <summary>
 /// ITelegramBotClient is centered on a single method - SendRequest&lt;TResponse&gt; - with every
@@ -17,12 +22,16 @@ public sealed record SentMessage(long ChatId, string Text);
 /// rather than guessed - see the introspection notes in this project's test-writing history if the
 /// Telegram.Bot package version ever changes and this needs revisiting.
 ///
-/// Only supports what the app actually calls today (GetMe, SendMessage). Add a case + a real
-/// property read as soon as a command needs something else - don't pre-build support speculatively.
+/// Only supports what the app actually calls today (GetMe, SendMessage, AnswerCallbackQuery). Add a
+/// case + a real property read as soon as a command needs something else - don't pre-build support
+/// speculatively. SendMessage also captures any InlineKeyboardMarkup's buttons (text + callback
+/// data) onto SentMessage, so tests can find a button a fake "message" sent and tap it - see
+/// TestBot.SendCallbackAsync.
 /// </summary>
 public sealed class FakeTelegramBotClient : ITelegramBotClient
 {
     public List<SentMessage> SentMessages { get; } = [];
+    public List<AnsweredCallback> AnsweredCallbacks { get; } = [];
 
     /// <summary>Chat ids that should fail to receive a DM, simulating a user who has never opened
     /// a private chat with the bot (real Telegram behaviour when you try to message such a user).</summary>
@@ -53,7 +62,12 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
                     throw new ApiRequestException("Forbidden: bot can't initiate conversation with a user", 403);
                 }
 
-                SentMessages.Add(new SentMessage(chatId, sendMessage.Text ?? ""));
+                var buttons = sendMessage.ReplyMarkup is InlineKeyboardMarkup markup
+                    ? markup.InlineKeyboard.SelectMany(row => row)
+                        .Select(b => new SentButton(b.Text, b.CallbackData ?? ""))
+                        .ToList()
+                    : null;
+                SentMessages.Add(new SentMessage(chatId, sendMessage.Text ?? "", buttons));
                 var message = new Message
                 {
                     Id = SentMessages.Count,
@@ -61,6 +75,10 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
                     Text = sendMessage.Text,
                 };
                 return Task.FromResult((TResponse)(object)message);
+
+            case AnswerCallbackQueryRequest answerCallbackQuery:
+                AnsweredCallbacks.Add(new AnsweredCallback(answerCallbackQuery.CallbackQueryId, answerCallbackQuery.Text));
+                return Task.FromResult((TResponse)(object)true);
 
             default:
                 throw new NotSupportedException(

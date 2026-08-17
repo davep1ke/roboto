@@ -23,7 +23,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 6. Automated test harness (xUnit + fake Telegram client) | Done, verified | `16b4b0b` |
 | 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Done, verified | `534f9a8` |
 | 8.1 `mod_xyzzy`: game skeleton (start/join/leave/status, persistence, no round-play) | Done, verified | `af61ffc` |
-| 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Not started | — |
+| 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Done, verified | (this commit) |
 | 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Not started | — |
 | 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Not started | — |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
@@ -197,6 +197,38 @@ first proof `XyzzyGameRepository` round-trips through SQLite correctly. Sanity-c
 established pattern: deliberately disabled the join-requires-a-running-game gate, confirmed exactly
 `JoinRequiresAGameToAlreadyBeRunning` failed with a clear message while the other 30 passed, then
 reverted. `docker compose build` unaffected.
+
+## `mod_xyzzy` 8.2: round loop + inline-keyboard/callback-query infra — done and verified (2026-08-17)
+
+New generic infra (not xyzzy-specific, mirrors the `IBotCommand`/`IReplyHandler` reflection pattern):
+`Commands/ICallbackQueryHandler.cs`, `Commands/CallbackQueryRouter.cs` (always answers the callback
+query itself - real Telegram API requirement, otherwise a tapped button spins forever - centralized
+so no future handler has to remember it). `TelegramPollingService` now subscribes to
+`UpdateType.CallbackQuery`; `MessageDispatcher` branches to `CallbackQueryRouter` before the
+existing message-only path.
+
+The actual game: `Xyzzy/XyzzyCallbackData.cs` (encodes `xy:<action>:<groupChatId>:<round>:<cardId>`
+into `callback_data` - the group chat ID travels in the button itself, same problem legacy solved
+by round-tripping `chatID` through `ExpectedReply`; `<round>` rejects stale taps from a message
+whose round has already moved on). `Xyzzy/XyzzyRoundService.cs` holds the shared deal/ask/judge/
+advance mechanics (judge rotation by stable ID, self-refilling decks that never let the same card
+be in two hands at once - see its own doc comment for why that's what makes "match a tapped card ID
+back to a submission" unambiguous with no extra bookkeeping). `/xyzzy_begin` (admin-gated, 3+
+players or "force" for 2) kicks off the first round; `XyzzyAnswerCallbackHandler`/
+`XyzzyJudgeCallbackHandler` handle the two button types. `/xyzzy_status` now reports the live
+question and who's still got to answer.
+
+**Verified**: 5 new tests in `tests/Roboto.Bot.Tests/Xyzzy/XyzzyRoundLoopTests.cs` (36 total, up
+from 31) - critically, `FullRoundEndToEndDealAnswerJudgeAndAdvance` plays out a whole round for
+real: deals hands via `TestBot.SendCallbackAsync`-tappable buttons captured off `SentMessage.Buttons`,
+two players answer, judging kicks in automatically, judge picks a winner, round auto-advances to
+round 2 with an updated scoreboard - the actual proof the callback-query design works end-to-end,
+not just that its pieces compile. Also covers admin-gating, double-answer rejection, the judge being
+blocked from answering, and a stale (round-already-over) button tap. Confirmed flakiness-free (the
+deck/judging shuffles use `Random.Shared`) across 8 repeated full runs. Sanity-checked per the
+established pattern: disabled the "all answers in, start judging" trigger, confirmed exactly the two
+round-completion tests failed with clear errors while the other 34 passed, then reverted.
+`docker compose build` unaffected.
 
 ## Explicitly deferred / blocked work
 

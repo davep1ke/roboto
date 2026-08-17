@@ -11,10 +11,19 @@ namespace Roboto.Bot.Commands;
 /// Update/Message and assert on what the fake recorded as "sent", no network or BackgroundService
 /// machinery involved. See tests/Roboto.Bot.Tests.
 /// </summary>
-public sealed class MessageDispatcher(ILogger<MessageDispatcher> logger, ReplyRouter replyRouter, CommandRouter commandRouter)
+public sealed class MessageDispatcher(
+    ILogger<MessageDispatcher> logger, ReplyRouter replyRouter, CommandRouter commandRouter, CallbackQueryRouter callbackRouter)
 {
     public async Task DispatchAsync(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
     {
+        if (update.CallbackQuery is { } callbackQuery)
+        {
+            logger.LogInformation("Callback query from {User}: {Data}",
+                callbackQuery.From.Username ?? callbackQuery.From.FirstName, callbackQuery.Data);
+            await callbackRouter.HandleAsync(bot, callbackQuery, cancellationToken);
+            return;
+        }
+
         if (update.Message is not { Text: { } text } message)
         {
             return;

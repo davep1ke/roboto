@@ -6,9 +6,8 @@ using Telegram.Bot.Types.Enums;
 namespace Roboto.Bot.Xyzzy.Commands;
 
 /// <summary>
-/// Ports legacy mod_xyzzy's /xyzzy_status. Round-specific detail (current question, who hasn't
-/// answered yet, time left before timeout) will show up once phase 8.2/8.3 land - for now, since
-/// no round can be in progress, this only reports the game's phase and the player list.
+/// Ports legacy mod_xyzzy's /xyzzy_status. Time-remaining-before-timeout detail will show up once
+/// phase 8.3's scheduler lands; everything else about the current round is reported here already.
 /// </summary>
 public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
 {
@@ -40,6 +39,24 @@ public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
         if (game.Status is XyzzyStatus.Invites)
         {
             sb.AppendLine($"Waiting for players ({game.Players.Count}/3 minimum).");
+        }
+
+        if (game.Status is XyzzyStatus.Question or XyzzyStatus.Judging && game.CurrentQuestionCardId is not null)
+        {
+            var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
+            sb.AppendLine($"Round {game.RoundNumber}: \"{question.Text}\"");
+        }
+
+        if (game.Status is XyzzyStatus.Question)
+        {
+            var waitingOn = game.Players
+                .Where(p => p.PlayerId != game.JudgePlayerId && !game.Submissions.ContainsKey(p.PlayerId))
+                .Select(p => p.DisplayName);
+            sb.AppendLine($"Still waiting on: {string.Join(", ", waitingOn)}");
+        }
+        else if (game.Status is XyzzyStatus.Judging)
+        {
+            sb.AppendLine("The judge is picking a winner.");
         }
 
         sb.AppendLine("Players:");
