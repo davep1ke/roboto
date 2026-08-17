@@ -1,28 +1,37 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Xyzzy.Commands;
 
 /// <summary>
-/// Ports legacy mod_xyzzy's /xyzzy_settings admin menu (kick/abandon/timeout/throttle/score) as a
-/// single free-text DM command instead of legacy's keyboard-driven sub-flows - "abandon",
-/// "timeout &lt;hours&gt;", "throttle &lt;hours&gt;", "kick", "score &lt;player&gt; &lt;points&gt;", "cancel".
-/// Only "kick" needs a follow-up question (which player - can't use a reply-to-message here like
-/// /addadmin does, there's no message to reply to inside a DM), everything else resolves in one
-/// message. Admin-gated via ChatState.IsAdmin, same as /addadmin.
+/// Ports legacy mod_xyzzy's /xyzzy_settings admin menu (kick/abandon/timeout/throttle/score),
+/// keyboard-ified (phase 8.7, per user feedback - matching /xyzzy_start's 8.6 treatment) rather than
+/// the free-text-only version phase 8.4 shipped. Abandon/Kick/Score/Cancel are all button taps now
+/// (XyzzySettingsCallbackHandler owns them, including the two-step "pick a player" keyboards Kick
+/// and Score need). Timeout/Throttle (arbitrary hour values) and the final "what's their new score"
+/// step stay free-text through ReplyRouter - no sensible keyboard for an arbitrary number, same
+/// reasoning as /xyzzy_start's configure flow.
 ///
-/// Resolves ReplyRouter lazily via IServiceProvider rather than as a constructor dependency - see
-/// the warning in ReplyRouter's own doc comment for why a direct dependency here would be circular.
+/// Every value set here ends by calling XyzzyRoundService.RemindIfActionPendingAsync for the admin
+/// who ran this - added after user feedback that running /xyzzy_settings mid-round buried their own
+/// still-outstanding "pick a card"/"pick a winner" prompt with no way to tell it was still waiting.
+///
+/// Resolves ReplyRouter/XyzzyRoundService lazily via IServiceProvider rather than as constructor
+/// dependencies - see the warning in ReplyRouter's own doc comment for why a direct ReplyRouter
+/// dependency here would be circular (XyzzyRoundService itself is safe as a constructor dependency,
+/// but is resolved the same way here for consistency with the ReplyRouter lookups sitting right
+/// next to it).
 /// </summary>
-public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRepository games, ChatRepository chats, ILogger<XyzzySettingsCommand> logger) : IReplyHandler
+public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRepository games, ChatRepository chats) : IReplyHandler
 {
-    private const string AwaitMenuChoice = "menu";
-    private const string AwaitKickTarget = "kick-target";
+    public const string AwaitTimeout = "timeout";
+    public const string AwaitThrottle = "throttle";
+    public const string AwaitScorePoints = "score-points";
 
     public string Name => "xyzzy_settings";
     public string Description => "Admin menu for the Cards Against Humanity game in this chat (kick/abandon/timeout/throttle/score).";
@@ -53,18 +62,22 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
             return;
         }
 
-        var replies = services.GetRequiredService<ReplyRouter>();
-        var asked = await replies.AskAsync(context.Bot, chatId, caller.Id, Name, AwaitMenuChoice, data: null,
-            "Cards Against Humanity settings:\n" +
-            "- abandon - stop the game entirely\n" +
-            "- timeout <hours> - how long to wait before auto-advancing an answer/judging round\n" +
-            "- throttle <hours> - minimum delay between hands\n" +
-            "- kick - remove a player\n" +
-            "- score <player name> <points> - override a player's win count\n" +
-            "- cancel",
-            cancellationToken);
+        var keyboard = new InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton.WithCallbackData("Abandon", $"xy:se:{chatId}:menu:abandon")],
+            [InlineKeyboardButton.WithCallbackData("Timeout", $"xy:se:{chatId}:menu:timeout")],
+            [InlineKeyboardButton.WithCallbackData("Throttle", $"xy:se:{chatId}:menu:throttle")],
+            [InlineKeyboardButton.WithCallbackData("Kick", $"xy:se:{chatId}:menu:kick")],
+            [InlineKeyboardButton.WithCallbackData("Score", $"xy:se:{chatId}:menu:score")],
+            [InlineKeyboardButton.WithCallbackData("Cancel", $"xy:se:{chatId}:menu:cancel")],
+        ]);
 
-        if (!asked)
+        try
+        {
+            await context.Bot.SendMessage(caller.Id,
+                "Cards Against Humanity settings:", replyMarkup: keyboard, cancellationToken: cancellationToken);
+        }
+        catch (Exception)
         {
             await context.Bot.SendMessage(chatId,
                 $"{caller.FirstName} needs to open a private chat with me first.", cancellationToken: cancellationToken);
@@ -74,103 +87,60 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
     public async Task HandleReplyAsync(ITelegramBotClient bot, PendingReply pending, Message reply, CancellationToken cancellationToken)
     {
         var game = await games.GetAsync(pending.TargetChatId, cancellationToken);
+        var replies = services.GetRequiredService<ReplyRouter>();
+        var rounds = services.GetRequiredService<XyzzyRoundService>();
+        var text = reply.Text!.Trim();
 
-        if (pending.Step == AwaitKickTarget)
+        switch (pending.Step)
         {
-            await HandleKickTargetAsync(bot, game, reply.Text!.Trim(), cancellationToken);
-            return;
-        }
+            case AwaitTimeout:
+                if (!double.TryParse(text, out var maxHours) || maxHours <= 0)
+                {
+                    await replies.AskAsync(bot, game.ChatId, pending.UserId, Name, AwaitTimeout, data: null,
+                        "Not a valid number. How many hours should I wait before auto-advancing an answer/judging round?", cancellationToken);
+                    return;
+                }
 
-        var parts = reply.Text!.Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-        var action = parts.Length > 0 ? parts[0].ToLowerInvariant() : "";
-        var rest = parts.Length > 1 ? parts[1] : "";
-
-        switch (action)
-        {
-            case "cancel":
-                await bot.SendMessage(pending.UserId, "Cancelled.", cancellationToken: cancellationToken);
-                break;
-
-            case "abandon":
-                game.Status = XyzzyStatus.Stopped;
-                await games.SaveAsync(game, cancellationToken);
-                logger.LogInformation("Admin {UserId} abandoned the mod_xyzzy game in chat {ChatId}", pending.UserId, pending.TargetChatId);
-                await bot.SendMessage(pending.UserId, "Game abandoned.", cancellationToken: cancellationToken);
-                await bot.SendMessage(pending.TargetChatId, "The game was abandoned by an admin.", cancellationToken: cancellationToken);
-                break;
-
-            case "timeout" when double.TryParse(rest, out var maxHours) && maxHours > 0:
                 game.MaxWaitHours = maxHours;
                 await games.SaveAsync(game, cancellationToken);
                 await bot.SendMessage(pending.UserId, $"Timeout set to {maxHours}h.", cancellationToken: cancellationToken);
+                await rounds.RemindIfActionPendingAsync(bot, game, pending.UserId, cancellationToken);
                 break;
 
-            case "throttle" when double.TryParse(rest, out var minHours) && minHours >= 0:
+            case AwaitThrottle:
+                if (!double.TryParse(text, out var minHours) || minHours < 0)
+                {
+                    await replies.AskAsync(bot, game.ChatId, pending.UserId, Name, AwaitThrottle, data: null,
+                        "Not a valid number. Minimum hours between rounds (throttle)? Enter 0 for none.", cancellationToken);
+                    return;
+                }
+
                 game.MinWaitHours = minHours;
                 await games.SaveAsync(game, cancellationToken);
                 await bot.SendMessage(pending.UserId, $"Throttle set to {minHours}h.", cancellationToken: cancellationToken);
+                await rounds.RemindIfActionPendingAsync(bot, game, pending.UserId, cancellationToken);
                 break;
 
-            case "kick" when game.Players.Count > 0:
-                var replies = services.GetRequiredService<ReplyRouter>();
-                await replies.AskAsync(bot, pending.TargetChatId, pending.UserId, Name, AwaitKickTarget, data: null,
-                    $"Who? ({string.Join(", ", game.Players.Select(p => p.DisplayName))})", cancellationToken);
+            case AwaitScorePoints:
+                if (!int.TryParse(text, out var points))
+                {
+                    await replies.AskAsync(bot, game.ChatId, pending.UserId, Name, AwaitScorePoints, data: pending.Data,
+                        "Not a valid number. What should their new score be?", cancellationToken);
+                    return;
+                }
+
+                var target = long.TryParse(pending.Data, out var targetId) ? game.FindPlayer(targetId) : null;
+                if (target is null)
+                {
+                    await bot.SendMessage(pending.UserId, "That player isn't in the game any more.", cancellationToken: cancellationToken);
+                    break;
+                }
+
+                target.Wins = points;
+                await games.SaveAsync(game, cancellationToken);
+                await bot.SendMessage(pending.UserId, $"{target.DisplayName}'s score is now {points}.", cancellationToken: cancellationToken);
+                await rounds.RemindIfActionPendingAsync(bot, game, pending.UserId, cancellationToken);
                 break;
-
-            case "kick":
-                await bot.SendMessage(pending.UserId, "No players to kick.", cancellationToken: cancellationToken);
-                break;
-
-            case "score":
-                await HandleScoreAsync(bot, game, rest, pending.UserId, cancellationToken);
-                break;
-
-            default:
-                await bot.SendMessage(pending.UserId,
-                    "I didn't understand that - use /xyzzy_settings again to see the options.", cancellationToken: cancellationToken);
-                break;
         }
-    }
-
-    private async Task HandleKickTargetAsync(ITelegramBotClient bot, XyzzyGameState game, string targetName, CancellationToken cancellationToken)
-    {
-        var target = game.Players.FirstOrDefault(p => p.DisplayName.Equals(targetName, StringComparison.OrdinalIgnoreCase));
-        if (target is null)
-        {
-            await bot.SendMessage(game.ChatId, $"No player called \"{targetName}\" in this game.", cancellationToken: cancellationToken);
-            return;
-        }
-
-        game.Players.Remove(target);
-        if (game.JudgePlayerId == target.PlayerId)
-        {
-            game.JudgePlayerId = null;
-        }
-        game.Submissions.Remove(target.PlayerId);
-        await games.SaveAsync(game, cancellationToken);
-
-        await bot.SendMessage(game.ChatId, $"{target.DisplayName} was kicked from the game.", cancellationToken: cancellationToken);
-    }
-
-    private async Task HandleScoreAsync(ITelegramBotClient bot, XyzzyGameState game, string rest, long userId, CancellationToken cancellationToken)
-    {
-        var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length < 2 || !int.TryParse(parts[^1], out var points))
-        {
-            await bot.SendMessage(userId, "Usage: score <player name> <points>", cancellationToken: cancellationToken);
-            return;
-        }
-
-        var playerName = string.Join(' ', parts[..^1]);
-        var target = game.Players.FirstOrDefault(p => p.DisplayName.Equals(playerName, StringComparison.OrdinalIgnoreCase));
-        if (target is null)
-        {
-            await bot.SendMessage(userId, $"No player called \"{playerName}\" in this game.", cancellationToken: cancellationToken);
-            return;
-        }
-
-        target.Wins = points;
-        await games.SaveAsync(game, cancellationToken);
-        await bot.SendMessage(userId, $"{target.DisplayName}'s score is now {points}.", cancellationToken: cancellationToken);
     }
 }

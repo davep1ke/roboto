@@ -8,10 +8,21 @@ namespace Roboto.Bot.Commands;
 /// else in IStateStore does.
 ///
 /// Deliberately simplified vs. legacy: at most **one** pending reply per user at a time, not a
-/// full FIFO queue of several outstanding questions across different modules. Nothing needs more
-/// than that yet (this only exists to support /setquiethours' two-step flow so far). If a second
-/// real conversational flow needs genuine queueing later, that's the point to revisit - don't
-/// build it speculatively now.
+/// full FIFO queue of several outstanding questions across different modules/chats. Legacy's
+/// ExpectedReply was explicitly built to let one user hold several of these at once - e.g. being in
+/// two different mod_xyzzy games at the same time, or a settings flow in one chat while a game
+/// question is outstanding in another - without one clobbering the other (user's own framing,
+/// 2026-08-17: "the whole 'expected replies' thing was so a user could be in multiple groups/games
+/// at the same time, and they wouldn't all overlap").
+///
+/// Not yet hit for real here: card answering/judging (mod_xyzzy's round-play) deliberately avoids
+/// this mechanism entirely - it's inline-keyboard/CallbackQuery-based (XyzzyCallbackData encodes the
+/// chat+round+card directly in each button), so those never contend for this one slot no matter how
+/// many games a player is in. Only free-text follow-ups still route through here (e.g.
+/// /xyzzy_settings' timeout/throttle/score-points, /setquiethours) - a real collision needs two of
+/// *those* outstanding at once for the same user. If/when that happens, this is the point to build
+/// genuine per-context queueing rather than one shared slot - don't build it speculatively before
+/// then.
 /// </summary>
 public sealed class PendingReply
 {

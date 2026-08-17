@@ -28,6 +28,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Done, verified | `b00e43f` |
 | 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | `e641fb6` |
 | 8.6 `mod_xyzzy`: setup/begin keyboards moved to DM, bot players | Done, verified | `24571d1` |
+| 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | (this commit) |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
@@ -402,6 +403,46 @@ notable result this time: temporarily reverting the all-bots-end check didn't ju
 assertion, it reproduced a real `StackOverflowException` - concrete proof the guard is load-bearing,
 not just tidy defensive code. `docker compose build` unaffected.
 
+## `mod_xyzzy` 8.7: `/xyzzy_settings` keyboard + pending-action reminder — done and verified (2026-08-17)
+
+Two pieces of direct live-testing feedback (round 5, 2026-08-17): "we need to add the keyboard back
+in there" (re: `/xyzzy_settings`, still free-text from phase 8.4) and, more importantly, running
+`/xyzzy_settings` mid-round left "no way to know that it was still expecting my answer to the game
+question" once the settings interaction finished.
+
+**Keyboard**: `/xyzzy_settings`'s top-level menu (Abandon/Timeout/Throttle/Kick/Score/Cancel) is an
+inline keyboard again (new `XyzzySettingsCallbackHandler`, `xy:se:<chatId>:menu:<action>`). Kick and
+Score both needed "which player" - also now a keyboard (`xy:se:<chatId>:kick|score:<playerId>`)
+rather than free-text name matching, which is a correctness improvement in its own right (player
+identified by ID, not a case-insensitive name lookup that could theoretically collide). Timeout/
+Throttle/the final score-points value stay free-text through `ReplyRouter` - no sensible keyboard
+for an arbitrary number, same reasoning as `/xyzzy_start`'s configure flow.
+
+**Reminder**: every settings action now ends by calling new `XyzzyRoundService.RemindIfActionPendingAsync`
+for whoever ran the command - a no-op unless that admin currently has an outstanding card to play or
+a winner to pick in *this* game, in which case it re-sends the actual keyboard (not just a text
+nudge) with a "Reminder: ..." prefix, so there's nothing to scroll back to find.
+
+**Also addressed directly (not just coded around)**: the user separately flagged, unprompted, that
+`ReplyRouter`'s one-pending-reply-per-user design exists specifically because legacy's
+`ExpectedReply` let one user hold several outstanding conversations at once (multiple groups/games
+without overlap) - worth bearing in mind for any future free-text flow. Confirmed this specific bug
+isn't actually that: card answering/judging is callback-query-based, not `PendingReply`-based, so it
+never contends for the one slot regardless of how many games a player is in - the reminder gap was
+purely "the message got buried", not a state collision. The broader concern is real, not yet hit,
+and now explicitly tracked (`PendingReply`'s own doc comment, and the deferred-work list below)
+rather than left implicit.
+
+**Verified**: 67 tests (up from 65) - keyboard-driven Kick/Score end-to-end, a tampered kick target
+(forged callback_data) rejected cleanly, and - the actual regression test for the reported bug - a
+full scenario playing round 1 out completely (judge rotation is deterministic, so round 2 reliably
+leaves the admin themselves with an outstanding card), running `/xyzzy_settings` mid-round-2, and
+confirming their hand keyboard gets resent with a reminder afterward; plus a negative case confirming
+no reminder fires when nothing is actually outstanding. Stable across 10 repeated runs. Sanity-checked
+per the established pattern: temporarily short-circuited `RemindIfActionPendingAsync` to a no-op,
+confirmed exactly the regression test failed with a clear "reminder never sent" message while the
+other 66 passed, then reverted. `docker compose build` unaffected.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
@@ -414,6 +455,18 @@ not just tidy defensive code. `docker compose build` unaffected.
   (defaults-vs-custom chain, question-limit/timeout/throttle prompts before the game starts) was
   originally cut here too but got built out in phase 8.5, below - pack-filter selection specifically
   stays cut since v1 only has the one hardcoded pack, nothing to filter yet.
+- **`ReplyRouter`'s one-pending-reply-per-user limit** — flagged by the user (2026-08-17) while
+  reviewing the `/xyzzy_settings` reminder fix above: legacy's `ExpectedReply` was explicitly built
+  so one user could hold several outstanding conversations at once (e.g. two different `mod_xyzzy`
+  games, or a settings flow in one chat while a game question is outstanding in another) without one
+  clobbering the other. `ReplyRouter`/`PendingReply` only track one slot per user globally. Not fixed
+  - **not yet hit for real**, since card answering/judging deliberately never uses this mechanism
+  (it's callback-query/inline-keyboard-based specifically so it doesn't contend for this slot no
+  matter how many games a player is in - see `PendingReply`'s own doc comment). Only free-text
+  follow-ups still route through here (`/xyzzy_settings` timeout/throttle/score-points,
+  `/setquiethours`); a real collision needs two of *those* outstanding at once for the same user.
+  Revisit with genuine per-context queueing if/when that actually happens - don't build it
+  speculatively before then.
 - **Charting** (`/statgraph`) — ScottPlot/SkiaSharp, debian-slim runtime base. Not started at all.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user
