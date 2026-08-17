@@ -29,7 +29,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | `e641fb6` |
 | 8.6 `mod_xyzzy`: setup/begin keyboards moved to DM, bot players | Done, verified | `24571d1` |
 | 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | `eecdd66` |
-| 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, verified | (this commit) |
+| 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, verified | `7440283` |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
