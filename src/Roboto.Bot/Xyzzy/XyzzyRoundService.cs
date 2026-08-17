@@ -1,3 +1,4 @@
+using Roboto.Bot.Commands;
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -16,7 +17,7 @@ namespace Roboto.Bot.Xyzzy;
 /// once - that uniqueness is what lets a card ID alone (via XyzzyCallbackData) unambiguously
 /// identify "which submission is this" during judging, no extra bookkeeping needed.
 /// </summary>
-public sealed class XyzzyRoundService(XyzzyGameRepository games)
+public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery quietHours)
 {
     public const int HandSize = 10;
 
@@ -136,11 +137,14 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games)
             return "Winner picked!";
         }
 
-        await BeginQuestionAsync(bot, game, cancellationToken);
+        await AdvanceToNextHandAsync(bot, game, cancellationToken);
         return "Winner picked!";
     }
 
-    private async Task BeginJudgingAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    /// <summary>Also called directly by XyzzyRoundReconciler when a round times out with at least
+    /// one submission already in (force-advance to judging with whatever's there) - public for
+    /// that, not just the "everyone answered normally" path.</summary>
+    public async Task BeginJudgingAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
         game.Status = XyzzyStatus.Judging;
         game.StatusChangedUtc = DateTime.UtcNow;
@@ -161,6 +165,32 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games)
             $"Everyone's answered! Pick the winner for: \"{question.Text}\"", new InlineKeyboardMarkup(rows), cancellationToken);
 
         await bot.SendMessage(game.ChatId, "All answers are in - the judge is picking a winner.", cancellationToken: cancellationToken);
+    }
+
+    /// <summary>Throttle/quiet-hours gate between hands (phase 8.3) - mirrors legacy's
+    /// waitingForNextHand status. If neither MinWaitHours nor quiet hours apply, the next question
+    /// starts immediately (the only path that existed before 8.3, and still the default - both are
+    /// 0/unset for a chat that's never touched them). Otherwise parks the game in
+    /// WaitingForNextHand; XyzzyRoundReconciler picks it back up once both clear.</summary>
+    private async Task AdvanceToNextHandAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    {
+        var throttled = game.MinWaitHours > 0;
+        var quiet = await quietHours.IsQuietNowAsync(game.ChatId, cancellationToken);
+
+        if (!throttled && !quiet)
+        {
+            await BeginQuestionAsync(bot, game, cancellationToken);
+            return;
+        }
+
+        game.Status = XyzzyStatus.WaitingForNextHand;
+        game.StatusChangedUtc = DateTime.UtcNow;
+        await games.SaveAsync(game, cancellationToken);
+
+        var text = quiet
+            ? "It's quiet hours here - I'll ask the next question once they're over."
+            : $"Next question in at least {game.MinWaitHours}h.";
+        await bot.SendMessage(game.ChatId, text, cancellationToken: cancellationToken);
     }
 
     /// <summary>Legacy's equivalent (lastPlayerAsked) was an int index into the player list, needing

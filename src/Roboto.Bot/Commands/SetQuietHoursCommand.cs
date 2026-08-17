@@ -105,5 +105,7 @@ public sealed class SetQuietHoursCommand(IServiceProvider services, IStateStore 
         await bot.SendMessage(pending.UserId, $"Quiet hours set from {start:c} to {time:c}.", cancellationToken: cancellationToken);
     }
 
-    private static string QuietHoursKey(long chatId) => $"chat:{chatId}:quiet-hours";
+    /// <summary>Public so QuietHoursQuery (mod_xyzzy's round scheduler uses it to check "is this
+    /// chat in quiet hours right now") can read the same key without duplicating the format.</summary>
+    public static string QuietHoursKey(long chatId) => $"chat:{chatId}:quiet-hours";
 }

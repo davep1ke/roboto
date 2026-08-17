@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Roboto.Bot;
 using Roboto.Bot.Persistence;
+using Roboto.Bot.Xyzzy;
 using Serilog;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -37,6 +38,7 @@ builder.Services.AddSerilog((_, loggerConfig) => loggerConfig
 
 builder.Services.AddRobotoBot();
 builder.Services.AddHostedService<TelegramPollingService>();
+builder.Services.AddHostedService<XyzzyRoundSchedulerService>();
 
 using var host = builder.Build();
 

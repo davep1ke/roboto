@@ -24,7 +24,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Done, verified | `534f9a8` |
 | 8.1 `mod_xyzzy`: game skeleton (start/join/leave/status, persistence, no round-play) | Done, verified | `af61ffc` |
 | 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Done, verified | `14beec1` |
-| 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Not started | — |
+| 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Done, verified | (this commit) |
 | 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Not started | — |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
@@ -229,6 +229,40 @@ deck/judging shuffles use `Random.Shared`) across 8 repeated full runs. Sanity-c
 established pattern: disabled the "all answers in, start judging" trigger, confirmed exactly the two
 round-completion tests failed with clear errors while the other 34 passed, then reverted.
 `docker compose build` unaffected.
+
+## `mod_xyzzy` 8.3: background scheduler, timeouts, throttle, quiet-hours — done and verified (2026-08-17)
+
+First real scheduled-task infrastructure anywhere in the app - before this, `TelegramPollingService`'s
+poll loop was the only `BackgroundService`, and there was no timer/cron abstraction at all.
+`Xyzzy/XyzzyRoundSchedulerService.cs` (a thin `BackgroundService`, ticks every 60s, registered
+directly in `Program.cs` like `TelegramPollingService` - not inside `AddRobotoBot()`, so tests never
+get a real ticking timer) delegates every tick to `Xyzzy/XyzzyRoundReconciler.cs`, which is fully
+testable on its own (same split `MessageDispatcher` got from `TelegramPollingService`). Mirrors
+legacy's `check()`: a reminder DM at 75% of `MaxWaitHours`, a force-advance at 100% (judge with
+whatever answers came in, or skip to a fresh question if nobody answered at all; a judging timeout
+auto-picks a random submission rather than legacy's "dock the judge" quirk, not judged essential to
+keep).
+
+Also lands the `MinWaitHours` throttle and quiet-hours integration that 8.2 deliberately deferred: a
+new `XyzzyStatus.WaitingForNextHand` phase sits between rounds when either applies, and
+`XyzzyRoundReconciler` resumes play once both clear. `Commands/QuietHoursQuery.cs` is a small
+read-only query against the same key `SetQuietHoursCommand` already writes (its `QuietHoursKey`
+helper made `public` for this) - mirrors legacy's cross-module `mod_standard.isTimeInQuietPeriod`
+call. `IStateStore` gained `LoadAllAsync<T>(keyPattern, ct)` (a SQL `LIKE` query) since the scheduler
+needs to find every active game, not one known key - `XyzzyGameRepository.GetAllActiveAsync` is the
+only caller so far.
+
+**Verified**: 8 new tests (44 total, up from 36) across `QuietHoursQueryTests.cs` (including the
+overnight-wraparound case, e.g. 22:00-06:00, via an optional `now` override on `QuietHoursQuery`
+added purely so that branch is deterministically testable without a full clock-abstraction refactor)
+and `Xyzzy/XyzzyRoundReconcilerTests.cs` (reminder-sent-once, timeout-with-partial-answers,
+timeout-with-zero-answers, judging-timeout auto-pick, and the throttle actually holding then
+releasing the next hand) - all driven by directly backdating `StatusChangedUtc` rather than waiting
+in real time, and calling `XyzzyRoundReconciler` directly rather than the real scheduler timer.
+Stable across 8 repeated full runs. Sanity-checked per the established pattern: disabled the
+reminder-already-sent guard, confirmed exactly `ReminderIsSentAt75PercentAndOnlyOnce` failed with a
+clear values-differ message while the other 43 passed, then reverted. `docker compose build`
+unaffected.
 
 ## Explicitly deferred / blocked work
 

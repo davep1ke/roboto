@@ -13,6 +13,13 @@ public interface IStateStore
 
     Task<T?> LoadAsync<T>(string key, CancellationToken cancellationToken);
 
+    /// <summary>Loads every value whose key matches a SQL LIKE pattern (caller-supplied, e.g.
+    /// "xyzzy:%:game") - added for mod_xyzzy's background scheduler, which needs to find every
+    /// active game rather than one known key. Still "callers own their own key scheme": this
+    /// doesn't impose any prefix/suffix convention, just lets a caller who already has one query by
+    /// it.</summary>
+    Task<IReadOnlyList<T>> LoadAllAsync<T>(string keyPattern, CancellationToken cancellationToken);
+
     Task SaveAsync<T>(string key, T value, CancellationToken cancellationToken);
 
     Task DeleteAsync(string key, CancellationToken cancellationToken);

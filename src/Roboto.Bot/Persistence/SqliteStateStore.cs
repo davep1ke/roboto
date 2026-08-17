@@ -51,6 +51,26 @@ public sealed class SqliteStateStore : IStateStore
         return result is string json ? JsonSerializer.Deserialize<T>(json) : default;
     }
 
+    public async Task<IReadOnlyList<T>> LoadAllAsync<T>(string keyPattern, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT json FROM state WHERE key LIKE $pattern;";
+        command.Parameters.AddWithValue("$pattern", keyPattern);
+
+        var results = new List<T>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (JsonSerializer.Deserialize<T>(reader.GetString(0)) is { } value)
+            {
+                results.Add(value);
+            }
+        }
+
+        return results;
+    }
+
     public async Task SaveAsync<T>(string key, T value, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(value);

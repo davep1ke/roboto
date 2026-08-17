@@ -39,6 +39,8 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<ChatRepository>();
         services.AddSingleton<XyzzyGameRepository>();
         services.AddSingleton<XyzzyRoundService>();
+        services.AddSingleton<XyzzyRoundReconciler>();
+        services.AddSingleton<QuietHoursQuery>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
         services.AddSingleton<ReplyRouter>();

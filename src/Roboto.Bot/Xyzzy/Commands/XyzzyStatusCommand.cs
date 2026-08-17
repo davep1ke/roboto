@@ -5,10 +5,7 @@ using Telegram.Bot.Types.Enums;
 
 namespace Roboto.Bot.Xyzzy.Commands;
 
-/// <summary>
-/// Ports legacy mod_xyzzy's /xyzzy_status. Time-remaining-before-timeout detail will show up once
-/// phase 8.3's scheduler lands; everything else about the current round is reported here already.
-/// </summary>
+/// <summary>Ports legacy mod_xyzzy's /xyzzy_status.</summary>
 public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
 {
     public string Name => "xyzzy_status";
@@ -57,6 +54,10 @@ public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
         else if (game.Status is XyzzyStatus.Judging)
         {
             sb.AppendLine("The judge is picking a winner.");
+        }
+        else if (game.Status is XyzzyStatus.WaitingForNextHand)
+        {
+            sb.AppendLine("Waiting to deal the next round (throttle and/or quiet hours).");
         }
 
         sb.AppendLine("Players:");
