@@ -1,5 +1,13 @@
 namespace Roboto.Bot.Xyzzy;
 
+/// <summary>
+/// Persisted as part of XyzzyGameState, serialized by name (not ordinal) - see the incident note in
+/// SqliteStateStore's doc comment (2026-08-17: inserting SettingUp here shifted every later value's
+/// ordinal by one, silently reinterpreting an already-live game's persisted status). That's now
+/// structurally prevented, but still add new values at the end rather than in the middle as a matter
+/// of habit - no reason to rely solely on the serializer setting to catch what a moment's thought
+/// avoids.
+/// </summary>
 public enum XyzzyStatus
 {
     Stopped,

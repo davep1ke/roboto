@@ -323,6 +323,32 @@ full runs. Sanity-checked per the established pattern: disabled the question-lim
 confirmed exactly `QuestionLimitEndsTheGameAutomatically` failed while the other 60 passed, then
 reverted. `docker compose build` unaffected.
 
+## Bug fix: enum ordinals silently reinterpreted after a persisted status shifted (2026-08-17)
+
+Live-bot testing round 3 (2026-08-17) surfaced a real bug: the user's in-progress game looked stuck
+("thinks it's asked me the setup, but nothing's waiting") right after phase 8.5 shipped. Root cause:
+`SqliteStateStore` used `System.Text.Json`'s default options, which serialize enums as their raw
+underlying *number*, not their name. `XyzzyGameState.Status` had been persisted as `"Status": 1`
+while `1` meant `Invites` (the pre-8.5 enum ordering); inserting `XyzzyStatus.SettingUp` into the
+*middle* of the enum in 8.5 shifted every later value's ordinal by one, so that same persisted `1`
+silently became `SettingUp` on deploy - no exception anywhere, just quietly wrong data.
+
+Fixed at the root in `Persistence/SqliteStateStore.cs`: enums now serialize by name
+(`JsonStringEnumConverter`), so future enum insertions/reordering can never again change what
+already-persisted data means. The specific corrupted row (the user's stuck game, which had no real
+round in progress - only the starter had joined) was reset by hand rather than migrated, then the
+live `beefy` instance was rebuilt and restarted with the fix. Full incident note lives as a comment
+in `SqliteStateStore.cs` and `XyzzyStatus.cs`, per this project's "why does this look like this"
+convention.
+
+**Verified**: 2 new tests in `tests/Roboto.Bot.Tests/SqliteStateStoreTests.cs` (63 total, up from
+61) - one asserts persisted JSON contains the enum's name rather than a number, one confirms old
+numeric-encoded data is still readable (the converter accepts a bare number on read, so this fix
+doesn't break anything already on disk, it just stops the class of bug from recurring). Sanity-checked
+by temporarily reverting to default JsonSerializerOptions and confirming exactly
+`EnumsArePersistedByNameNotOrdinal` failed with a clear message while the other 62 passed, then
+restored. Full 63/63 suite green, `docker compose build` unaffected.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
