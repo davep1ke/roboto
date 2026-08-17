@@ -22,7 +22,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | `c6541d3` |
 | 6. Automated test harness (xUnit + fake Telegram client) | Done, verified | `16b4b0b` |
 | 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Done, verified | `534f9a8` |
-| 8.1 `mod_xyzzy`: game skeleton (start/join/leave/status, persistence, no round-play) | Done, verified | (this commit) |
+| 8.1 `mod_xyzzy`: game skeleton (start/join/leave/status, persistence, no round-play) | Done, verified | `af61ffc` |
 | 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Not started | — |
 | 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Not started | — |
 | 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Not started | — |
