@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Roboto.Bot.Commands;
+using Roboto.Bot.Stats;
 using Telegram.Bot;
 
 namespace Roboto.Bot.Xyzzy;
@@ -12,13 +13,20 @@ namespace Roboto.Bot.Xyzzy;
 /// resuming a WaitingForNextHand game once the MinWaitHours throttle and any quiet-hours window
 /// have both cleared.
 /// </summary>
-public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundService rounds, QuietHoursQuery quietHours, ILogger<XyzzyRoundReconciler> logger)
+public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundService rounds, QuietHoursQuery quietHours, StatsRecorder stats, ILogger<XyzzyRoundReconciler> logger)
 {
     private const double ReminderThreshold = 0.75;
 
     public async Task ReconcileAllAsync(ITelegramBotClient bot, CancellationToken cancellationToken)
     {
-        foreach (var game in await games.GetAllActiveAsync(cancellationToken))
+        var activeGames = await games.GetAllActiveAsync(cancellationToken);
+
+        // Free snapshot - GetAllActiveAsync already loaded every active game for this tick, no
+        // extra query needed to record how many games/players are currently active right now.
+        await stats.RecordAsync(XyzzyStatNames.ActiveGames, activeGames.Count, StatMode.Snapshot, cancellationToken);
+        await stats.RecordAsync(XyzzyStatNames.ActivePlayers, activeGames.Sum(g => g.Players.Count(p => !p.IsBot)), StatMode.Snapshot, cancellationToken);
+
+        foreach (var game in activeGames)
         {
             try
             {

@@ -31,7 +31,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | `eecdd66` |
 | 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, verified | `7440283` |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
-| 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
+| 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | (this commit) |
+| 10b. Charting (ScottPlot), `/statgraph` | Not started - separate from 10a, see below | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
 | 12. Cutover | Not started | — |
 
@@ -481,6 +482,36 @@ regardless of which message was replied to, confirmed exactly the two tests that
 disambiguation failed - with a values-crossed-between-contexts message, the exact failure mode this
 phase exists to prevent - while the other 69 passed, then reverted. `docker compose build`
 unaffected.
+
+## 10a: Stats engine — done and verified (2026-08-17)
+
+Requested alongside 8.8 ("let's build that, and the stats engine at the same time"). Replaces
+legacy's `Roboto.Settings.stats.registerStatType`/`logStat` with `Stats/StatsRecorder.cs` - a
+lightweight named-counter engine, deliberately just the data-collection half, not a charting system
+(that's `/statgraph`, phase 10b, still separately deferred: needs ScottPlot/SkiaSharp and a
+debian-slim base image change - no reason to couple "can we record numbers over time" to "can we
+render a graph of them"). No registration step needed unlike legacy - a `StatSeries` is created on
+first use with whatever `StatMode` (`Cumulative` - running total, or `Snapshot` - replaces each
+time) the caller passes, same "just add a property, no schema migration" philosophy as the rest of
+`IStateStore`. Every recorded value also lands in a bounded (`MaxRecentPoints = 500`) time series, so
+10b has real history to plot without a data migration whenever it lands.
+
+Wired into five real `mod_xyzzy` events to prove it end-to-end, not just built-and-unused:
+`xyzzy.games-started` (`XyzzyStartCommand`, on a successful start), `xyzzy.hands-played`
+(`XyzzyRoundService.PickWinnerAsync`, once per completed round), `xyzzy.games-ended`
+(`XyzzyRoundService.TryEndGameAsync`'s two stop conditions, plus the `/xyzzy_settings` Abandon
+action), and `xyzzy.active-games`/`xyzzy.active-players` (`XyzzyRoundReconciler.ReconcileAllAsync`,
+a free snapshot each scheduler tick reusing the active-games list it already loads for its normal
+timeout/throttle work - no extra query). `/stats` now shows all recorded series alongside the
+existing per-command usage counts it already tracked.
+
+**Verified**: 10 new tests (81 total, up from 71) - `StatsRecorderTests.cs` covers the engine itself
+(cumulative accumulation, snapshot replacement, `GetAllAsync`, bounded history, persistence across a
+restart); `Xyzzy/XyzzyStatsTests.cs` covers all five wired-in events actually firing, including the
+reconciler's active-games/players snapshot and `/stats` surfacing a recorded stat by name. Stable
+across 8 repeated runs. Sanity-checked per the established pattern: disabled the bounded-history
+truncation, confirmed exactly `RecentPointsAreBoundedRatherThanGrowingForever` failed (500 expected,
+510 actual) while everything else passed, then reverted. `docker compose build` unaffected.
 
 ## Explicitly deferred / blocked work
 

@@ -1,4 +1,5 @@
 using Roboto.Bot.Commands;
+using Roboto.Bot.Stats;
 using Telegram.Bot;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -18,7 +19,7 @@ namespace Roboto.Bot.Xyzzy;
 /// once - that uniqueness is what lets a card ID alone (via XyzzyCallbackData) unambiguously
 /// identify "which submission is this" during judging, no extra bookkeeping needed.
 /// </summary>
-public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery quietHours)
+public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery quietHours, StatsRecorder stats)
 {
     public const int HandSize = 10;
 
@@ -182,6 +183,8 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             $"{winner.DisplayName} wins the round with: {filled}\n({winner.DisplayName} now has {winner.Wins} win(s))",
             cancellationToken: cancellationToken);
 
+        await stats.RecordAsync(XyzzyStatNames.HandsPlayed, 1, StatMode.Cumulative, cancellationToken);
+
         if (!await TryEndGameAsync(bot, game, cancellationToken))
         {
             await AdvanceToNextHandAsync(bot, game, cancellationToken);
@@ -203,6 +206,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             game.Status = XyzzyStatus.Stopped;
             await games.SaveAsync(game, cancellationToken);
             await bot.SendMessage(game.ChatId, "Not enough real players left - game over.", cancellationToken: cancellationToken);
+            await stats.RecordAsync(XyzzyStatNames.GamesEnded, 1, StatMode.Cumulative, cancellationToken);
             return true;
         }
 
@@ -212,6 +216,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             await games.SaveAsync(game, cancellationToken);
             var scoreboard = string.Join('\n', game.Players.OrderByDescending(p => p.Wins).Select(p => $"{p.DisplayName}: {p.Wins} win(s)"));
             await bot.SendMessage(game.ChatId, $"That's the end of the game! Final scores:\n{scoreboard}", cancellationToken: cancellationToken);
+            await stats.RecordAsync(XyzzyStatNames.GamesEnded, 1, StatMode.Cumulative, cancellationToken);
             return true;
         }
 

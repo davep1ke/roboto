@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Roboto.Bot.Commands;
+using Roboto.Bot.Stats;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -25,7 +26,7 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// Resolves ReplyRouter lazily via IServiceProvider rather than as a constructor dependency - see
 /// the warning in ReplyRouter's own doc comment for why a direct dependency here would be circular.
 /// </summary>
-public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds) : IReplyHandler
+public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds, StatsRecorder stats) : IReplyHandler
 {
     public const string AskQuestionLimit = "question-limit";
     public const string AskTimeout = "timeout";
@@ -96,6 +97,8 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
             $"{caller.FirstName} is starting a new game of Cards Against Humanity! Check your DMs to finish setup, " +
             "then use /xyzzy_join to play.",
             cancellationToken: cancellationToken);
+
+        await stats.RecordAsync(XyzzyStatNames.GamesStarted, 1, StatMode.Cumulative, cancellationToken);
     }
 
     public async Task HandleReplyAsync(ITelegramBotClient bot, PendingReply pending, Message reply, CancellationToken cancellationToken)

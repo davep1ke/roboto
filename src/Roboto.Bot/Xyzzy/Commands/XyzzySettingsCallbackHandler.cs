@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Roboto.Bot.Commands;
+using Roboto.Bot.Stats;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -15,7 +16,7 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// a correctness improvement over the free-text version, which had to do fuzzy name lookups).
 /// </summary>
 public sealed class XyzzySettingsCallbackHandler(
-    IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds, ILogger<XyzzySettingsCallbackHandler> logger) : ICallbackQueryHandler
+    IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds, StatsRecorder stats, ILogger<XyzzySettingsCallbackHandler> logger) : ICallbackQueryHandler
 {
     public bool CanHandle(string callbackData) => callbackData.StartsWith("xy:se:", StringComparison.Ordinal);
 
@@ -60,6 +61,7 @@ public sealed class XyzzySettingsCallbackHandler(
                 logger.LogInformation("Admin {UserId} abandoned the mod_xyzzy game in chat {ChatId}", userId, game.ChatId);
                 await bot.SendMessage(userId, "Game abandoned.", cancellationToken: cancellationToken);
                 await bot.SendMessage(game.ChatId, "The game was abandoned by an admin.", cancellationToken: cancellationToken);
+                await stats.RecordAsync(XyzzyStatNames.GamesEnded, 1, StatMode.Cumulative, cancellationToken);
                 return "Game abandoned.";
 
             case "timeout":
