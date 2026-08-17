@@ -10,7 +10,7 @@ namespace Roboto.Bot.Tests;
 
 public sealed record SentButton(string Text, string CallbackData);
 
-public sealed record SentMessage(long ChatId, string Text, IReadOnlyList<SentButton>? Buttons = null);
+public sealed record SentMessage(long ChatId, string Text, IReadOnlyList<SentButton>? Buttons = null, int Id = 0);
 
 public sealed record AnsweredCallback(string CallbackQueryId, string? Text);
 
@@ -67,10 +67,11 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
                         .Select(b => new SentButton(b.Text, b.CallbackData ?? ""))
                         .ToList()
                     : null;
-                SentMessages.Add(new SentMessage(chatId, sendMessage.Text ?? "", buttons));
+                var sentId = SentMessages.Count + 1;
+                SentMessages.Add(new SentMessage(chatId, sendMessage.Text ?? "", buttons, sentId));
                 var message = new Message
                 {
-                    Id = SentMessages.Count,
+                    Id = sentId,
                     Chat = new Chat { Id = chatId },
                     Text = sendMessage.Text,
                 };

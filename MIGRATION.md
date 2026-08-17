@@ -29,6 +29,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | `e641fb6` |
 | 8.6 `mod_xyzzy`: setup/begin keyboards moved to DM, bot players | Done, verified | `24571d1` |
 | 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | `eecdd66` |
+| 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, verified | (this commit) |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
@@ -443,6 +444,44 @@ per the established pattern: temporarily short-circuited `RemindIfActionPendingA
 confirmed exactly the regression test failed with a clear "reminder never sent" message while the
 other 66 passed, then reverted. `docker compose build` unaffected.
 
+## 8.8: `ReplyRouter` multi-context support — done and verified (2026-08-17)
+
+Direct follow-up to the concern the user raised while reviewing 8.7's reminder fix, then confirmed
+as a real requirement rather than a hypothetical: "I need to be able to handle this... not uncommon
+for users to be in multiple groups, and I can see someone opening the settings menu and it all going
+to pot." `ReplyRouter`/`PendingReply` previously tracked exactly one outstanding free-text
+conversation per user, globally (see 8.7's section above and `PendingReply`'s own doc-comment
+history) - two of those outstanding at once (e.g. `/xyzzy_settings` open in two different chats)
+would silently clobber each other.
+
+Fixed to match legacy's actual approach: `ReplyRouter` now stores a **list** of pending replies per
+user (new key `pending-replies:{userId}`, plural - deliberately not reusing the old singular key,
+since the stored shape changed from one object to a list and reusing it would mean deserializing old
+data into the wrong shape; any conversation genuinely mid-flight across this exact deploy is simply
+orphaned, not migrated - an acceptable one-time hiccup for a DM conversation, not real state).
+`PendingReply` gained `QuestionMessageId` (the bot's own sent message ID); an incoming DM is matched
+by requiring it be a Telegram "reply" to that specific message whenever more than one thing is
+outstanding. With exactly one pending, a plain (non-reply) message still resolves it, unchanged from
+before - only genuine ambiguity requires an explicit reply-to, and if it's ambiguous the bot says so
+explicitly rather than guessing which context to apply the answer to.
+
+Card answering/judging was never affected by any of this - it's inline-keyboard/`CallbackQuery`-based
+specifically so it doesn't share this mechanism at all, confirmed and documented in 8.7 already.
+
+**Verified**: 4 new tests in `tests/Roboto.Bot.Tests/ReplyRouterMultiContextTests.cs` (71 total, up
+from 67) using `/setquiethours` as the vehicle (a real two-step DM flow, triggered from a group but
+always answered in the same private chat - exactly the shape that needs disambiguating) - two
+simultaneous flows with *identical question text* resolved correctly and independently via
+reply-to, even when answered out of order; genuine ambiguity (no reply-to, two pending) gets an
+explicit "reply directly" response rather than a guess; the single-pending case still works without
+requiring reply-to (backward compatible); replying to an untracked message id falls through to
+normal command dispatch rather than being swallowed. Stable across 8 repeated runs. Sanity-checked
+per the established pattern: broke reply-to matching to always pick the first pending entry
+regardless of which message was replied to, confirmed exactly the two tests that exercise real
+disambiguation failed - with a values-crossed-between-contexts message, the exact failure mode this
+phase exists to prevent - while the other 69 passed, then reverted. `docker compose build`
+unaffected.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
@@ -455,18 +494,6 @@ other 66 passed, then reverted. `docker compose build` unaffected.
   (defaults-vs-custom chain, question-limit/timeout/throttle prompts before the game starts) was
   originally cut here too but got built out in phase 8.5, below - pack-filter selection specifically
   stays cut since v1 only has the one hardcoded pack, nothing to filter yet.
-- **`ReplyRouter`'s one-pending-reply-per-user limit** — flagged by the user (2026-08-17) while
-  reviewing the `/xyzzy_settings` reminder fix above: legacy's `ExpectedReply` was explicitly built
-  so one user could hold several outstanding conversations at once (e.g. two different `mod_xyzzy`
-  games, or a settings flow in one chat while a game question is outstanding in another) without one
-  clobbering the other. `ReplyRouter`/`PendingReply` only track one slot per user globally. Not fixed
-  - **not yet hit for real**, since card answering/judging deliberately never uses this mechanism
-  (it's callback-query/inline-keyboard-based specifically so it doesn't contend for this slot no
-  matter how many games a player is in - see `PendingReply`'s own doc comment). Only free-text
-  follow-ups still route through here (`/xyzzy_settings` timeout/throttle/score-points,
-  `/setquiethours`); a real collision needs two of *those* outstanding at once for the same user.
-  Revisit with genuine per-context queueing if/when that actually happens - don't build it
-  speculatively before then.
 - **Charting** (`/statgraph`) — ScottPlot/SkiaSharp, debian-slim runtime base. Not started at all.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user

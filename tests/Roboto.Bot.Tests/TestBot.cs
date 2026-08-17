@@ -93,13 +93,18 @@ public sealed class TestBot : IDisposable
         }
     }
 
-    public static Message PrivateMessage(long userId, string text, string firstName = "Test") => new()
+    public static Message PrivateMessage(long userId, string text, string firstName = "Test", Message? replyTo = null) => new()
     {
         Id = Random.Shared.Next(1, int.MaxValue),
         Chat = new Chat { Id = userId, Type = ChatType.Private },
         From = new User { Id = userId, FirstName = firstName },
         Text = text,
+        ReplyToMessage = replyTo,
     };
+
+    /// <summary>Shorthand for replying to a specific SentMessage (one ReplyRouter is currently
+    /// tracking) rather than building a stub Message by hand just to carry its ID.</summary>
+    public static Message ReplyTo(SentMessage question) => new() { Id = question.Id };
 
     public static Message GroupMessage(long chatId, long userId, string text, string firstName = "Test", Message? replyTo = null) => new()
     {

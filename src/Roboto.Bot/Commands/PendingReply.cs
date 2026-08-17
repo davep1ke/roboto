@@ -7,22 +7,18 @@ namespace Roboto.Bot.Commands;
 /// (ReplyRouter owns the key scheme), so a conversation survives a restart the same way everything
 /// else in IStateStore does.
 ///
-/// Deliberately simplified vs. legacy: at most **one** pending reply per user at a time, not a
-/// full FIFO queue of several outstanding questions across different modules/chats. Legacy's
-/// ExpectedReply was explicitly built to let one user hold several of these at once - e.g. being in
-/// two different mod_xyzzy games at the same time, or a settings flow in one chat while a game
-/// question is outstanding in another - without one clobbering the other (user's own framing,
-/// 2026-08-17: "the whole 'expected replies' thing was so a user could be in multiple groups/games
-/// at the same time, and they wouldn't all overlap").
+/// A user can have **several** of these outstanding at once (phase 9, per user feedback,
+/// 2026-08-17: "I need to be able to handle this... not uncommon for users to be in multiple
+/// groups" - e.g. two different mod_xyzzy games' settings flows, or a settings flow in one chat
+/// while /setquiethours is outstanding in another) - ReplyRouter stores a list per user, not one
+/// slot, and disambiguates by requiring the DM reply to be a Telegram "reply" to the specific
+/// QuestionMessageId below whenever more than one is outstanding (matches legacy's own
+/// reply-to-message-id matching). With exactly one outstanding, a plain (non-reply) text message
+/// still works, same as before this changed - only ambiguous cases require an explicit reply-to.
 ///
-/// Not yet hit for real here: card answering/judging (mod_xyzzy's round-play) deliberately avoids
-/// this mechanism entirely - it's inline-keyboard/CallbackQuery-based (XyzzyCallbackData encodes the
-/// chat+round+card directly in each button), so those never contend for this one slot no matter how
-/// many games a player is in. Only free-text follow-ups still route through here (e.g.
-/// /xyzzy_settings' timeout/throttle/score-points, /setquiethours) - a real collision needs two of
-/// *those* outstanding at once for the same user. If/when that happens, this is the point to build
-/// genuine per-context queueing rather than one shared slot - don't build it speculatively before
-/// then.
+/// Card answering/judging (mod_xyzzy's round-play) never uses this mechanism at all - it's
+/// inline-keyboard/CallbackQuery-based (XyzzyCallbackData encodes the chat+round+card directly in
+/// each button), so it was never subject to this limitation in the first place, before or after.
 /// </summary>
 public sealed class PendingReply
 {
@@ -44,4 +40,9 @@ public sealed class PendingReply
     public string? Data { get; set; }
 
     public DateTime AskedUtc { get; set; }
+
+    /// <summary>The bot's own question message ID (the DM AskAsync just sent) - lets an incoming
+    /// reply be matched unambiguously via Telegram's native "reply to this message" feature when
+    /// more than one of these is outstanding for the same user.</summary>
+    public int QuestionMessageId { get; set; }
 }
