@@ -19,7 +19,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 2. Module framework: command router + DI | Done, verified | `5933fe5` |
 | 3. SQLite persistence layer | Done, verified | `5d54890` |
 | 4. `mod_standard` port, partial (`/start`, `/stop`, real per-chat state) | Done, verified | `f495a0c` |
-| 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | (this commit) |
+| 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | `c6541d3` |
 | 6. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Not started | — |
 | 7. `mod_xyzzy` port (the big one, ~3,800 LOC of game logic) | Not started | — |
 | 8. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
