@@ -7,14 +7,26 @@ public class XyzzyGameSkeletonTests
     private const long SecondUser = 2;
     private const long ThirdUser = 3;
 
+    /// <summary>/xyzzy_start now only creates the game and asks "defaults or configure?" over DM
+    /// (phase 8.5) - most of these tests just need a game sitting in Invites, so this drives the
+    /// "defaults" path to get there in one call, same as a real starter picking the quick option.</summary>
+    private static async Task StartWithDefaultsAsync(TestBot bot, long chatId, long userId, string firstName = "Test")
+    {
+        await bot.SendAsync(TestBot.GroupMessage(chatId, userId, "/xyzzy_start", firstName: firstName));
+        await bot.SendAsync(TestBot.PrivateMessage(userId, "defaults", firstName: firstName));
+    }
+
     [Fact]
-    public async Task StartCreatesAGameWithTheCallerAsFirstPlayer()
+    public async Task StartAsksDefaultsOrConfigureThenDefaultsReachesInvites()
     {
         using var bot = new TestBot();
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, FirstUser, "/xyzzy_start"));
+        Assert.Contains("defaults", bot.BotClient.SentMessages.First(m => m.ChatId == FirstUser).Text);
+        Assert.Contains("is starting a new game", bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId).Text);
 
-        Assert.Contains("started a game", bot.BotClient.SentMessages[^1].Text);
+        await bot.SendAsync(TestBot.PrivateMessage(FirstUser, "defaults"));
+        Assert.Contains("Setup's done", bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId).Text);
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, FirstUser, "/xyzzy_status"));
         var status = bot.BotClient.SentMessages[^1].Text;
@@ -48,7 +60,7 @@ public class XyzzyGameSkeletonTests
     {
         using var bot = new TestBot();
 
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, FirstUser, "/xyzzy_start"));
+        await StartWithDefaultsAsync(bot, ChatId, FirstUser);
         await bot.SendAsync(TestBot.GroupMessage(ChatId, SecondUser, "/xyzzy_join", firstName: "Bob"));
 
         // Confirmation DM sent directly to the joining player, plus the group announcement.
@@ -58,6 +70,19 @@ public class XyzzyGameSkeletonTests
         await bot.SendAsync(TestBot.GroupMessage(ChatId, ThirdUser, "/xyzzy_status", firstName: "Carol"));
         var status = bot.BotClient.SentMessages[^1].Text;
         Assert.Contains("2/3 minimum", status);
+    }
+
+    [Fact]
+    public async Task CanJoinWhileTheStarterIsStillFinishingSetup()
+    {
+        // Legacy allows joining any time the game isn't Stopped, including mid-setup - matches
+        // XyzzyJoinCommand's gate (anything but Stopped), unchanged by phase 8.5.
+        using var bot = new TestBot();
+
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, FirstUser, "/xyzzy_start"));
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, SecondUser, "/xyzzy_join", firstName: "Bob"));
+
+        Assert.Contains("Bob joined", bot.BotClient.SentMessages[^1].Text);
     }
 
     [Fact]
@@ -151,7 +176,7 @@ public class XyzzyGameSkeletonTests
     {
         using var bot = new TestBot();
 
-        await bot.SendAsync(TestBot.GroupMessage(ChatId, FirstUser, "/xyzzy_start"));
+        await StartWithDefaultsAsync(bot, ChatId, FirstUser);
         await bot.SendAsync(TestBot.GroupMessage(ChatId, SecondUser, "/xyzzy_join", firstName: "Bob"));
 
         using var restarted = bot.Restart();

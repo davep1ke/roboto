@@ -26,6 +26,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Done, verified | `14beec1` |
 | 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Done, verified | `b68c07d` |
 | 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Done, verified | `b00e43f` |
+| 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | (this commit) |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
@@ -287,6 +288,41 @@ per the established pattern: disabled the admin-gate check, confirmed exactly
 `OnlyAnAdminCanOpenTheMenu` failed with a clear message while the other 52 passed, then reverted.
 `docker compose build` unaffected.
 
+## `mod_xyzzy` 8.5: proper `/xyzzy_start` setup wizard — done and verified (2026-08-17)
+
+Un-deferred from the original v1 scope cuts after manual testing surfaced the gap directly (user
+testing round 2026-08-17 - "assume it's good, carry on... which might be the more complex game
+setup routine"). `/xyzzy_start` now asks "defaults" / "configure" / "cancel" over DM before the game
+reaches `Invites`, with "configure" walking through question limit, timeout, and throttle as three
+follow-up DM questions - same free-text-reply shape as `/xyzzy_settings` and `/setquiethours`, not
+legacy's keyboard-driven chain. Pack-filter selection specifically stays cut (see the scope-cuts note
+below) since v1 only has the one hardcoded pack.
+
+New `XyzzyStatus.SettingUp` phase covers the whole conversation (game exists, starter already
+added as a player, before Invites) - a game abandoned mid-setup (starter never replies) is
+auto-reset to `Stopped` after 24h by `XyzzyRoundReconciler`, mirroring legacy's own "idle setup
+auto-resets" behavior, so it can't squat the chat's one-game slot forever. If the starter has no
+open DM at all, the whole thing rolls back to `Stopped` immediately instead of leaving a
+nobody-can-ever-finish game stuck in `SettingUp`.
+
+Also added real support for the question-limit setting itself, which existed on paper in legacy
+(`enteredQuestionCount`) but had no equivalent field yet in the port: `XyzzyGameState.QuestionLimit`
+(-1 = unlimited), checked by a new shared `XyzzyRoundService.TryEndGameAsync` (also folded into the
+existing "not enough players left" check, previously duplicated inline in `PickWinnerAsync`) after
+every completed round, including the reconciler's "nobody answered, skip ahead" timeout path.
+
+**Verified**: 8 new tests in `tests/Roboto.Bot.Tests/Xyzzy/XyzzyStartWizardTests.cs` (61 total, up
+from 53) - the full configure path setting all three values, invalid input at each step
+re-prompting without losing progress, cancel resetting the game completely (and a fresh
+`/xyzzy_start` working right after), an unrecognised choice re-prompting, the no-DM rollback, a
+question-limit actually ending a game after the configured number of rounds, and the 24h
+abandoned-setup auto-reset. All 15 pre-existing `mod_xyzzy` tests across four other files needed a
+one-line update each (drive the new DM step to reach `Invites`) since `/xyzzy_start` no longer
+reaches it in one call - a real behavior change, not a test-only fixup. Stable across 6 repeated
+full runs. Sanity-checked per the established pattern: disabled the question-limit end-game check,
+confirmed exactly `QuestionLimitEndsTheGameAutomatically` failed while the other 60 passed, then
+reverted. `docker compose build` unaffected.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
@@ -295,10 +331,16 @@ per the established pattern: disabled the admin-gate check, confirmed exactly
   "Mess With" (joke/fake score display, purely cosmetic); cross-chat DM `/xyzzy_leave` (typed with
   no chat context, scans every chat you're in) — v1's `/xyzzy_leave` is group-context only like
   every other command; stats/metrics (`registerStatType`/`logStat` calls throughout legacy) — no
-  stats subsystem exists yet beyond command-usage counts; the elaborate multi-step setup wizard
-  (defaults-vs-custom chain, pack-filter pager, timeout/throttle prompts before the game starts) —
-  v1 starts straight into `Invites` with fixed defaults, `/xyzzy_settings` (phase 8.4) covers
-  adjusting afterward.
+  stats subsystem exists yet beyond command-usage counts. The elaborate multi-step setup wizard
+  (defaults-vs-custom chain, question-limit/timeout/throttle prompts before the game starts) was
+  originally cut here too but got built out in phase 8.5, below - pack-filter selection specifically
+  stays cut since v1 only has the one hardcoded pack, nothing to filter yet.
+- **Dummy/bot players for solo testing** — user's explicit ask (2026-08-17): testing today means
+  waiting through the setup flow then using `/xyzzy_begin force` with only 2 real players, which
+  the user says they've "always struggled with." Add an option to seed a game with a couple of
+  fake/AI-controlled players that auto-answer/auto-judge, so one person can exercise a full round
+  without needing 2+ other humans on hand. Not started - needs its own design pass (how a fake
+  player picks a card/judges, whether it's a flag on `/xyzzy_start` or a separate command).
 - **Charting** (`/statgraph`) — ScottPlot/SkiaSharp, debian-slim runtime base. Not started at all.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user

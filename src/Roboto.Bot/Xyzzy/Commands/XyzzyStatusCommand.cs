@@ -33,6 +33,11 @@ public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
         var sb = new StringBuilder();
         sb.AppendLine($"Status: {game.Status}");
 
+        if (game.Status is XyzzyStatus.SettingUp)
+        {
+            sb.AppendLine("The starter is still finishing setup over DM.");
+        }
+
         if (game.Status is XyzzyStatus.Invites)
         {
             sb.AppendLine($"Waiting for players ({game.Players.Count}/3 minimum).");

@@ -129,16 +129,39 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             $"{winner.DisplayName} wins the round with: {filled}\n({winner.DisplayName} now has {winner.Wins} win(s))",
             cancellationToken: cancellationToken);
 
+        if (!await TryEndGameAsync(bot, game, cancellationToken))
+        {
+            await AdvanceToNextHandAsync(bot, game, cancellationToken);
+        }
+
+        return "Winner picked!";
+    }
+
+    /// <summary>Shared "should the game stop here" check (not enough players left, or the
+    /// configured question limit's been reached) - called after a round completes, whether that's
+    /// the normal judged-a-winner path or the reconciler force-advancing an empty round. Returns
+    /// true (and stops the game, with an appropriate message) if it should; false if play should
+    /// continue.</summary>
+    public async Task<bool> TryEndGameAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    {
         if (game.Players.Count < 2)
         {
             game.Status = XyzzyStatus.Stopped;
             await games.SaveAsync(game, cancellationToken);
             await bot.SendMessage(game.ChatId, "Not enough players left - game over.", cancellationToken: cancellationToken);
-            return "Winner picked!";
+            return true;
         }
 
-        await AdvanceToNextHandAsync(bot, game, cancellationToken);
-        return "Winner picked!";
+        if (game.QuestionLimit >= 0 && game.RoundNumber >= game.QuestionLimit)
+        {
+            game.Status = XyzzyStatus.Stopped;
+            await games.SaveAsync(game, cancellationToken);
+            var scoreboard = string.Join('\n', game.Players.OrderByDescending(p => p.Wins).Select(p => $"{p.DisplayName}: {p.Wins} win(s)"));
+            await bot.SendMessage(game.ChatId, $"That's the end of the game! Final scores:\n{scoreboard}", cancellationToken: cancellationToken);
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>Also called directly by XyzzyRoundReconciler when a round times out with at least

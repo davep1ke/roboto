@@ -39,9 +39,12 @@ public sealed class XyzzyBeginCommand(XyzzyGameRepository games, ChatRepository 
         var game = await games.GetAsync(chatId, cancellationToken);
         if (game.Status is not XyzzyStatus.Invites)
         {
-            var text = game.Status is XyzzyStatus.Stopped
-                ? "No game waiting to begin. Use /xyzzy_start first."
-                : "This game's already underway.";
+            var text = game.Status switch
+            {
+                XyzzyStatus.Stopped => "No game waiting to begin. Use /xyzzy_start first.",
+                XyzzyStatus.SettingUp => "The starter still needs to finish setup over DM first.",
+                _ => "This game's already underway.",
+            };
             await context.Bot.SendMessage(chatId, text, cancellationToken: cancellationToken);
             return;
         }

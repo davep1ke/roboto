@@ -43,6 +43,11 @@ public sealed class XyzzyGameState
     public double MaxWaitHours { get; set; } = 12;
     public double MinWaitHours { get; set; }
 
+    /// <summary>Number of rounds to play before the game ends itself, or -1 for unlimited (legacy's
+    /// enteredQuestionCount). Only settable via /xyzzy_start's "configure" path (phase 8.5) - -1
+    /// otherwise, matching "use defaults".</summary>
+    public int QuestionLimit { get; set; } = -1;
+
     public XyzzyPlayer? FindPlayer(long playerId) => Players.FirstOrDefault(p => p.PlayerId == playerId);
     public bool IsPlayer(long playerId) => FindPlayer(playerId) is not null;
 }

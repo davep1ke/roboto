@@ -35,6 +35,7 @@ public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundSe
     {
         XyzzyStatus.Question or XyzzyStatus.Judging => ReconcileTimeoutAsync(bot, game, cancellationToken),
         XyzzyStatus.WaitingForNextHand => ReconcileWaitingAsync(bot, game, cancellationToken),
+        XyzzyStatus.SettingUp => ReconcileAbandonedSetupAsync(bot, game, cancellationToken),
         _ => Task.CompletedTask, // Stopped/Invites have no clock running.
     };
 
@@ -81,6 +82,22 @@ public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundSe
         }
     }
 
+    /// <summary>A game abandoned mid-setup (starter asked "defaults or configure?" and never
+    /// replied) shouldn't squat the chat's one-game slot forever - mirrors legacy's "idle >24h in
+    /// any setup status auto-resets to Stopped".</summary>
+    private async Task ReconcileAbandonedSetupAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    {
+        if (DateTime.UtcNow - game.StatusChangedUtc < TimeSpan.FromHours(24))
+        {
+            return;
+        }
+
+        game.Status = XyzzyStatus.Stopped;
+        game.Players = [];
+        await games.SaveAsync(game, cancellationToken);
+        await bot.SendMessage(game.ChatId, "Game setup timed out - use /xyzzy_start to try again.", cancellationToken: cancellationToken);
+    }
+
     private async Task ForceAdvanceAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
         if (game.Status is XyzzyStatus.Question)
@@ -93,7 +110,10 @@ public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundSe
             else
             {
                 await bot.SendMessage(game.ChatId, "Nobody answered in time - skipping to a new question.", cancellationToken: cancellationToken);
-                await rounds.BeginQuestionAsync(bot, game, cancellationToken);
+                if (!await rounds.TryEndGameAsync(bot, game, cancellationToken))
+                {
+                    await rounds.BeginQuestionAsync(bot, game, cancellationToken);
+                }
             }
 
             return;
