@@ -31,7 +31,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | `eecdd66` |
 | 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, verified | `7440283` |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
-| 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | (this commit) |
+| 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
 | 10b. Charting (ScottPlot), `/statgraph` | Not started - separate from 10a, see below | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
 | 12. Cutover | Not started | — |
