@@ -2,9 +2,17 @@ namespace Roboto.Bot;
 
 /// <summary>
 /// Each bot identity is a subfolder under DataDir: {DataDir}/{Instance}/bot.env holds its
-/// credentials, {DataDir}/{Instance}/roboto.db will hold its SQLite state (once that lands).
-/// Mirrors the legacy app's "first run creates a blank config, fill it in and restart" flow -
-/// same idea, per-instance folder instead of one XML file per -context.
+/// credentials, {DataDir}/{Instance}/roboto.db holds its SQLite state. Mirrors the legacy app's
+/// "first run creates a blank config, fill it in and restart" flow - same idea, per-instance
+/// folder instead of one XML file per -context.
+///
+/// Superseded design, don't resurrect: credentials purely via ROBOTO_TELEGRAMTOKEN/
+/// ROBOTO_BOTUSERNAME env vars, with a *.env file per test bot at the repo root picked via a
+/// docker-compose ENV_FILE trick. Problems: spinning up a new instance meant hand-authoring a new
+/// env file yourself, and the compose file only bind-mounted one fixed host path - nothing stopped
+/// two concurrently-running instances from colliding and overwriting each other's data. The
+/// current design fixes both: ROBOTO_INSTANCE is the only thing that varies per identity, and
+/// every instance's data is a subfolder of one shared mount instead of needing its own host path.
 /// </summary>
 public static class InstanceBootstrapper
 {

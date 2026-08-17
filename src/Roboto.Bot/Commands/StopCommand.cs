@@ -4,6 +4,10 @@ using Telegram.Bot.Types.Enums;
 
 namespace Roboto.Bot.Commands;
 
+/// <summary>
+/// Private chats skip ChatState entirely (mirrors the legacy `chat` class not existing at all for
+/// PM chats, only groups) - replies with a short explanation instead of silently no-op'ing.
+/// </summary>
 public sealed class StopCommand(ChatRepository chats) : IBotCommand
 {
     public string Name => "stop";

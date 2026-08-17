@@ -4,6 +4,11 @@ using Telegram.Bot.Types.Enums;
 
 namespace Roboto.Bot.Commands;
 
+/// <summary>
+/// Always let through by CommandRouter's mute gate, even in a muted chat - has to be, it's the
+/// only way to unmute. Private chats skip ChatState entirely (mirrors the legacy `chat` class not
+/// existing at all for PM chats, only groups).
+/// </summary>
 public sealed class StartCommand(ChatRepository chats) : IBotCommand
 {
     public string Name => "start";

@@ -7,7 +7,13 @@ namespace Roboto.Bot.Persistence;
 /// <summary>
 /// A fresh SqliteConnection per operation, per Microsoft.Data.Sqlite's own recommendation - the
 /// provider pools the underlying native handles, and it sidesteps SqliteConnection not being
-/// thread-safe for concurrent use. Fine at this scale (one bot processing one update at a time).
+/// thread-safe for concurrent use. Fine at this scale (one bot processing one update at a time) -
+/// revisit if Telegram update handling ever stops being sequential.
+///
+/// Uses System.Text.Json (built-in, no extra dependency) rather than Newtonsoft.Json, which the
+/// legacy app uses throughout (Roboto/Newtonsoft.Json.dll, checked in directly). Nothing here
+/// needs Newtonsoft's extra features. Not necessarily the right call for code that has to *read*
+/// legacy-shaped JSON later (e.g. an XML/JSON migration importer) - that's still open.
 /// </summary>
 public sealed class SqliteStateStore : IStateStore
 {
