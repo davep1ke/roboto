@@ -73,11 +73,34 @@ wordcraft. Legacy line is Windows-only (WPF + .NET Framework). Actively being po
   this is the valuable, hardest-to-rewrite business logic. Card packs come via
   `Helpers/cardCast.cs` — originally Cardcast (shut down ~2019), already swapped to **crcast** and,
   per the user, still works. No action needed here unless it breaks.
-- **Redesign discussion deferred, not yet decided** — user wants to talk through this specifically
-  once we reach that phase rather than lock it in now. Rough direction floated so far (not
-  committed): keep reflection-based discovery (harmless), replace the dispatch layer with a real
-  command router + DI so modules depend on injected interfaces instead of
-  `Roboto.Settings`/`Roboto.log` statics.
+- **Redesign decided and Phase 2 started** (2026-08-17): scope is command router + DI, replacing
+  the compiled-in-one-assembly modules' dispatch/data-access, **not** true loadable/shareable
+  plugin DLLs. User's original long-term goal had been separately-compiled DLL plugins people could
+  write and pass between bot instances; explicitly dropped as not worth it — the actual pain
+  (dispatch chains, statics, fragile data lookup) doesn't need assembly isolation/a stable ABI/
+  sandboxing to fix, and nobody's ever actually wanted to ship a third-party Roboto plugin. Not a
+  dead end if that ever changes: command routing and assembly loading are separable, so dynamic
+  loading could still be added later without redoing this.
+  - Built in `src/Roboto.Bot/Commands/`: `IBotCommand` (`Name`, `Description`,
+    `ExecuteAsync(CommandContext, CancellationToken)` — one class = one command, no grouping
+    abstraction yet, revisit when a real multi-command module gets ported), `CommandRouter`
+    (name-based dispatch, replaces the `StartsWith` chains, no priority/collision flags needed),
+    reference commands `PingCommand`/`HelpCommand`. Discovery is reflection over the assembly in
+    `Program.cs` (same "harmless" idea as the legacy scan, just registers each `IBotCommand` with
+    DI instead of hand-listing them) — modules take injected dependencies (e.g. `ILogger<T>`), no
+    static globals touched anywhere in the new code.
+  - **Real gotcha hit and fixed**: `HelpCommand` needs to see every registered command, which is an
+    easy way to accidentally create a circular DI dependency (`CommandRouter` needs all
+    `IBotCommand`s built including `HelpCommand` → `HelpCommand` needs `CommandRouter` →
+    circular). Fixed by having `HelpCommand` take `IServiceProvider` and resolve `CommandRouter`
+    lazily inside `ExecuteAsync` rather than as a constructor dependency. Worth remembering for any
+    future command that needs to know about its siblings.
+  - **Not yet covered by this redesign**: the `ExpectedReply` conversational-flow state machine
+    (multi-turn interactions, e.g. "what's your answer?") — that's a separate, bigger piece of the
+    module framework, deliberately out of scope for this pass so it stayed testable in one slice.
+  - Verified for real against `@Beefy_Surprise_bot`: `/ping` and `/help` both round-tripped
+    correctly, both via plain `dotnet run` and through the full `docker compose` path — confirmed
+    no circular-DI exception at runtime (the risk above only shows up at runtime, not compile time).
 
 ## ⚠️ This is a live production bot with several thousand users
 

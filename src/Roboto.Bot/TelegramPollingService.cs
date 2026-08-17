@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Roboto.Bot.Commands;
 using Telegram.Bot;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
@@ -11,7 +12,8 @@ namespace Roboto.Bot;
 public sealed class TelegramPollingService(
     ILogger<TelegramPollingService> logger,
     IOptions<BotOptions> options,
-    IHostApplicationLifetime lifetime) : BackgroundService
+    IHostApplicationLifetime lifetime,
+    CommandRouter commandRouter) : BackgroundService
 {
     private readonly BotOptions _options = options.Value;
     private TelegramBotClient _botClient = null!;
@@ -60,10 +62,7 @@ public sealed class TelegramPollingService(
 
         logger.LogInformation("Message from {User}: {Text}", message.From?.Username ?? message.From?.FirstName, text);
 
-        if (text.StartsWith("/ping", StringComparison.OrdinalIgnoreCase))
-        {
-            await botClient.SendMessage(message.Chat.Id, "pong", cancellationToken: cancellationToken);
-        }
+        await commandRouter.TryDispatchAsync(botClient, message, cancellationToken);
     }
 
     private Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
