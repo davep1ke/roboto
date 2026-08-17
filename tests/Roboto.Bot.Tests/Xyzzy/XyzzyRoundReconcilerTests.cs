@@ -25,14 +25,14 @@ public class XyzzyRoundReconcilerTests
     {
         var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
         var button = choiceMessage.Buttons!.First(b => b.Text == "Use Defaults");
-        await bot.SendCallbackAsync(userId, button.CallbackData);
+        await bot.SendCallbackAsync(userId, button);
     }
 
     private static async Task BeginRoundAsync(TestBot bot, long starterId)
     {
         var startMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == starterId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Start"));
         var button = startMessage.Buttons!.First(b => b.Text == "Start");
-        await bot.SendCallbackAsync(starterId, button.CallbackData);
+        await bot.SendCallbackAsync(starterId, button);
     }
 
     /// <summary>Who's judging - identified by "didn't get a hand-answer keyboard", not just "didn't
@@ -85,7 +85,7 @@ public class XyzzyRoundReconcilerTests
         var judgeId = JudgeIdOf(bot);
         var answerer = new[] { Alice, Bob, Carol }.First(id => id != judgeId);
         var button = bot.BotClient.SentMessages.Last(m => m.ChatId == answerer && m.Buttons is { Count: > 0 }).Buttons![0];
-        await bot.SendCallbackAsync(answerer, button.CallbackData);
+        await bot.SendCallbackAsync(answerer, button);
 
         await BackdateAsync(bot, TimeSpan.FromHours(13)); // past the 12h default MaxWaitHours
         await ReconcileAsync(bot);
@@ -120,7 +120,7 @@ public class XyzzyRoundReconcilerTests
         foreach (var playerId in answerers)
         {
             var button = bot.BotClient.SentMessages.Last(m => m.ChatId == playerId && m.Buttons is { Count: > 0 }).Buttons![0];
-            await bot.SendCallbackAsync(playerId, button.CallbackData);
+            await bot.SendCallbackAsync(playerId, button);
         }
 
         await BackdateAsync(bot, TimeSpan.FromHours(13));
@@ -145,10 +145,10 @@ public class XyzzyRoundReconcilerTests
         foreach (var playerId in answerers)
         {
             var button = bot.BotClient.SentMessages.Last(m => m.ChatId == playerId && m.Buttons is { Count: > 0 }).Buttons![0];
-            await bot.SendCallbackAsync(playerId, button.CallbackData);
+            await bot.SendCallbackAsync(playerId, button);
         }
         var judgeButton = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Buttons is { Count: > 0 }).Buttons![0];
-        await bot.SendCallbackAsync(judgeId, judgeButton.CallbackData);
+        await bot.SendCallbackAsync(judgeId, judgeButton);
 
         game = await games.GetAsync(ChatId, CancellationToken.None);
         Assert.Equal(XyzzyStatus.WaitingForNextHand, game.Status);

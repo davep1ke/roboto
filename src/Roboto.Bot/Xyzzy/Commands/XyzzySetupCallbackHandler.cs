@@ -12,7 +12,7 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// configure follow-ups (question limit/timeout/throttle) - this is the button half of the same
 /// conversation, routed differently because it's a discrete choice rather than typed input.
 /// </summary>
-public sealed class XyzzySetupCallbackHandler(IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds) : ICallbackQueryHandler
+public sealed class XyzzySetupCallbackHandler(IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds, DmOutbox outbox) : ICallbackQueryHandler
 {
     public bool CanHandle(string callbackData) => callbackData.StartsWith("xy:su:", StringComparison.Ordinal);
 
@@ -52,6 +52,12 @@ public sealed class XyzzySetupCallbackHandler(IServiceProvider services, XyzzyGa
                 return "Let's configure it.";
 
             default:
+                // Re-offers the same choice rather than just leaving the tapped keyboard dead - the
+                // router already removed it as the resolved head (phase 11), so without this a
+                // forged/malformed tap here would silently drop the user's DmOutbox queue's head with
+                // nothing to replace it, leaving the whole flow stuck.
+                await outbox.EnqueueButtonQuestionAsync(bot, userId, XyzzyStartCommand.ChoicePrompt,
+                    XyzzyStartCommand.BuildChoiceKeyboard(chatId), cancellationToken);
                 return "Not a valid choice.";
         }
     }

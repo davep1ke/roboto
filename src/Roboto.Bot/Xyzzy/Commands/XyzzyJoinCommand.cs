@@ -9,7 +9,7 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// (same as legacy) - once round-play lands (phase 8.2), hands get dealt and cards offered over
 /// DM, so a player who can't be DMed can't actually play.
 /// </summary>
-public sealed class XyzzyJoinCommand(XyzzyGameRepository games) : IBotCommand
+public sealed class XyzzyJoinCommand(XyzzyGameRepository games, DmOutbox outbox) : IBotCommand
 {
     public string Name => "xyzzy_join";
     public string Description => "Joins the Cards Against Humanity game in this chat.";
@@ -41,14 +41,12 @@ public sealed class XyzzyJoinCommand(XyzzyGameRepository games) : IBotCommand
             return;
         }
 
-        try
-        {
-            await context.Bot.SendMessage(caller.Id,
-                $"You joined the Cards Against Humanity game in {context.Message.Chat.Title}. " +
-                "I'll message you here when it's your turn to play or judge.",
-                cancellationToken: cancellationToken);
-        }
-        catch (Exception)
+        var notified = await outbox.EnqueueNoticeAsync(context.Bot, caller.Id,
+            $"You joined the Cards Against Humanity game in {context.Message.Chat.Title}. " +
+            "I'll message you here when it's your turn to play or judge.",
+            cancellationToken);
+
+        if (!notified)
         {
             await context.Bot.SendMessage(chatId,
                 $"{caller.FirstName} needs to open a private chat with me first before joining - I couldn't DM them.",

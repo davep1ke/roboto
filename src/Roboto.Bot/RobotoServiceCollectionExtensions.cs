@@ -45,6 +45,7 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<QuietHoursQuery>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
+        services.AddSingleton<DmOutbox>();
         services.AddSingleton<ReplyRouter>();
         services.AddSingleton<CallbackQueryRouter>();
         services.AddSingleton<MessageDispatcher>();

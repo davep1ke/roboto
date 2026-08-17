@@ -1,24 +1,15 @@
 namespace Roboto.Bot.Commands;
 
 /// <summary>
-/// Replaces the legacy ExpectedReply/parseExpectedReplies mechanism (a single global List,
-/// linearly scanned, matched by chat/user id + reply-to-message-id, keyed by an opaque
-/// `messageData` string per handler). This version: one persisted-by-userId JSON blob per user
-/// (ReplyRouter owns the key scheme), so a conversation survives a restart the same way everything
-/// else in IStateStore does.
-///
-/// A user can have **several** of these outstanding at once (phase 9, per user feedback,
-/// 2026-08-17: "I need to be able to handle this... not uncommon for users to be in multiple
-/// groups" - e.g. two different mod_xyzzy games' settings flows, or a settings flow in one chat
-/// while /setquiethours is outstanding in another) - ReplyRouter stores a list per user, not one
-/// slot, and disambiguates by requiring the DM reply to be a Telegram "reply" to the specific
-/// QuestionMessageId below whenever more than one is outstanding (matches legacy's own
-/// reply-to-message-id matching). With exactly one outstanding, a plain (non-reply) text message
-/// still works, same as before this changed - only ambiguous cases require an explicit reply-to.
-///
-/// Card answering/judging (mod_xyzzy's round-play) never uses this mechanism at all - it's
-/// inline-keyboard/CallbackQuery-based (XyzzyCallbackData encodes the chat+round+card directly in
-/// each button), so it was never subject to this limitation in the first place, before or after.
+/// The shape ReplyRouter hands an IReplyHandler once its free-text question has been answered.
+/// Superseded the legacy ExpectedReply mechanism (a single global List, matched by chat/user id +
+/// reply-to-message-id), then went through two more designs of its own before landing here: first
+/// one-slot-per-user (nothing else could be outstanding), then several-slots-with-reply-to-
+/// disambiguation (phase 8.8). Both got replaced by DmOutbox (phase 11, user's explicit design
+/// call): only one thing - a button question, a text question, or a notice, from any game or
+/// command - is ever visible/outstanding in a user's DM at a time; everything else queues and
+/// waits its turn rather than being sent immediately and disambiguated after the fact. ReplyRouter
+/// itself is now just a thin adapter over DmOutbox that preserves this exact shape for handlers.
 /// </summary>
 public sealed class PendingReply
 {
@@ -40,9 +31,4 @@ public sealed class PendingReply
     public string? Data { get; set; }
 
     public DateTime AskedUtc { get; set; }
-
-    /// <summary>The bot's own question message ID (the DM AskAsync just sent) - lets an incoming
-    /// reply be matched unambiguously via Telegram's native "reply to this message" feature when
-    /// more than one of these is outstanding for the same user.</summary>
-    public int QuestionMessageId { get; set; }
 }

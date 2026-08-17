@@ -1,7 +1,6 @@
 using Roboto.Bot.Commands;
 using Roboto.Bot.Stats;
 using Telegram.Bot;
-using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Xyzzy;
 
@@ -12,6 +11,11 @@ namespace Roboto.Bot.Xyzzy;
 /// triggers the next round) - all of them need the same "deal/ask/advance" logic, so it lives here
 /// rather than being duplicated across every caller.
 ///
+/// Every DM to a player (hand keyboards, judge keyboards, "you're judging" notices) goes through
+/// DmOutbox rather than being sent directly - phase 11, user's explicit design call: only one
+/// thing (from any game) is ever outstanding in a player's DM at a time, so a player mid-round in
+/// two games gets dealt their second hand only once they've resolved the first.
+///
 /// Deck refilling: a card is only ever "in play" while it's sitting in a player's Hand (or is the
 /// current question) - once played/judged it's simply removed and never stored anywhere else, so
 /// it's immediately free to be dealt again in a future refill. Refills explicitly exclude whatever
@@ -19,7 +23,7 @@ namespace Roboto.Bot.Xyzzy;
 /// once - that uniqueness is what lets a card ID alone (via XyzzyCallbackData) unambiguously
 /// identify "which submission is this" during judging, no extra bookkeeping needed.
 /// </summary>
-public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery quietHours, StatsRecorder stats)
+public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery quietHours, DmOutbox outbox, StatsRecorder stats)
 {
     public const int HandSize = 10;
 
@@ -40,11 +44,10 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         game.StatusChangedUtc = DateTime.UtcNow;
         await games.SaveAsync(game, cancellationToken);
 
-        var keyboard = new InlineKeyboardMarkup([[InlineKeyboardButton.WithCallbackData("Start", $"xy:sb:{game.ChatId}")]]);
-        await TrySendDmAsync(bot, starterId,
+        await outbox.EnqueueButtonQuestionAsync(bot, starterId,
             "Setup's done! Use /xyzzy_join in the group to gather players, then tap Start whenever you're ready " +
             $"- I'll fill any empty slots (below {MinPlayers} players) with bots.",
-            keyboard, cancellationToken);
+            [[new DmButton("Start", $"xy:sb:{game.ChatId}")]], cancellationToken);
 
         await bot.SendMessage(game.ChatId,
             "Setup's done! Use /xyzzy_join to play - the starter can begin whenever they're ready.",
@@ -81,16 +84,15 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
 
         if (!judge.IsBot)
         {
-            await TrySendDmAsync(bot, judge.PlayerId,
+            await outbox.EnqueueNoticeAsync(bot, judge.PlayerId,
                 $"Round {game.RoundNumber}: you're judging! \"{question.Text}\"\nWaiting for everyone else to answer...",
-                null, cancellationToken);
+                cancellationToken);
         }
 
         foreach (var player in game.Players.Where(p => p.PlayerId != game.JudgePlayerId && !p.IsBot))
         {
-            var keyboard = BuildHandKeyboard(game, player);
-            await TrySendDmAsync(bot, player.PlayerId,
-                $"Round {game.RoundNumber}: \"{question.Text}\"\nPick a card:", keyboard, cancellationToken);
+            await outbox.EnqueueButtonQuestionAsync(bot, player.PlayerId,
+                $"Round {game.RoundNumber}: \"{question.Text}\"\nPick a card:", BuildHandKeyboard(game, player), cancellationToken);
         }
 
         await bot.SendMessage(game.ChatId,
@@ -252,40 +254,10 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         }
 
         var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
-        await TrySendDmAsync(bot, judge.PlayerId,
+        await outbox.EnqueueButtonQuestionAsync(bot, judge.PlayerId,
             $"Everyone's answered! Pick the winner for: \"{question.Text}\"", BuildJudgeKeyboard(game), cancellationToken);
 
         await bot.SendMessage(game.ChatId, "All answers are in - the judge is picking a winner.", cancellationToken: cancellationToken);
-    }
-
-    /// <summary>
-    /// Re-sends whichever keyboard (hand or judge) a player still hasn't acted on, with a short
-    /// reminder - added after user feedback that running /xyzzy_settings mid-round buried the
-    /// original "pick a card"/"pick a winner" message with no way to tell it was still waiting on
-    /// them. A no-op if this player doesn't currently have anything outstanding (not in the game,
-    /// already answered, not the judge, game isn't even mid-round, etc.) - safe to call
-    /// unconditionally after any settings interaction finishes.
-    /// </summary>
-    public async Task RemindIfActionPendingAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, CancellationToken cancellationToken)
-    {
-        var player = game.FindPlayer(userId);
-        if (player is null || player.IsBot)
-        {
-            return;
-        }
-
-        if (game.Status is XyzzyStatus.Question && userId != game.JudgePlayerId && !game.Submissions.ContainsKey(userId))
-        {
-            var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
-            await TrySendDmAsync(bot, userId,
-                $"Reminder: I'm still waiting on your answer for \"{question.Text}\".", BuildHandKeyboard(game, player), cancellationToken);
-        }
-        else if (game.Status is XyzzyStatus.Judging && userId == game.JudgePlayerId)
-        {
-            var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
-            await TrySendDmAsync(bot, userId,
-                $"Reminder: I'm still waiting on you to pick a winner for \"{question.Text}\".", BuildJudgeKeyboard(game), cancellationToken);
-        }
     }
 
     /// <summary>Throttle/quiet-hours gate between hands (phase 8.3) - mirrors legacy's
@@ -393,43 +365,19 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         }
     }
 
-    private static InlineKeyboardMarkup BuildHandKeyboard(XyzzyGameState game, XyzzyPlayer player)
-    {
-        var rows = player.Hand.Select(cardId =>
+    private static List<List<DmButton>> BuildHandKeyboard(XyzzyGameState game, XyzzyPlayer player) =>
+        player.Hand.Select(cardId =>
         {
             var card = CardCatalog.Answers.First(a => a.Id == cardId);
             var data = new XyzzyCallbackData("a", game.ChatId, game.RoundNumber, cardId).Encode();
-            return new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData(card.Text, data) };
+            return new List<DmButton> { new(card.Text, data) };
         }).ToList();
 
-        return new InlineKeyboardMarkup(rows);
-    }
-
-    private static InlineKeyboardMarkup BuildJudgeKeyboard(XyzzyGameState game)
-    {
-        var entries = game.Submissions.Select(kvp => kvp.Value[0]).OrderBy(_ => Random.Shared.Next()).ToList();
-        var rows = entries.Select(cardId =>
+    private static List<List<DmButton>> BuildJudgeKeyboard(XyzzyGameState game) =>
+        game.Submissions.Select(kvp => kvp.Value[0]).OrderBy(_ => Random.Shared.Next()).Select(cardId =>
         {
             var card = CardCatalog.Answers.First(a => a.Id == cardId);
             var data = new XyzzyCallbackData("j", game.ChatId, game.RoundNumber, cardId).Encode();
-            return new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData(card.Text, data) };
+            return new List<DmButton> { new(card.Text, data) };
         }).ToList();
-
-        return new InlineKeyboardMarkup(rows);
-    }
-
-    /// <summary>Swallows DM failures (blocked/never-opened chat) so one unreachable player doesn't
-    /// crash the whole round-start - a deliberate v1 simplification of legacy's fuller dormant-player
-    /// bookkeeping (removal, chat notices). Revisit if this turns out to matter in practice.</summary>
-    private static async Task TrySendDmAsync(ITelegramBotClient bot, long userId, string text, InlineKeyboardMarkup? keyboard, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await bot.SendMessage(userId, text, replyMarkup: keyboard, cancellationToken: cancellationToken);
-        }
-        catch (Exception)
-        {
-            // Best-effort - see doc comment above.
-        }
-    }
 }

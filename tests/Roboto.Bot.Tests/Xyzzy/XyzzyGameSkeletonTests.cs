@@ -16,7 +16,7 @@ public class XyzzyGameSkeletonTests
         await bot.SendAsync(TestBot.GroupMessage(chatId, userId, "/xyzzy_start", firstName: firstName));
         var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
         var button = choiceMessage.Buttons!.First(b => b.Text == "Use Defaults");
-        await bot.SendCallbackAsync(userId, button.CallbackData, firstName: firstName);
+        await bot.SendCallbackAsync(userId, button, firstName: firstName);
     }
 
     [Fact]
@@ -30,7 +30,7 @@ public class XyzzyGameSkeletonTests
         Assert.Contains("is starting a new game", bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId).Text);
 
         var defaultsButton = choiceMessage.Buttons!.First(b => b.Text == "Use Defaults");
-        await bot.SendCallbackAsync(FirstUser, defaultsButton.CallbackData);
+        await bot.SendCallbackAsync(FirstUser, defaultsButton);
         Assert.Contains("Setup's done", bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId).Text);
 
         // The starter also gets a DM "Start" button now, instead of a group /xyzzy_begin command.

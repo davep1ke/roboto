@@ -25,7 +25,7 @@ public class XyzzyRoundLoopTests
     {
         var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
         var button = choiceMessage.Buttons!.First(b => b.Text == "Use Defaults");
-        await bot.SendCallbackAsync(userId, button.CallbackData);
+        await bot.SendCallbackAsync(userId, button);
     }
 
     /// <summary>Taps the "Start" button XyzzyRoundService.FinishSetupAsync DMs the starter once
@@ -34,7 +34,7 @@ public class XyzzyRoundLoopTests
     {
         var startMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == starterId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Start"));
         var button = startMessage.Buttons!.First(b => b.Text == "Start");
-        await bot.SendCallbackAsync(starterId, button.CallbackData);
+        await bot.SendCallbackAsync(starterId, button);
     }
 
     private static SentButton FirstHandButton(TestBot bot, long playerId) =>
@@ -78,7 +78,7 @@ public class XyzzyRoundLoopTests
         // waiting immediately.
         var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
         Assert.Equal(2, judgeMessage.Buttons!.Count);
-        await bot.SendCallbackAsync(Alice, judgeMessage.Buttons[0].CallbackData);
+        await bot.SendCallbackAsync(Alice, judgeMessage.Buttons[0]);
         Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins the round"));
 
         // Round 2: judge rotates to Bot1 (index 1) - Alice just needs to answer, and since the
@@ -87,7 +87,7 @@ public class XyzzyRoundLoopTests
         // chaining all the way to round 3 within this one callback.
         var handMessage = bot.BotClient.SentMessages.Last(m =>
             m.ChatId == Alice && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal)));
-        await bot.SendCallbackAsync(Alice, handMessage.Buttons![0].CallbackData);
+        await bot.SendCallbackAsync(Alice, handMessage.Buttons![0]);
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_status"));
         Assert.Contains("Round 3", bot.BotClient.SentMessages[^1].Text);
@@ -131,7 +131,7 @@ public class XyzzyRoundLoopTests
         foreach (var playerId in answerers)
         {
             var button = FirstHandButton(bot, playerId);
-            await bot.SendCallbackAsync(playerId, button.CallbackData);
+            await bot.SendCallbackAsync(playerId, button);
         }
 
         // Judging should have kicked in automatically once both answered - the judge got a DM
@@ -142,7 +142,7 @@ public class XyzzyRoundLoopTests
 
         // Judge picks a winner.
         var winningButton = judgeKeyboardMessage.Buttons[0];
-        await bot.SendCallbackAsync(judgeId, winningButton.CallbackData);
+        await bot.SendCallbackAsync(judgeId, winningButton);
 
         // A winner was announced in the group, and the round auto-advanced to a new question
         // (round 2) - everyone (including the old judge, now presumably answering) got a fresh
@@ -167,14 +167,14 @@ public class XyzzyRoundLoopTests
         var answerer = new[] { Alice, Bob, Carol }.First(id => id != judgeId);
 
         var button = FirstHandButton(bot, answerer);
-        await bot.SendCallbackAsync(answerer, button.CallbackData);
+        await bot.SendCallbackAsync(answerer, button);
         Assert.Contains("submitted", bot.BotClient.AnsweredCallbacks[^1].Text!);
 
-        // Tapping again (even a different card from the same hand-deal message) should be rejected -
-        // the first card was already consumed from Hand and the round already has their submission.
-        var repeatAnswer = FirstHandButton(bot, answerer);
-        await bot.SendCallbackAsync(answerer, repeatAnswer.CallbackData);
-        Assert.Contains("already answered", bot.BotClient.AnsweredCallbacks[^1].Text!);
+        // Tapping again on the same (now-resolved and no longer their DmOutbox head) message
+        // should be rejected - answering already popped it from their queue, so a second tap on it
+        // is now indistinguishable from any other stale button.
+        await bot.SendCallbackAsync(answerer, button);
+        Assert.Contains("isn't valid any more", bot.BotClient.AnsweredCallbacks[^1].Text!);
     }
 
     [Fact]
@@ -186,12 +186,13 @@ public class XyzzyRoundLoopTests
         var judgeId = new[] { Alice, Bob, Carol }.First(id =>
             !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal))));
 
-        // The judge never got a hand keyboard to tap in the first place, but even a forged
-        // callback for a card they don't hold should be rejected cleanly.
+        // The judge never got a hand keyboard to tap in the first place - they have nothing
+        // outstanding at all, so even a forged callback for a card they don't hold is rejected at
+        // the DmOutbox level (phase 11) before it ever reaches the game logic that used to be the
+        // only thing guarding against this.
         var forgedData = new XyzzyCallbackData("a", ChatId, 1, "a01").Encode();
-        await bot.SendCallbackAsync(judgeId, forgedData);
-        string[] acceptableReasons = ["The judge doesn't submit an answer.", "That card isn't in your hand any more."];
-        Assert.Contains(bot.BotClient.AnsweredCallbacks[^1].Text!, acceptableReasons);
+        await bot.SendCallbackAsync(judgeId, forgedData, messageId: 0);
+        Assert.Contains("isn't valid any more", bot.BotClient.AnsweredCallbacks[^1].Text!);
     }
 
     [Fact]
@@ -209,13 +210,16 @@ public class XyzzyRoundLoopTests
         // Play the round out normally first so the round number advances past the stale button.
         foreach (var playerId in answerers)
         {
-            await bot.SendCallbackAsync(playerId, FirstHandButton(bot, playerId).CallbackData);
+            await bot.SendCallbackAsync(playerId, FirstHandButton(bot, playerId));
         }
         var judgeKeyboardMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Buttons is { Count: > 0 });
-        await bot.SendCallbackAsync(judgeId, judgeKeyboardMessage.Buttons![0].CallbackData);
+        await bot.SendCallbackAsync(judgeId, judgeKeyboardMessage.Buttons![0]);
 
-        // Now replay the very first (round-1) button - the round's moved on to round 2.
-        await bot.SendCallbackAsync(answerers[0], staleButton.CallbackData);
-        Assert.Contains("round's already over", bot.BotClient.AnsweredCallbacks[^1].Text!);
+        // Now replay the very first (round-1) button - round 2 has already dealt them a new hand
+        // (a different message), so this old one is no longer their DmOutbox head at all and gets
+        // rejected before it can even reach the round-staleness check XyzzyCallbackData's own round
+        // number provides as a second line of defense.
+        await bot.SendCallbackAsync(answerers[0], staleButton);
+        Assert.Contains("isn't valid any more", bot.BotClient.AnsweredCallbacks[^1].Text!);
     }
 }

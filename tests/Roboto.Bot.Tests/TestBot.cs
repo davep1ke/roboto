@@ -58,10 +58,17 @@ public sealed class TestBot : IDisposable
     public Task SendAsync(Message message, CancellationToken cancellationToken = default) =>
         Dispatcher.DispatchAsync(BotClient, new Update { Message = message }, cancellationToken);
 
-    /// <summary>Simulates a user tapping an inline-keyboard button (a CallbackQuery update) - the
-    /// callback data is normally read off a SentMessage's Buttons (see FakeTelegramBotClient) that
-    /// was sent to that same user, e.g. bot.BotClient.SentMessages.Last(m =&gt; m.ChatId == userId).Buttons![0].CallbackData.</summary>
-    public Task SendCallbackAsync(long userId, string callbackData, string firstName = "Test", CancellationToken cancellationToken = default)
+    /// <summary>Simulates a user tapping an inline-keyboard button (a CallbackQuery update) - pass
+    /// the actual SentButton (see FakeTelegramBotClient.SentMessages) so the tap carries the real
+    /// message ID CallbackQueryRouter now checks against the user's DmOutbox head (phase 11), not
+    /// just the callback data.</summary>
+    public Task SendCallbackAsync(long userId, SentButton button, string firstName = "Test", CancellationToken cancellationToken = default) =>
+        SendCallbackAsync(userId, button.CallbackData, button.MessageId, firstName, cancellationToken);
+
+    /// <summary>Lower-level version for tests that need to simulate a tap on a specific (possibly
+    /// forged-data or deliberately-wrong-message-id) button rather than a real SentButton - e.g.
+    /// proving a stale or tampered tap is rejected.</summary>
+    public Task SendCallbackAsync(long userId, string callbackData, int messageId, string firstName = "Test", CancellationToken cancellationToken = default)
     {
         var update = new Update
         {
@@ -69,7 +76,7 @@ public sealed class TestBot : IDisposable
             {
                 Id = Guid.NewGuid().ToString(),
                 From = new User { Id = userId, FirstName = firstName },
-                Message = new Message { Chat = new Chat { Id = userId, Type = ChatType.Private } },
+                Message = new Message { Id = messageId, Chat = new Chat { Id = userId, Type = ChatType.Private } },
                 Data = callbackData,
             },
         };

@@ -4,7 +4,6 @@ using Roboto.Bot.Stats;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Xyzzy.Commands;
 
@@ -26,14 +25,25 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// Resolves ReplyRouter lazily via IServiceProvider rather than as a constructor dependency - see
 /// the warning in ReplyRouter's own doc comment for why a direct dependency here would be circular.
 /// </summary>
-public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds, StatsRecorder stats) : IReplyHandler
+public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds, DmOutbox outbox, StatsRecorder stats) : IReplyHandler
 {
     public const string AskQuestionLimit = "question-limit";
     public const string AskTimeout = "timeout";
     public const string AskThrottle = "throttle";
+    public const string ChoicePrompt = "Do you want to start the game with default settings, or set advanced options first?";
 
     public string Name => "xyzzy_start";
     public string Description => "Starts a new Cards Against Humanity game in this chat.";
+
+    /// <summary>Shared with XyzzySetupCallbackHandler, which re-offers this same choice (same
+    /// callback_data format) if a tap comes in with an unrecognised choice - keeping the keyboard
+    /// content in exactly one place so the two can't drift out of sync.</summary>
+    public static List<List<DmButton>> BuildChoiceKeyboard(long chatId) =>
+    [
+        [new DmButton("Use Defaults", $"xy:su:{chatId}:defaults")],
+        [new DmButton("Configure Game", $"xy:su:{chatId}:configure")],
+        [new DmButton("Cancel", $"xy:su:{chatId}:cancel")],
+    ];
 
     public async Task ExecuteAsync(CommandContext context, CancellationToken cancellationToken)
     {
@@ -64,25 +74,8 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
         game.StatusChangedUtc = DateTime.UtcNow;
         await games.SaveAsync(game, cancellationToken);
 
-        var keyboard = new InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton.WithCallbackData("Use Defaults", $"xy:su:{chatId}:defaults")],
-            [InlineKeyboardButton.WithCallbackData("Configure Game", $"xy:su:{chatId}:configure")],
-            [InlineKeyboardButton.WithCallbackData("Cancel", $"xy:su:{chatId}:cancel")],
-        ]);
-
-        bool asked;
-        try
-        {
-            await context.Bot.SendMessage(caller.Id,
-                "Do you want to start the game with default settings, or set advanced options first?",
-                replyMarkup: keyboard, cancellationToken: cancellationToken);
-            asked = true;
-        }
-        catch (Exception)
-        {
-            asked = false;
-        }
+        var asked = await outbox.EnqueueButtonQuestionAsync(context.Bot, caller.Id,
+            ChoicePrompt, BuildChoiceKeyboard(chatId), cancellationToken);
 
         if (!asked)
         {

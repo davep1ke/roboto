@@ -8,7 +8,7 @@ using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Tests;
 
-public sealed record SentButton(string Text, string CallbackData);
+public sealed record SentButton(string Text, string CallbackData, int MessageId);
 
 public sealed record SentMessage(long ChatId, string Text, IReadOnlyList<SentButton>? Buttons = null, int Id = 0);
 
@@ -62,12 +62,12 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
                     throw new ApiRequestException("Forbidden: bot can't initiate conversation with a user", 403);
                 }
 
+                var sentId = SentMessages.Count + 1;
                 var buttons = sendMessage.ReplyMarkup is InlineKeyboardMarkup markup
                     ? markup.InlineKeyboard.SelectMany(row => row)
-                        .Select(b => new SentButton(b.Text, b.CallbackData ?? ""))
+                        .Select(b => new SentButton(b.Text, b.CallbackData ?? "", sentId))
                         .ToList()
                     : null;
-                var sentId = SentMessages.Count + 1;
                 SentMessages.Add(new SentMessage(chatId, sendMessage.Text ?? "", buttons, sentId));
                 var message = new Message
                 {

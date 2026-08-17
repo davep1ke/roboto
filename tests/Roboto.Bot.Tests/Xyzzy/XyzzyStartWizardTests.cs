@@ -19,14 +19,14 @@ public class XyzzyStartWizardTests
     {
         var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
         var button = choiceMessage.Buttons!.First(b => b.Text == buttonText);
-        await bot.SendCallbackAsync(userId, button.CallbackData);
+        await bot.SendCallbackAsync(userId, button);
     }
 
     private static async Task BeginRoundAsync(TestBot bot, long starterId)
     {
         var startMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == starterId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Start"));
         var button = startMessage.Buttons!.First(b => b.Text == "Start");
-        await bot.SendCallbackAsync(starterId, button.CallbackData);
+        await bot.SendCallbackAsync(starterId, button);
     }
 
     [Fact]
@@ -118,7 +118,8 @@ public class XyzzyStartWizardTests
         using var bot = new TestBot();
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
-        await bot.SendCallbackAsync(Alice, $"xy:su:{ChatId}:maybe");
+        var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, $"xy:su:{ChatId}:maybe", choiceMessage.Id);
         Assert.Contains("Not a valid choice", bot.BotClient.AnsweredCallbacks[^1].Text!);
 
         await bot.SendAsync(TestBot.PrivateMessage(Alice, "defaults", firstName: "Alice"));
@@ -165,10 +166,10 @@ public class XyzzyStartWizardTests
         foreach (var playerId in answerers)
         {
             var button = bot.BotClient.SentMessages.Last(m => m.ChatId == playerId && m.Buttons is { Count: > 0 }).Buttons![0];
-            await bot.SendCallbackAsync(playerId, button.CallbackData);
+            await bot.SendCallbackAsync(playerId, button);
         }
         var judgeButton = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Buttons is { Count: > 0 }).Buttons![0];
-        await bot.SendCallbackAsync(judgeId, judgeButton.CallbackData);
+        await bot.SendCallbackAsync(judgeId, judgeButton);
 
         Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("end of the game"));
         Assert.Equal(XyzzyStatus.Stopped, (await GameAsync(bot)).Status);

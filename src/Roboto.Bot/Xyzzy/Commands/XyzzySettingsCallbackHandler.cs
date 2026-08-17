@@ -4,7 +4,6 @@ using Roboto.Bot.Commands;
 using Roboto.Bot.Stats;
 using Telegram.Bot;
 using Telegram.Bot.Types;
-using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Xyzzy.Commands;
 
@@ -16,7 +15,7 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// a correctness improvement over the free-text version, which had to do fuzzy name lookups).
 /// </summary>
 public sealed class XyzzySettingsCallbackHandler(
-    IServiceProvider services, XyzzyGameRepository games, XyzzyRoundService rounds, StatsRecorder stats, ILogger<XyzzySettingsCallbackHandler> logger) : ICallbackQueryHandler
+    IServiceProvider services, XyzzyGameRepository games, DmOutbox outbox, StatsRecorder stats, ILogger<XyzzySettingsCallbackHandler> logger) : ICallbackQueryHandler
 {
     public bool CanHandle(string callbackData) => callbackData.StartsWith("xy:se:", StringComparison.Ordinal);
 
@@ -52,7 +51,6 @@ public sealed class XyzzySettingsCallbackHandler(
         {
             case "cancel":
                 await bot.SendMessage(userId, "Cancelled.", cancellationToken: cancellationToken);
-                await rounds.RemindIfActionPendingAsync(bot, game, userId, cancellationToken);
                 return "Cancelled.";
 
             case "abandon":
@@ -79,7 +77,7 @@ public sealed class XyzzySettingsCallbackHandler(
                 {
                     return "No players to kick.";
                 }
-                await bot.SendMessage(userId, "Who do you want to kick?", replyMarkup: BuildPlayerKeyboard(game, "kick"), cancellationToken: cancellationToken);
+                await outbox.EnqueueButtonQuestionAsync(bot, userId, "Who do you want to kick?", BuildPlayerKeyboard(game, "kick"), cancellationToken);
                 return "Pick a player.";
 
             case "score":
@@ -87,7 +85,7 @@ public sealed class XyzzySettingsCallbackHandler(
                 {
                     return "No players to score.";
                 }
-                await bot.SendMessage(userId, "Whose score do you want to change?", replyMarkup: BuildPlayerKeyboard(game, "score"), cancellationToken: cancellationToken);
+                await outbox.EnqueueButtonQuestionAsync(bot, userId, "Whose score do you want to change?", BuildPlayerKeyboard(game, "score"), cancellationToken);
                 return "Pick a player.";
 
             default:
@@ -111,7 +109,6 @@ public sealed class XyzzySettingsCallbackHandler(
         await games.SaveAsync(game, cancellationToken);
 
         await bot.SendMessage(game.ChatId, $"{target.DisplayName} was kicked from the game.", cancellationToken: cancellationToken);
-        await rounds.RemindIfActionPendingAsync(bot, game, userId, cancellationToken);
         return $"Kicked {target.DisplayName}.";
     }
 
@@ -127,11 +124,6 @@ public sealed class XyzzySettingsCallbackHandler(
         return $"Picked {target.DisplayName}.";
     }
 
-    private static InlineKeyboardMarkup BuildPlayerKeyboard(XyzzyGameState game, string action)
-    {
-        var rows = game.Players
-            .Select(p => new List<InlineKeyboardButton> { InlineKeyboardButton.WithCallbackData(p.DisplayName, $"xy:se:{game.ChatId}:{action}:{p.PlayerId}") })
-            .ToList();
-        return new InlineKeyboardMarkup(rows);
-    }
+    private static List<List<DmButton>> BuildPlayerKeyboard(XyzzyGameState game, string action) =>
+        game.Players.Select(p => new List<DmButton> { new(p.DisplayName, $"xy:se:{game.ChatId}:{action}:{p.PlayerId}") }).ToList();
 }

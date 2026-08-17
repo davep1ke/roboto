@@ -14,13 +14,13 @@ public class XyzzyStatsTests
     private static async Task TapUseDefaultsAsync(TestBot bot, long userId)
     {
         var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
-        await bot.SendCallbackAsync(userId, choiceMessage.Buttons!.First(b => b.Text == "Use Defaults").CallbackData);
+        await bot.SendCallbackAsync(userId, choiceMessage.Buttons!.First(b => b.Text == "Use Defaults"));
     }
 
     private static async Task BeginRoundAsync(TestBot bot, long starterId)
     {
         var startMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == starterId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Start"));
-        await bot.SendCallbackAsync(starterId, startMessage.Buttons!.First(b => b.Text == "Start").CallbackData);
+        await bot.SendCallbackAsync(starterId, startMessage.Buttons!.First(b => b.Text == "Start"));
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class XyzzyStatsTests
 
         // Alice judges round 1 (deterministic - Players[0]); bots auto-answer instantly.
         var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
-        await bot.SendCallbackAsync(Alice, judgeMessage.Buttons![0].CallbackData);
+        await bot.SendCallbackAsync(Alice, judgeMessage.Buttons![0]);
 
         var series = await stats.GetAsync("xyzzy.hands-played", CancellationToken.None);
         Assert.Equal(1, series!.Total);
@@ -61,10 +61,18 @@ public class XyzzyStatsTests
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
         await TapUseDefaultsAsync(bot, Alice);
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Bob, "/xyzzy_join", firstName: "Bob"));
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Carol, "/xyzzy_join", firstName: "Carol"));
+        await BeginRoundAsync(bot, Alice);
+        // Alice judges round 1 (deterministic - Players[0]). With real (non-bot) answerers, judging
+        // can't begin until they actually answer, so this is a non-blocking notice, leaving her
+        // queue clear to open /xyzzy_settings immediately - same reasoning as XyzzySettingsTests'
+        // ThreePlayerGameAsync helper. (Unlike PlayingAHandRecordsHandsPlayed above, which relies on
+        // bots auto-answering specifically to prove the hands-played stat fires.)
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
         var menuMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
-        await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Abandon").CallbackData);
+        await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Abandon"));
 
         var series = await stats.GetAsync("xyzzy.games-ended", CancellationToken.None);
         Assert.Equal(1, series!.Total);

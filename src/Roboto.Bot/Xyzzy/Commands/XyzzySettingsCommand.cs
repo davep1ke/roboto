@@ -4,7 +4,6 @@ using Roboto.Bot.Commands;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.ReplyMarkups;
 
 namespace Roboto.Bot.Xyzzy.Commands;
 
@@ -17,17 +16,17 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// step stay free-text through ReplyRouter - no sensible keyboard for an arbitrary number, same
 /// reasoning as /xyzzy_start's configure flow.
 ///
-/// Every value set here ends by calling XyzzyRoundService.RemindIfActionPendingAsync for the admin
-/// who ran this - added after user feedback that running /xyzzy_settings mid-round buried their own
-/// still-outstanding "pick a card"/"pick a winner" prompt with no way to tell it was still waiting.
+/// The menu itself goes through DmOutbox (phase 11) like everything else that DMs a player - if the
+/// admin already has something else outstanding (a card to play in another game, say), the menu
+/// simply won't appear until they've cleared it. That structurally replaces phase 8.7's
+/// RemindIfActionPendingAsync nudge: a still-pending game question can no longer get buried by
+/// opening this menu in the first place, since the menu can't even be shown until the question's
+/// answered.
 ///
-/// Resolves ReplyRouter/XyzzyRoundService lazily via IServiceProvider rather than as constructor
-/// dependencies - see the warning in ReplyRouter's own doc comment for why a direct ReplyRouter
-/// dependency here would be circular (XyzzyRoundService itself is safe as a constructor dependency,
-/// but is resolved the same way here for consistency with the ReplyRouter lookups sitting right
-/// next to it).
+/// Resolves ReplyRouter lazily via IServiceProvider rather than as a constructor dependency - see
+/// the warning in ReplyRouter's own doc comment for why a direct dependency here would be circular.
 /// </summary>
-public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRepository games, ChatRepository chats) : IReplyHandler
+public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRepository games, ChatRepository chats, DmOutbox outbox) : IReplyHandler
 {
     public const string AwaitTimeout = "timeout";
     public const string AwaitThrottle = "throttle";
@@ -62,22 +61,18 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
             return;
         }
 
-        var keyboard = new InlineKeyboardMarkup(
+        List<List<DmButton>> keyboard =
         [
-            [InlineKeyboardButton.WithCallbackData("Abandon", $"xy:se:{chatId}:menu:abandon")],
-            [InlineKeyboardButton.WithCallbackData("Timeout", $"xy:se:{chatId}:menu:timeout")],
-            [InlineKeyboardButton.WithCallbackData("Throttle", $"xy:se:{chatId}:menu:throttle")],
-            [InlineKeyboardButton.WithCallbackData("Kick", $"xy:se:{chatId}:menu:kick")],
-            [InlineKeyboardButton.WithCallbackData("Score", $"xy:se:{chatId}:menu:score")],
-            [InlineKeyboardButton.WithCallbackData("Cancel", $"xy:se:{chatId}:menu:cancel")],
-        ]);
+            [new DmButton("Abandon", $"xy:se:{chatId}:menu:abandon")],
+            [new DmButton("Timeout", $"xy:se:{chatId}:menu:timeout")],
+            [new DmButton("Throttle", $"xy:se:{chatId}:menu:throttle")],
+            [new DmButton("Kick", $"xy:se:{chatId}:menu:kick")],
+            [new DmButton("Score", $"xy:se:{chatId}:menu:score")],
+            [new DmButton("Cancel", $"xy:se:{chatId}:menu:cancel")],
+        ];
 
-        try
-        {
-            await context.Bot.SendMessage(caller.Id,
-                "Cards Against Humanity settings:", replyMarkup: keyboard, cancellationToken: cancellationToken);
-        }
-        catch (Exception)
+        var asked = await outbox.EnqueueButtonQuestionAsync(context.Bot, caller.Id, "Cards Against Humanity settings:", keyboard, cancellationToken);
+        if (!asked)
         {
             await context.Bot.SendMessage(chatId,
                 $"{caller.FirstName} needs to open a private chat with me first.", cancellationToken: cancellationToken);
@@ -88,7 +83,6 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
     {
         var game = await games.GetAsync(pending.TargetChatId, cancellationToken);
         var replies = services.GetRequiredService<ReplyRouter>();
-        var rounds = services.GetRequiredService<XyzzyRoundService>();
         var text = reply.Text!.Trim();
 
         switch (pending.Step)
@@ -104,7 +98,6 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
                 game.MaxWaitHours = maxHours;
                 await games.SaveAsync(game, cancellationToken);
                 await bot.SendMessage(pending.UserId, $"Timeout set to {maxHours}h.", cancellationToken: cancellationToken);
-                await rounds.RemindIfActionPendingAsync(bot, game, pending.UserId, cancellationToken);
                 break;
 
             case AwaitThrottle:
@@ -118,7 +111,6 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
                 game.MinWaitHours = minHours;
                 await games.SaveAsync(game, cancellationToken);
                 await bot.SendMessage(pending.UserId, $"Throttle set to {minHours}h.", cancellationToken: cancellationToken);
-                await rounds.RemindIfActionPendingAsync(bot, game, pending.UserId, cancellationToken);
                 break;
 
             case AwaitScorePoints:
@@ -139,7 +131,6 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
                 target.Wins = points;
                 await games.SaveAsync(game, cancellationToken);
                 await bot.SendMessage(pending.UserId, $"{target.DisplayName}'s score is now {points}.", cancellationToken: cancellationToken);
-                await rounds.RemindIfActionPendingAsync(bot, game, pending.UserId, cancellationToken);
                 break;
         }
     }

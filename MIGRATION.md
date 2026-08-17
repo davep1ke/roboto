@@ -29,7 +29,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.5 `mod_xyzzy`: proper `/xyzzy_start` setup wizard (defaults/configure) | Done, verified | `e641fb6` |
 | 8.6 `mod_xyzzy`: setup/begin keyboards moved to DM, bot players | Done, verified | `24571d1` |
 | 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | `eecdd66` |
-| 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, verified | `7440283` |
+| 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, superseded by 8.9 | `7440283` |
+| 8.9 `DmOutbox`: strict per-user one-thing-at-a-time DM serialization | Done, verified | `TBD` |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
 | 10b. Charting (ScottPlot), `/statgraph` | Not started - separate from 10a, see below | — |
@@ -482,6 +483,81 @@ regardless of which message was replied to, confirmed exactly the two tests that
 disambiguation failed - with a values-crossed-between-contexts message, the exact failure mode this
 phase exists to prevent - while the other 69 passed, then reverted. `docker compose build`
 unaffected.
+
+## 8.9: `DmOutbox` — strict per-user DM serialization — done and verified (2026-08-18)
+
+Supersedes 8.8 entirely, not an incremental change to it. Walking through the scenario the user
+posed - mid-setup in a third group while two other games are in progress - exposed that 8.8's
+reply-to-disambiguation design still let every game send DMs the instant it had something to say;
+only *answering* was disambiguated. The user rejected that outright: "The question is still sat
+there waiting, but I don't like that behaviour as its confusing for users. They will forget to
+answer the original question as it will scroll off the chat window. We should queue everything
+(questions, expected replies, messages) and only send things when the window is clear." They also
+explicitly rejected treating button questions and typed-reply questions as different cases: "I
+don't see any difference between a question thats been asked with a keyboard vs a question thats
+been asked waiting for a text reply."
+
+Built `Commands/DmOutbox.cs`: every DM the bot sends a user that's part of a conversation - a
+notice, a button question, or a free-text question - now goes through one per-user FIFO queue
+(`dm-outbox:{userId}`) instead of `bot.SendMessage` directly. Only the queue head is ever actually
+delivered; everything else waits until it's resolved. `ReplyRouter` and the pre-existing
+`CallbackQueryRouter` (8.2) both shrank to thin adapters over it - `PendingReply` lost the
+multi-context reply-to matching 8.8 added (`QuestionMessageId`, the "which of several pending
+replies" logic) since there's structurally only ever one thing to answer per user now.
+`CallbackQueryRouter` gained a stronger staleness guard as a side effect: a tap is only dispatched
+if the tapped message ID is exactly the user's current DmOutbox head, ahead of (not replacing) the
+existing per-round staleness check baked into `xy:*` callback_data itself.
+
+Two ordering subtleties came up that weren't obvious until real flows were traced through:
+
+- **Remove-then-pump, not remove-and-pump.** Resolving the queue head and pumping the next item had
+  to be split into two separate calls (`RemoveCurrentHeadAsync`, then `PumpNextAsync`), with the
+  answering handler's own dispatch happening in between. Discovered as a real bug, not
+  hypothetically: a multi-step flow's own next question (e.g. `/setquiethours`' end-time prompt,
+  asked from inside the handler that just validated the start time) was landing *behind* an
+  unrelated game's already-queued message instead of immediately after its own start-time question
+  - exactly the fragmentation the user's directive was written to prevent. Fixed by giving
+  `DmOutbox` a per-user "resolving" window (`_resolvingInsertIndex`, in-memory only): entries
+  enqueued between `RemoveCurrentHeadAsync` and `PumpNextAsync` insert at the front of the queue,
+  in call order, ahead of anything a different flow already queued behind the head that just
+  resolved - `PumpNextAsync` then delivers whichever of those is now first.
+- **A rejected/invalid answer needs a real replacement, not just an error toast.** For typed
+  replies this was already true (`SetQuietHoursCommand`/`XyzzyStartCommand` re-`AskAsync` a fresh
+  prompt on invalid input). Button flows didn't have the equivalent: since the router removes the
+  head unconditionally before dispatching, `XyzzySetupCallbackHandler`'s "not a valid choice"
+  branch was silently orphaning the queue with nothing to replace the removed head - a second tap
+  on the same still-visible keyboard then got rejected as stale, permanently stuck in `SettingUp`.
+  Fixed by having that branch re-enqueue the identical choice keyboard (`XyzzyStartCommand.
+  BuildChoiceKeyboard`, extracted to a shared static so the two callers can't drift out of sync) -
+  the resolving-window fix above means it lands immediately as the new head, exactly like a typed
+  re-prompt would.
+
+`RemindIfActionPendingAsync` (8.7's nudge for "you have an unanswered card, resolve it before
+opening settings") was deleted outright rather than adapted - the bug it patched over is now
+structurally impossible, since `/xyzzy_settings`'s own menu question can't be delivered at all
+while something else is still outstanding.
+
+**Known, accepted UX consequence, surfaced to the user rather than silently worked around**: a
+game's own starter cannot do anything else - including open `/xyzzy_settings` - while their own
+"Start" button is still outstanding in their queue. This falls directly out of the "one thing at a
+time" design and isn't a bug; noting it here in case it's ever reported as one.
+
+**Verified**: full suite stays at 81 tests (no net new tests - existing coverage rewritten in place
+rather than expanded, since this replaces 8.8's mechanism rather than adding to it).
+`ReplyRouterMultiContextTests.cs` fully rewritten for strict-queue semantics (a second flow's first
+question isn't sent at all until the first resolves, then appears automatically with no user
+action; a real two-games-in-progress-plus-a-new-setup scenario using genuinely joined players -
+not solo bot-filled games, which turned out to make the human an immediate blocking judge and
+obscure the point being tested - proves the third game's setup choice waits in line behind two
+real hand-keyboard questions from unrelated games and then proceeds normally once they clear).
+`XyzzySettingsTests.cs` and `XyzzyStatsTests.cs` updated for the same reason 8.7's reminder tests
+were removed - both needed their game-setup helpers to actually resolve the starter's own
+outstanding queue item(s) before asserting the settings menu appears. Sanity-checked per the
+established pattern: temporarily made `IsCurrentHeadAsync` always return `true` (bypassing the
+message-id staleness guard entirely), confirmed exactly the three tests that exercise stale/forged
+taps (`AStaleTapAfterTheRoundHasMovedOnIsRejected`, `TheJudgeCannotSubmitAnAnswer`,
+`AnsweringTwiceInTheSameRoundIsRejected`) failed with the old "no longer valid" toast never
+appearing, while the other 78 passed, then reverted. `docker compose build` unaffected.
 
 ## 10a: Stats engine — done and verified (2026-08-17)
 
