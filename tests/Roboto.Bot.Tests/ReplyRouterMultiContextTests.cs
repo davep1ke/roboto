@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
+using Roboto.Bot.Xyzzy;
 using Telegram.Bot.Types;
 
 namespace Roboto.Bot.Tests;
@@ -86,6 +87,60 @@ public class ReplyRouterMultiContextTests
         await bot.SendAsync(TestBot.PrivateMessage(UserId, "22:00:00"));
 
         Assert.Contains("end time", bot.BotClient.SentMessages.Last(m => m.ChatId == UserId).Text);
+    }
+
+    [Fact]
+    public async Task SetupFlowIsUndisturbedByConcurrentRoundPlayInOtherGames()
+    {
+        // Direct reproduction of the user's own scenario: mid-round in two other games (Telegram
+        // group chats, real gameplay, dealing hands / "you're judging" notices - all of it
+        // button-driven and never touching ReplyRouter at all) while starting a brand new third
+        // game and moving into its free-text "configure" step. Answering that question must always
+        // advance game C's setup specifically, undisturbed by anything happening in A or B - and
+        // since round-play never creates a competing PendingReply, no reply-to is even needed here.
+        const long GameChatA = -900;
+        const long GameChatB = -901;
+        const long GameChatC = -902;
+
+        using var bot = new TestBot();
+
+        async Task StartSoloBotFilledGameAsync(long chatId)
+        {
+            await bot.SendAsync(TestBot.GroupMessage(chatId, UserId, "/xyzzy_start"));
+            var choice = bot.BotClient.SentMessages.Last(m => m.ChatId == UserId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Use Defaults"));
+            await bot.SendCallbackAsync(UserId, choice.Buttons!.First(b => b.Text == "Use Defaults").CallbackData);
+            var start = bot.BotClient.SentMessages.Last(m => m.ChatId == UserId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Start"));
+            await bot.SendCallbackAsync(UserId, start.Buttons!.First(b => b.Text == "Start").CallbackData);
+        }
+
+        // Two other real games, both mid-round, both having DMed this user actual gameplay
+        // messages (a hand keyboard or a "you're judging" notice, depending on the deal).
+        await StartSoloBotFilledGameAsync(GameChatA);
+        await StartSoloBotFilledGameAsync(GameChatB);
+
+        // Start a third game and pick "Configure Game" - the point a real free-text question
+        // becomes outstanding.
+        await bot.SendAsync(TestBot.GroupMessage(GameChatC, UserId, "/xyzzy_start"));
+        var choiceC = bot.BotClient.SentMessages.Last(m => m.ChatId == UserId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.Text == "Configure Game"));
+        await bot.SendCallbackAsync(UserId, choiceC.Buttons!.First(b => b.Text == "Configure Game").CallbackData);
+        Assert.Contains("How many questions", bot.BotClient.SentMessages.Last(m => m.ChatId == UserId).Text);
+
+        // While that's outstanding, act on whichever of A/B this user still has a card to play for
+        // (real gameplay, purely button-driven) - must not touch game C's pending question at all.
+        var otherHandMessage = bot.BotClient.SentMessages.LastOrDefault(m =>
+            m.ChatId == UserId && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal)));
+        if (otherHandMessage is not null)
+        {
+            await bot.SendCallbackAsync(UserId, otherHandMessage.Buttons![0].CallbackData);
+        }
+
+        // Answer game C's question with plain text - it's still the *only* free-text thing
+        // pending (A/B never created one), so no reply-to is needed, and it resolves to C.
+        await bot.SendAsync(TestBot.PrivateMessage(UserId, "5"));
+        Assert.Contains("wait for answers", bot.BotClient.SentMessages.Last(m => m.ChatId == UserId).Text);
+
+        var gameC = await bot.Services.GetRequiredService<XyzzyGameRepository>().GetAsync(GameChatC, CancellationToken.None);
+        Assert.Equal(5, gameC.QuestionLimit);
     }
 
     [Fact]
