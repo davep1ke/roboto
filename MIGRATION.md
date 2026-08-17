@@ -21,7 +21,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 4. `mod_standard` port, partial (`/start`, `/stop`, real per-chat state) | Done, verified | `f495a0c` |
 | 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | `c6541d3` |
 | 6. Automated test harness (xUnit + fake Telegram client) | Done, verified | `16b4b0b` |
-| 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | In progress | — |
+| 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Done, verified | (this commit) |
 | 8. `mod_xyzzy` port (the big one, ~3,800 LOC of game logic) | Not started | — |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
@@ -39,7 +39,10 @@ what was specifically tested and any bugs that were caught along the way.
   var selects an identity; its credentials self-bootstrap under `{DataDir}/{Instance}/bot.env`.
 - `TelegramPollingService.cs` — long-polling via the `Telegram.Bot` package.
 - `Commands/` — `IBotCommand`, `CommandRouter` (name-based dispatch + mute-gating + usage stats),
-  `PingCommand`, `HelpCommand`, `StatsCommand`, `StartCommand`, `StopCommand`.
+  `PingCommand`, `HelpCommand`, `StatsCommand`, `StartCommand`, `StopCommand`, `SetQuietHoursCommand`,
+  `AddAdminCommand`, `RemoveAdminCommand`. `ReplyRouter`/`PendingReply`/`IReplyHandler` for
+  conversational flows, `MessageDispatcher` for the actual per-message routing logic (pulled out of
+  `TelegramPollingService` so it's directly testable).
 - `Persistence/` — `IStateStore`/`SqliteStateStore`, JSON-blob-per-key over one SQLite table.
 - `Chats/` — `ChatState`/`ChatRepository`, the first real per-chat data (`ChatId`, `Title`,
   `Muted`) — deliberately module-agnostic, a real module's own per-chat data gets its own separate
@@ -120,6 +123,28 @@ deliberately broke `CommandRouter`'s mute-gating (`isGroupChat` hardcoded to `fa
 exactly the expected test failed with a clear assertion message while the other 13 still passed,
 then reverted. 14/14 pass on the real code, `dotnet build` clean on both projects, `docker compose
 build` unaffected (`tests/` added to `.dockerignore` - dev-time only, never needed in the image).
+
+## `mod_standard` remainder: `/addadmin`, `/removeadmin` — done and verified (2026-08-17)
+
+Redesigned rather than carried straight over: legacy asked "who?" via a keyboard built from
+presence-tracked recent chat members (`Presence`/`chatPresence`, a whole subsystem this codebase
+doesn't have and wasn't worth building just for this). Uses Telegram's standard "reply to their
+message" pattern instead - `/addadmin`/`/removeadmin` as a reply to the target user's message,
+resolving `Message.ReplyToMessage.From` directly. No conversational flow needed, no presence data
+needed, and arguably more idiomatic for group-management bots generally. Kept legacy's bootstrap
+special case: a bare (non-reply) `/addadmin` with no existing admins makes the caller the first one.
+
+`Admins` (a `List<long>`) went onto `ChatState` alongside `Muted`, not a mod_standard-specific blob
+- same reasoning as `Muted`: legacy put admin status directly on the core `chat` class since other
+things might plausibly gate on it later, not something owned solely by mod_standard's own commands.
+
+**First real payoff of the test harness just built**: this phase used `dotnet test` as the primary
+verification, not a live Telegram round-trip - 6 new tests (bootstrap, reply-based add/remove,
+privilege enforcement, no-admins-yet messaging, private-chat rejection), plus a repeat of the
+"deliberately break it and confirm the test catches it" sanity check, this time on the privilege
+check itself (`chat.IsAdmin(caller.Id)` hardcoded to always pass) - caught immediately. 20/20 tests
+pass, `docker compose build` unaffected. No manual/live-bot testing was done for this phase at all,
+matching the user's stated preference going forward.
 
 ## Explicitly deferred / blocked work
 

@@ -83,11 +83,12 @@ public sealed class TestBot : IDisposable
         Text = text,
     };
 
-    public static Message GroupMessage(long chatId, long userId, string text, string firstName = "Test") => new()
+    public static Message GroupMessage(long chatId, long userId, string text, string firstName = "Test", Message? replyTo = null) => new()
     {
         Id = Random.Shared.Next(1, int.MaxValue),
         Chat = new Chat { Id = chatId, Type = ChatType.Group, Title = "Test Group" },
         From = new User { Id = userId, FirstName = firstName },
         Text = text,
+        ReplyToMessage = replyTo,
     };
 }
