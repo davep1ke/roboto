@@ -22,7 +22,10 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | `c6541d3` |
 | 6. Automated test harness (xUnit + fake Telegram client) | Done, verified | `16b4b0b` |
 | 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Done, verified | `534f9a8` |
-| 8. `mod_xyzzy` port (the big one, ~3,800 LOC of game logic) | Not started | — |
+| 8.1 `mod_xyzzy`: game skeleton (start/join/leave/status, persistence, no round-play) | Done, verified | (this commit) |
+| 8.2 `mod_xyzzy`: round loop + inline-keyboard/callback-query infra | Not started | — |
+| 8.3 `mod_xyzzy`: background scheduler, reminders/timeouts/throttle, quiet-hours | Not started | — |
+| 8.4 `mod_xyzzy`: `/xyzzy_settings` admin/moderation menu | Not started | — |
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
 | 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
@@ -146,8 +149,67 @@ check itself (`chat.IsAdmin(caller.Id)` hardcoded to always pass) - caught immed
 pass, `docker compose build` unaffected. No manual/live-bot testing was done for this phase at all,
 matching the user's stated preference going forward.
 
+## `mod_xyzzy` port — architecture decisions (2026-08-17)
+
+Full design lives in the phase-8 plan used to scope this work; summary of the decisions that
+matter for anyone picking this up mid-flight:
+
+- **Card content**: legacy ships no card text at all (only exists in the live prod XML). v1 uses a
+  hardcoded sample of the public CC BY-NC-SA-licensed CAH base set (`Xyzzy/CardCatalog.cs`) as a
+  placeholder default pack — not permanent, real content arrives via the phase-11 XML importer.
+- **Card UX**: legacy matches players' answers/judge picks against mangled Telegram reply-keyboard
+  button text via several fuzzy fallbacks (an acknowledged legacy pain point). The port uses real
+  inline keyboards + `CallbackQuery` instead - `callback_data` format
+  `xy:<action>:<groupChatId>:<round>:<cardId>`, no fuzzy matching. New generic infra
+  (`ICallbackQueryHandler`/`CallbackQueryRouter`), not xyzzy-specific, mirrors the existing
+  `IBotCommand`/`IReplyHandler` reflection-discovery pattern.
+- **Stable player IDs**: `JudgePlayerId: long?` (a Telegram user ID), not legacy's array-index
+  judge pointer (`lastPlayerAsked`) — removes the ~60-line reindexing dance legacy needed in
+  `removePlayer` (self-flagged `//TODO - should be an ID!` in the legacy code itself).
+- **Per-chat game state gets its own POCO/key** (`xyzzy:{chatId}:game`), not a field on `ChatState`
+  — `ChatState`'s own doc comment names this exact case as the reason it stays module-agnostic.
+- **Setup/admin flows stay on the existing `ReplyRouter`/DM system** (single-admin, one-at-a-time —
+  exactly what it already fits, same shape as `/setquiethours`); only round-play (N players
+  submitting simultaneously) needed the new callback-query mechanism, since `ReplyRouter` is
+  deliberately "one pending reply per user, DM-only" and can't represent that.
+- **Background scheduler is new infrastructure built from scratch** — confirmed nothing like it
+  exists anywhere in `src/Roboto.Bot` yet (the only existing `BackgroundService` is
+  `TelegramPollingService`'s poll loop). A second `BackgroundService`
+  (`Xyzzy/XyzzyRoundSchedulerService.cs`) handles reminders/timeouts/throttle (phase 8.3).
+
+## `mod_xyzzy` 8.1: game skeleton — done and verified (2026-08-17)
+
+`src/Roboto.Bot/Xyzzy/` - `XyzzyGameState`/`XyzzyPlayer`/`XyzzyGameRepository` (same
+get-or-create-then-save shape as `ChatRepository`, key `xyzzy:{chatId}:game`), `CardCatalog`
+(hardcoded CC BY-NC-SA CAH base-set sample, 30 questions/90 answers - see the architecture-decisions
+section above), and the non-round commands: `/xyzzy_start`, `/xyzzy_join` (DM-reachability checked
+up front, same reasoning as `/setquiethours`), `/xyzzy_leave` (group-only; the cross-chat DM variant
+is a deliberate v1 cut, see below), `/xyzzy_status`, `/xyzzy_get_settings`.
+
+No round-play yet - a game just sits in `Invites` once enough players have joined. That's phase 8.2
+(needs the inline-keyboard/callback-query infra first).
+
+**Verified**: 31 tests in `tests/Roboto.Bot.Tests/Xyzzy/XyzzyGameSkeletonTests.cs` (up from the
+prior 20), covering start/join/leave/status/get-settings, the DM-unreachable-player rejection (and
+that they can still join afterward once reachable, not permanently locked out), private-chat
+rejection, and persistence-across-restart (`TestBot.Restart()`) for the game state itself - the
+first proof `XyzzyGameRepository` round-trips through SQLite correctly. Sanity-checked per the
+established pattern: deliberately disabled the join-requires-a-running-game gate, confirmed exactly
+`JoinRequiresAGameToAlreadyBeRunning` failed with a clear message while the other 30 passed, then
+reverted. `docker compose build` unaffected.
+
 ## Explicitly deferred / blocked work
 
+- **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
+  CardCast/CRCast pack import (the original service is dead, current code points at a community
+  mirror and already has its own dormant-pack-removal disabled); multi-blank ("Pick 2") questions;
+  "Mess With" (joke/fake score display, purely cosmetic); cross-chat DM `/xyzzy_leave` (typed with
+  no chat context, scans every chat you're in) — v1's `/xyzzy_leave` is group-context only like
+  every other command; stats/metrics (`registerStatType`/`logStat` calls throughout legacy) — no
+  stats subsystem exists yet beyond command-usage counts; the elaborate multi-step setup wizard
+  (defaults-vs-custom chain, pack-filter pager, timeout/throttle prompts before the game starts) —
+  v1 starts straight into `Invites` with fixed defaults, `/xyzzy_settings` (phase 8.4) covers
+  adjusting afterward.
 - **Charting** (`/statgraph`) — ScottPlot/SkiaSharp, debian-slim runtime base. Not started at all.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user

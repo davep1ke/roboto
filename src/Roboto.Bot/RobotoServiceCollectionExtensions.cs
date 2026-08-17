@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
+using Roboto.Bot.Xyzzy;
 
 namespace Roboto.Bot;
 
@@ -29,6 +30,7 @@ public static class RobotoServiceCollectionExtensions
 
         services.AddSingleton<IStateStore, SqliteStateStore>();
         services.AddSingleton<ChatRepository>();
+        services.AddSingleton<XyzzyGameRepository>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
         services.AddSingleton<ReplyRouter>();
