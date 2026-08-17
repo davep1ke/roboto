@@ -3,6 +3,9 @@
 Roboto/
 Roboto.sln
 
+# Test project - dev-time only, the Dockerfile never builds or needs it.
+tests/
+
 .git/
 .vs/
 **/bin/

@@ -1,0 +1,93 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Roboto.Bot.Commands;
+using Roboto.Bot.Persistence;
+using Telegram.Bot.Types;
+using Telegram.Bot.Types.Enums;
+
+namespace Roboto.Bot.Tests;
+
+/// <summary>
+/// Builds the exact same service graph as Program.cs (via AddRobotoBot) but with a
+/// FakeTelegramBotClient instead of a real one and a temp-directory-backed SQLite file instead of
+/// /data - a fresh, isolated instance per test (xUnit constructs a new test class per test method
+/// by default), cleaned up on Dispose.
+///
+/// Bypasses InstanceBootstrapper entirely - tests configure BotOptions directly rather than going
+/// through the "read bot.env, prompt if missing" file-based bootstrap, which has nothing to do with
+/// application logic and isn't what these tests are for.
+/// </summary>
+public sealed class TestBot : IDisposable
+{
+    private readonly string _dataDir;
+    private readonly bool _ownsDataDir;
+
+    public FakeTelegramBotClient BotClient { get; } = new();
+    public ServiceProvider Services { get; }
+
+    public TestBot() : this(Directory.CreateTempSubdirectory("roboto-tests-").FullName, ownsDataDir: true)
+    {
+    }
+
+    private TestBot(string dataDir, bool ownsDataDir)
+    {
+        _dataDir = dataDir;
+        _ownsDataDir = ownsDataDir;
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.Configure<BotOptions>(o =>
+        {
+            o.Instance = "test";
+            o.DataDir = _dataDir;
+            o.TelegramToken = "unused-in-tests";
+            o.BotUsername = "TestBot";
+        });
+        services.AddRobotoBot();
+
+        Services = services.BuildServiceProvider();
+
+        // InstanceBootstrapper normally creates this before the store ever touches disk - do the
+        // same thing here since tests skip InstanceBootstrapper entirely.
+        Directory.CreateDirectory(Services.GetRequiredService<IOptions<BotOptions>>().Value.InstanceDir);
+        Services.GetRequiredService<IStateStore>().InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+    }
+
+    public MessageDispatcher Dispatcher => Services.GetRequiredService<MessageDispatcher>();
+
+    public Task SendAsync(Message message, CancellationToken cancellationToken = default) =>
+        Dispatcher.DispatchAsync(BotClient, new Update { Message = message }, cancellationToken);
+
+    /// <summary>
+    /// Simulates a full process restart against the same on-disk data: a fresh service provider
+    /// (fresh singletons, nothing carried over in memory) pointed at the same DataDir, so persisted
+    /// state genuinely has to come from disk to be seen. The original TestBot still owns and will
+    /// clean up the temp directory on Dispose; this one doesn't delete it.
+    /// </summary>
+    public TestBot Restart() => new(_dataDir, ownsDataDir: false);
+
+    public void Dispose()
+    {
+        Services.Dispose();
+        if (_ownsDataDir)
+        {
+            Directory.Delete(_dataDir, recursive: true);
+        }
+    }
+
+    public static Message PrivateMessage(long userId, string text, string firstName = "Test") => new()
+    {
+        Id = Random.Shared.Next(1, int.MaxValue),
+        Chat = new Chat { Id = userId, Type = ChatType.Private },
+        From = new User { Id = userId, FirstName = firstName },
+        Text = text,
+    };
+
+    public static Message GroupMessage(long chatId, long userId, string text, string firstName = "Test") => new()
+    {
+        Id = Random.Shared.Next(1, int.MaxValue),
+        Chat = new Chat { Id = chatId, Type = ChatType.Group, Title = "Test Group" },
+        From = new User { Id = userId, FirstName = firstName },
+        Text = text,
+    };
+}

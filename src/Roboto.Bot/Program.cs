@@ -2,8 +2,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Roboto.Bot;
-using Roboto.Bot.Chats;
-using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
 using Serilog;
 
@@ -37,20 +35,7 @@ builder.Services.AddSerilog((_, loggerConfig) => loggerConfig
     .WriteTo.Console(outputTemplate:
         "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}"));
 
-// Reflection-based discovery, same idea the legacy module scan used - just for commands instead
-// of the whole module. Harmless: everything's still compiled into this one assembly, this only
-// saves having to hand-register each new IBotCommand here as they're added.
-foreach (var commandType in typeof(IBotCommand).Assembly.GetTypes()
-             .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IBotCommand).IsAssignableFrom(t)))
-{
-    builder.Services.AddSingleton(typeof(IBotCommand), commandType);
-}
-
-builder.Services.AddSingleton<IStateStore, SqliteStateStore>();
-builder.Services.AddSingleton<ChatRepository>();
-builder.Services.AddSingleton(new AppClock(DateTime.UtcNow));
-builder.Services.AddSingleton<CommandRouter>();
-builder.Services.AddSingleton<ReplyRouter>();
+builder.Services.AddRobotoBot();
 builder.Services.AddHostedService<TelegramPollingService>();
 
 using var host = builder.Build();

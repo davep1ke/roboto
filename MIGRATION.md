@@ -20,12 +20,13 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 3. SQLite persistence layer | Done, verified | `5d54890` |
 | 4. `mod_standard` port, partial (`/start`, `/stop`, real per-chat state) | Done, verified | `f495a0c` |
 | 5. Conversational-flow / `ExpectedReply` system, + `/setquiethours` | Done, verified | `c6541d3` |
-| 6. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | Not started | — |
-| 7. `mod_xyzzy` port (the big one, ~3,800 LOC of game logic) | Not started | — |
-| 8. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
-| 9. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
-| 10. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
-| 11. Cutover | Not started | — |
+| 6. Automated test harness (xUnit + fake Telegram client) | Done, verified | (this commit) |
+| 7. `mod_standard` remainder (`/addadmin`, `/removeadmin`) | In progress | — |
+| 8. `mod_xyzzy` port (the big one, ~3,800 LOC of game logic) | Not started | — |
+| 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
+| 10. Stats/graphs (ScottPlot), `/statgraph` | Not started | — |
+| 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
+| 12. Cutover | Not started | — |
 
 "Verified" means actually exercised for real (build + run + real Telegram round-trip, sometimes
 through Docker too), not just "compiles" — see each phase's commit message and in-code comments for
@@ -76,6 +77,49 @@ inside `SetQuietHoursCommand` before trusting it - see its own comments):
   Switched to running the bot **with no timeout at all**, stopped explicitly (`kill`) only once
   testing is confirmed done - see `CLAUDE.md`'s working-conventions section, which this superseded
   the previous "1800s has worked well" note.
+
+## Automated test harness — done and verified (2026-08-17)
+
+User wanted to offload most round-trip testing rather than being the human-in-the-loop for every
+change, reserving manual testing for a final pass close to deployment. Real Telegram automation
+turned out to be a dead end worth ruling out explicitly rather than silently avoiding: Telegram
+bots can't message other bots (blocked platform-side, an anti-loop measure), so no combination of
+test bots can play "the human" over the real network; a scripted real user account (Telegram's
+Client/MTProto API, not the Bot API) could technically do it but means logging a real account into
+a script - meaningfully more setup/risk than a BotFather token, not attempted.
+
+What got built instead, in `tests/Roboto.Bot.Tests/`: `Telegram.Bot`'s client is exposed as
+`ITelegramBotClient`, and (confirmed via reflection against the actual installed package rather
+than assumed) is centered on one method, `SendRequest<TResponse>`, that every higher-level call
+(`SendMessage`, `GetMe`, ...) funnels through as a typed request/response pair. Faking that one
+method (`FakeTelegramBotClient`, pattern-matches on request type, records what "got sent") covers
+everything built on top of it - no network, no real bot token, no human.
+
+- `RobotoServiceCollectionExtensions.AddRobotoBot()` (`src/Roboto.Bot/`) - pulled the DI
+  registration out of `Program.cs`'s top-level statements so tests build the *exact* same service
+  graph as production, not a hand-maintained approximation that can quietly drift.
+- `MessageDispatcher` (`src/Roboto.Bot/Commands/`) - pulled the actual "what do we do with an
+  incoming message" logic out of `TelegramPollingService` (a `BackgroundService`, awkward to test
+  directly) into its own directly-callable class.
+- `TestBot` (`tests/Roboto.Bot.Tests/`) - the test fixture: builds that same service graph against
+  a temp-directory SQLite file and the fake client, bypassing `InstanceBootstrapper`'s file-prompt
+  flow entirely (irrelevant to application logic). `TestBot.Restart()` builds a second, fully
+  independent service provider pointed at the same on-disk data - a real "did this survive a
+  restart" test, not an in-memory shortcut that would pass even if persistence were actually broken.
+
+Covers command dispatch, mute-gating (including group-chat scenarios that previously needed the
+user to actually open a group chat on their phone), the full `/setquiethours` conversational flow,
+and persistence-across-restart. Doesn't cover, and isn't meant to: real Docker/filesystem behavior
+(the bind-mount UID bug wouldn't have been caught here - `docker compose build`/`run` stay the
+right tool, and don't need the user either) or genuine Telegram API/library integration surprises
+(still worth an occasional real smoke test, just not on every change).
+
+**Verified, not just written** - specifically, verified the tests can actually *fail*, not just
+that they pass (a suite that trivially passes regardless of the code is worse than no suite):
+deliberately broke `CommandRouter`'s mute-gating (`isGroupChat` hardcoded to `false`), confirmed
+exactly the expected test failed with a clear assertion message while the other 13 still passed,
+then reverted. 14/14 pass on the real code, `dotnet build` clean on both projects, `docker compose
+build` unaffected (`tests/` added to `.dockerignore` - dev-time only, never needed in the image).
 
 ## Explicitly deferred / blocked work
 

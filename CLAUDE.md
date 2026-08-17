@@ -115,8 +115,17 @@ live-pointed token, we risk sending bot messages into other people's in-progress
 - Background test runs against the live test bot must **not** be time-boxed — even a 30-minute
   window died mid-conversation twice, racing the user's actual pace. Run with no `timeout` at all,
   and stop it explicitly (`kill`) only once testing is confirmed done, not on a guessed schedule.
+- **`dotnet test` (`tests/Roboto.Bot.Tests/`) is the primary verification tool now, not the live
+  test bot.** User's explicit preference: rely mostly on the automated suite, save manual
+  round-trip testing against the real bot for occasional checks and a final pass close to
+  deployment. Add a test alongside new command/router/persistence logic rather than defaulting to
+  "go send this in Telegram and tell me what happened." Live-bot testing still has real,
+  non-redundant value for genuine Telegram API/library integration surprises and anything
+  Docker/filesystem-specific (neither of which a fake `ITelegramBotClient` can catch) — it's
+  deprioritized, not eliminated.
 
 ## Notes for future sessions
 
-- No automated tests, no CI exist today.
+- Automated tests exist for `src/Roboto.Bot/` (`tests/Roboto.Bot.Tests/`, run via `dotnet test`).
+  No CI exists yet — nothing's pushed to `origin` for it to run against regardless.
 - `CLAUDE.md` + `MIGRATION.md` are the primary source of project context; no other docs/README exist.

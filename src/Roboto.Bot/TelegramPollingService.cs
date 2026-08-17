@@ -13,8 +13,7 @@ public sealed class TelegramPollingService(
     ILogger<TelegramPollingService> logger,
     IOptions<BotOptions> options,
     IHostApplicationLifetime lifetime,
-    CommandRouter commandRouter,
-    ReplyRouter replyRouter) : BackgroundService
+    MessageDispatcher dispatcher) : BackgroundService
 {
     private readonly BotOptions _options = options.Value;
     private TelegramBotClient _botClient = null!;
@@ -34,7 +33,7 @@ public sealed class TelegramPollingService(
             };
 
             await _botClient.ReceiveAsync(
-                updateHandler: HandleUpdateAsync,
+                updateHandler: dispatcher.DispatchAsync,
                 errorHandler: HandlePollingErrorAsync,
                 receiverOptions: receiverOptions,
                 cancellationToken: stoppingToken);
@@ -52,26 +51,6 @@ public sealed class TelegramPollingService(
             Environment.ExitCode = 1;
             lifetime.StopApplication();
         }
-    }
-
-    private async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update, CancellationToken cancellationToken)
-    {
-        if (update.Message is not { Text: { } text } message)
-        {
-            return;
-        }
-
-        logger.LogInformation("Message from {User}: {Text}", message.From?.Username ?? message.From?.FirstName, text);
-
-        // Checked first: if this user has a pending question (e.g. mid-way through /setquiethours),
-        // treat whatever they typed as the answer rather than trying to parse it as a fresh command
-        // - matches the legacy app checking parseExpectedReplies before general command dispatch.
-        if (await replyRouter.TryHandleAsync(botClient, message, cancellationToken))
-        {
-            return;
-        }
-
-        await commandRouter.TryDispatchAsync(botClient, message, cancellationToken);
     }
 
     private Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception, CancellationToken cancellationToken)
