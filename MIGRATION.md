@@ -606,9 +606,11 @@ just for group-posted keyboards.
 flow case matching legacy, and the config-menu re-offer), `Steam/SteamTests.cs` (8, including a
 `FakeSteamHttpHandler`-backed test of `SteamApiClient` against realistic Steam API response shapes
 and a full reconciler run proving a new achievement gets announced once and only once). Stable
-across repeated runs. `docker compose build` unaffected. Live-bot pass against `beefy` covered
-`/craft`, `/birthday_add` + `/birthday_list`, `/quote_add` and `/quote_conv`, and Steam's
-no-key-configured messaging on `/steam_addplayer`/`/steam_stats`/`/steam_help`.
+across repeated runs. `docker compose build` unaffected. `beefy` rebuilt and restarted on this code
+so the user can do a live round-trip pass over Telegram - not done here, since it needs a real
+Telegram client (`/craft`, `/birthday_add` + `/birthday_list`, `/quote_add` and `/quote_conv`, and
+Steam's no-key-configured messaging on `/steam_addplayer`/`/steam_stats`/`/steam_help` are the
+natural things to try).
 
 ## 10b: `/statgraph` charting — done and verified (2026-08-18)
 
@@ -629,10 +631,13 @@ command needs something else" convention.
 **Verified**: 4 new tests (117 total, up from 113) (`StatGraphTests.cs`) - no-argument and unknown-name both list available
 stats without sending a photo; a known stat with recorded history actually renders and sends a real
 PNG (asserted via the file's magic-byte signature, not just "didn't throw"); name matching is
-case-insensitive. `docker compose build` succeeds with the new dependency. A live `/statgraph`
-round-trip against the `beefy` container (not just a local build) is the real proof the
-statically-linked SkiaSharp assumption holds inside the actual runtime image, not just on this dev
-machine which already has more system libraries installed than the container does.
+case-insensitive. `docker compose build` succeeds with the new dependency. Not yet done: a live
+`/statgraph` round-trip against the running `beefy` container over real Telegram - the test suite
+proves the rendering code path works, but the statically-linked-SkiaSharp assumption (no
+`libfontconfig1`/etc needed) is only fully proven once an actual image comes back inside the real
+runtime container, not just a local `dotnet test` run on a dev machine that already has more system
+libraries installed than the container does. `beefy` is rebuilt and running on this code for the
+user to try it.
 
 ## 10a: Stats engine — done and verified (2026-08-17)
 
