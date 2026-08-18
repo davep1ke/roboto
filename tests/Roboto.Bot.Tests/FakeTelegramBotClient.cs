@@ -14,6 +14,8 @@ public sealed record SentMessage(long ChatId, string Text, IReadOnlyList<SentBut
 
 public sealed record AnsweredCallback(string CallbackQueryId, string? Text);
 
+public sealed record SentPhoto(long ChatId, string? Caption, string FileName, byte[] Content);
+
 /// <summary>
 /// ITelegramBotClient is centered on a single method - SendRequest&lt;TResponse&gt; - with every
 /// higher-level call (SendMessage, GetMe, ...) being an extension method that builds a typed
@@ -32,6 +34,7 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
 {
     public List<SentMessage> SentMessages { get; } = [];
     public List<AnsweredCallback> AnsweredCallbacks { get; } = [];
+    public List<SentPhoto> SentPhotos { get; } = [];
 
     /// <summary>Chat ids that should fail to receive a DM, simulating a user who has never opened
     /// a private chat with the bot (real Telegram behaviour when you try to message such a user).</summary>
@@ -76,6 +79,20 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
                     Text = sendMessage.Text,
                 };
                 return Task.FromResult((TResponse)(object)message);
+
+            case SendPhotoRequest sendPhoto:
+                var photoChatId = sendPhoto.ChatId.Identifier
+                    ?? throw new InvalidOperationException("FakeTelegramBotClient only supports numeric chat ids");
+
+                if (sendPhoto.Photo is InputFileStream fileStream)
+                {
+                    using var buffer = new MemoryStream();
+                    fileStream.Content.CopyTo(buffer);
+                    SentPhotos.Add(new SentPhoto(photoChatId, sendPhoto.Caption, fileStream.FileName ?? "", buffer.ToArray()));
+                }
+
+                var photoMessage = new Message { Id = SentMessages.Count + SentPhotos.Count, Chat = new Chat { Id = photoChatId } };
+                return Task.FromResult((TResponse)(object)photoMessage);
 
             case AnswerCallbackQueryRequest answerCallbackQuery:
                 AnsweredCallbacks.Add(new AnsweredCallback(answerCallbackQuery.CallbackQueryId, answerCallbackQuery.Text));
