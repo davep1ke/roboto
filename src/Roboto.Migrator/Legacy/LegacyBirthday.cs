@@ -13,6 +13,7 @@ public sealed class LegacyBirthdayChatData : LegacyModuleChatData
 [XmlType("mod_birthday_coredata")]
 public sealed class LegacyBirthdayCoreData : LegacyModuleData;
 
+[XmlType("mod_birthday_birthday")]
 public sealed class LegacyBirthday
 {
     public string name = "";

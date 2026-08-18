@@ -219,6 +219,26 @@ public class MigrationScenarioTests : IDisposable
     }
 
     [Fact]
+    public async Task EveryPendingReplyIsAccountedForResumedOrDroppedNeverSilentlyLost()
+    {
+        // Caught for real during a dry run against the actual production export, twice: (1)
+        // resumed+dropped came back short because ResumePendingRepliesAsync was only ever called
+        // for chats whose game was already Question/Judging - a chat that had *moved on* to
+        // Stopped/SettingUp/etc. but still had a leftover stale reply meant that record was never
+        // even looked at; (2) a further, smaller gap turned out to be replies referencing a chatID
+        // that doesn't exist in chatData at all (a purged chat's stale leftover) - the chat-driven
+        // iteration never visits those either. Locks in both fixes: every reply in the fixture (4
+        // total - Question, Judging, kick, and one orphaned) must show up in the report one way or
+        // the other.
+        var importer = new XmlImporter();
+        var result = await importer.RunAsync(new ImportOptions(_xmlPath, _dataDir, "reconcile", DryRun: false, CarrySteamKey: false), CancellationToken.None);
+
+        var totalAccountedFor = result.Report.PendingRepliesResumed + result.Report.PendingRepliesDroppedByReason.Values.Sum();
+        Assert.Equal(4, totalAccountedFor);
+        Assert.Equal(1, result.Report.PendingRepliesDroppedByReason.GetValueOrDefault("orphaned - no matching chat"));
+    }
+
+    [Fact]
     public async Task SourceXmlFileIsNeverModified()
     {
         var originalBytes = await File.ReadAllBytesAsync(_xmlPath);

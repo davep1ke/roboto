@@ -27,6 +27,7 @@ public static class SyntheticXmlFixture
     public const long JudgingJudgeId = 301;
     public const long JudgingAnswererId = 302;
     public const long JudgingKickTargetId = 303;
+    public const long OrphanedReplyChatId = 999999; // deliberately not present in chatData
 
     public static string Write()
     {
@@ -171,6 +172,14 @@ public static class SyntheticXmlFixture
                     // Admin sub-flow with no equivalent in the rewrite - proves the drop-by-reason path.
                     chatID = JudgingChatId, userID = JudgingKickTargetId,
                     pluginType = "RobotoChatBot.Modules.mod_xyzzy", messageData = "kick",
+                },
+                new LegacyExpectedReply
+                {
+                    // References a chat that doesn't exist anywhere in chatData - proves orphaned
+                    // replies (a purged chat's stale leftover) are counted, not silently skipped by
+                    // the chat-driven iteration that would otherwise never visit them.
+                    chatID = OrphanedReplyChatId, userID = 999,
+                    pluginType = "RobotoChatBot.Modules.mod_xyzzy", messageData = "Question",
                 },
             ],
         };

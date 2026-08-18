@@ -29,6 +29,17 @@ public sealed class LegacySettings
     public List<LegacyExpectedReply> expectedReplies = [];
 }
 
+// NB on every [XmlType] below: XmlSerializer defaults a class's element/item name to its own C#
+// class name when no override is given. Legacy's real classes are named "chat", "ExpectedReply",
+// "mod_birthday_birthday", etc. (no [XmlType] of their own - confirmed by reading the actual legacy
+// source, not assumed) - since every class here is deliberately named "Legacy<Something>" instead
+// (see this file's own top doc comment on why), *every* one of them needs an explicit override to
+// match legacy's real tag, or XmlSerializer silently skips every element of that shape instead of
+// raising an error. Caught for real: an early version of this file was missing several of these,
+// and a dry run against a real export came back with every count at zero, not an exception - see
+// MIGRATION.md's phase 11 notes for why "test only against your own serializer's own round-trip"
+// isn't proof of anything past internal self-consistency, and a real file is what caught it.
+[XmlType("chat")]
 public sealed class LegacyChat
 {
     public long chatID;
@@ -44,10 +55,12 @@ public sealed class LegacyChat
 /// LegacySettings must be given every concrete subclass as an extraType (see XmlImporter) so
 /// xsi:type-tagged elements deserialize to the right concrete class, same mechanism legacy's own
 /// XmlSerializer(typeof(settings), Plugins.getPluginDataTypes()) call uses.</summary>
+[XmlType("RobotoModuleDataTemplate")]
 public abstract class LegacyModuleData;
 
 /// <summary>Base for every module's per-chat data blob - matches legacy's abstract
 /// RobotoModuleChatDataTemplate. See LegacyModuleData's doc comment for the extraTypes mechanism.</summary>
+[XmlType("RobotoModuleChatDataTemplate")]
 public abstract class LegacyModuleChatData
 {
     public long chatID;
@@ -57,6 +70,7 @@ public abstract class LegacyModuleChatData
 /// know who it's for, pluginType/messageData to know what kind of question it was. Everything else
 /// legacy tracked (text, keyboard, timestamps) is irrelevant since a resumed question is rebuilt
 /// fresh from current game state, not replayed verbatim.</summary>
+[XmlType("ExpectedReply")]
 public sealed class LegacyExpectedReply
 {
     public long chatID = -1;

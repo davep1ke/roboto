@@ -18,6 +18,7 @@ public sealed class LegacySteamCoreData : LegacyModuleData
     public List<LegacySteamGame> games = [];
 }
 
+[XmlType("mod_steam_player")]
 public sealed class LegacySteamPlayer
 {
     public string playerID = "";
@@ -25,12 +26,14 @@ public sealed class LegacySteamPlayer
     public List<LegacySteamChiev> chievs = [];
 }
 
+[XmlType("mod_steam_chiev")]
 public sealed class LegacySteamChiev
 {
     public string chievName = "";
     public string appID = "";
 }
 
+[XmlType("mod_steam_game")]
 public sealed class LegacySteamGame
 {
     public string gameID = "";
@@ -38,6 +41,7 @@ public sealed class LegacySteamGame
     public List<LegacySteamAchievement> chievs = [];
 }
 
+[XmlType("mod_steam_achievement")]
 public sealed class LegacySteamAchievement
 {
     public string achievement_code = "";

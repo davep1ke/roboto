@@ -187,7 +187,14 @@ public static class XyzzyImportMapper
         {
             if (reply.pluginType is null || !reply.pluginType.Contains("mod_xyzzy", StringComparison.Ordinal))
             {
-                continue; // a different module's pending reply - not this method's concern
+                // A different module's pending reply, for a chat that also happens to have an
+                // xyzzy game - counted, not silently skipped, even though this method has no
+                // resumption logic for other modules (a real, deliberate gap - see MIGRATION.md's
+                // phase 11 notes on why only mod_xyzzy's Question/Judging are worth resuming).
+                // Silently continuing here was the exact bug class caught during a real dry run:
+                // resumed+dropped counts not summing to the file's true total.
+                Drop(report, "different module (not mod_xyzzy)");
+                continue;
             }
 
             if (reply.messageData is not ("Question" or "Judging"))

@@ -16,12 +16,14 @@ public sealed class LegacyQuoteChatData : LegacyModuleChatData
 [XmlType("mod_quote_core_data")]
 public sealed class LegacyQuoteCoreData : LegacyModuleData;
 
+[XmlType("mod_quote_multiquote")]
 public sealed class LegacyMultiQuote
 {
     public List<LegacyQuoteLine> lines = [];
     public DateTime on = DateTime.UtcNow;
 }
 
+[XmlType("mod_quote_quote_line")]
 public sealed class LegacyQuoteLine
 {
     public string by = "";

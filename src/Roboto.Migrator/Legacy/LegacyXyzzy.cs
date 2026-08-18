@@ -39,6 +39,7 @@ public sealed class LegacyXyzzyCoreData : LegacyModuleData
     public List<LegacyXyzzyCard> answers = [];
 }
 
+[XmlType("mod_xyzzy_player")]
 public sealed class LegacyXyzzyPlayer
 {
     public string name = "";
@@ -48,6 +49,7 @@ public sealed class LegacyXyzzyPlayer
     public List<string> selectedCards = [];
 }
 
+[XmlType("mod_xyzzy_card")]
 public sealed class LegacyXyzzyCard
 {
     public string uniqueID = Guid.NewGuid().ToString();

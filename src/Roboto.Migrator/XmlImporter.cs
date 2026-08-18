@@ -145,15 +145,35 @@ public sealed class XmlImporter
                             var statusKey = game.Status.ToString();
                             report.XyzzyGamesByStatus[statusKey] = report.XyzzyGamesByStatus.GetValueOrDefault(statusKey) + 1;
 
-                            if (game.Status is XyzzyStatus.Question or XyzzyStatus.Judging)
-                            {
-                                var repliesForChat = settings.expectedReplies.Where(r => r.chatID == legacyChat.chatID).ToList();
-                                await XyzzyImportMapper.ResumePendingRepliesAsync(repliesForChat, game, store, report, cancellationToken);
-                            }
+                            // Unconditional - not gated on game.Status being Question/Judging.
+                            // Found the hard way (a real dry run's resumed+dropped counts not
+                            // summing to the file's true ExpectedReply total): a chat whose game had
+                            // already moved on to Stopped/SettingUp/etc. could still have a leftover
+                            // stale reply, and gating this call meant that record was never even
+                            // looked at, let alone counted - ResumePendingRepliesAsync's own
+                            // per-reply status match already has a "game state no longer matches"
+                            // drop path for exactly this; every reply for every xyzzy chat now goes
+                            // through it, so the report is a complete accounting, not an
+                            // approximation with a silent gap.
+                            var repliesForChat = settings.expectedReplies.Where(r => r.chatID == legacyChat.chatID).ToList();
+                            await XyzzyImportMapper.ResumePendingRepliesAsync(repliesForChat, game, store, report, cancellationToken);
 
                             break;
                     }
                 }
+            }
+
+            // A reply whose chatID matches no chat in chatData at all (a chat that was later
+            // purged/removed, its stale reply left behind) is never visited by the per-chat loop
+            // above, which only ever iterates *subsets* of expectedReplies keyed by a real chat -
+            // found for real (3 such records) while reconciling a dry run's counts against a real
+            // export's true ExpectedReply total. Counted explicitly here so the report has no
+            // silent gap, matching every other "drop, don't just vanish" path in this importer.
+            var knownChatIds = settings.chatData.Select(c => c.chatID).ToHashSet();
+            var orphanedReplies = settings.expectedReplies.Count(r => !knownChatIds.Contains(r.chatID));
+            if (orphanedReplies > 0)
+            {
+                report.PendingRepliesDroppedByReason["orphaned - no matching chat"] = orphanedReplies;
             }
 
             var carriedKey = options.CarrySteamKey ? steamApiKeyFound : null;
