@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Roboto.Bot;
 using Roboto.Bot.Birthdays;
 using Roboto.Bot.Persistence;
+using Roboto.Bot.Quotes;
 using Roboto.Bot.Xyzzy;
 using Serilog;
 
@@ -41,6 +42,7 @@ builder.Services.AddRobotoBot();
 builder.Services.AddHostedService<TelegramPollingService>();
 builder.Services.AddHostedService<XyzzyRoundSchedulerService>();
 builder.Services.AddHostedService<BirthdaysSchedulerService>();
+builder.Services.AddHostedService<QuotesSchedulerService>();
 
 using var host = builder.Build();
 

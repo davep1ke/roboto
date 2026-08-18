@@ -3,6 +3,7 @@ using Roboto.Bot.Birthdays;
 using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
+using Roboto.Bot.Quotes;
 using Roboto.Bot.Stats;
 using Roboto.Bot.Wordcraft;
 using Roboto.Bot.Xyzzy;
@@ -48,6 +49,8 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<WordcraftStore>();
         services.AddSingleton<BirthdaysRepository>();
         services.AddSingleton<BirthdaysReconciler>();
+        services.AddSingleton<QuotesRepository>();
+        services.AddSingleton<QuotesReconciler>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
         services.AddSingleton<DmOutbox>();
