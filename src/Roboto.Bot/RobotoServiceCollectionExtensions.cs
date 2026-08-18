@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Roboto.Bot.Birthdays;
 using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
@@ -45,6 +46,8 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<XyzzyRoundReconciler>();
         services.AddSingleton<QuietHoursQuery>();
         services.AddSingleton<WordcraftStore>();
+        services.AddSingleton<BirthdaysRepository>();
+        services.AddSingleton<BirthdaysReconciler>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
         services.AddSingleton<DmOutbox>();
