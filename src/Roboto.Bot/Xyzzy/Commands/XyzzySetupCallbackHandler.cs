@@ -53,7 +53,7 @@ public sealed class XyzzySetupCallbackHandler(IServiceProvider services, XyzzyGa
 
             default:
                 // Re-offers the same choice rather than just leaving the tapped keyboard dead - the
-                // router already removed it as the resolved head (phase 11), so without this a
+                // router already removed it as the resolved head (phase 8.9), so without this a
                 // forged/malformed tap here would silently drop the user's DmOutbox queue's head with
                 // nothing to replace it, leaving the whole flow stuck.
                 await outbox.EnqueueButtonQuestionAsync(bot, userId, XyzzyStartCommand.ChoicePrompt,

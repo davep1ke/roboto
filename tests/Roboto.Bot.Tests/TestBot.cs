@@ -60,7 +60,7 @@ public sealed class TestBot : IDisposable
 
     /// <summary>Simulates a user tapping an inline-keyboard button (a CallbackQuery update) - pass
     /// the actual SentButton (see FakeTelegramBotClient.SentMessages) so the tap carries the real
-    /// message ID CallbackQueryRouter now checks against the user's DmOutbox head (phase 11), not
+    /// message ID CallbackQueryRouter now checks against the user's DmOutbox head (phase 8.9), not
     /// just the callback data.</summary>
     public Task SendCallbackAsync(long userId, SentButton button, string firstName = "Test", CancellationToken cancellationToken = default) =>
         SendCallbackAsync(userId, button.CallbackData, button.MessageId, firstName, cancellationToken);

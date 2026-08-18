@@ -7,7 +7,7 @@ namespace Roboto.Bot.Commands;
 
 /// <summary>
 /// DM-only (legacy's isPrivateMessage=true path) - matches an incoming private message against
-/// that user's currently-pending free-text question (DmOutbox, phase 11). A thin adapter: it
+/// that user's currently-pending free-text question (DmOutbox, phase 8.9). A thin adapter: it
 /// preserves the AskAsync/IReplyHandler contract every existing caller (SetQuietHoursCommand, the
 /// mod_xyzzy setup/settings flows) already uses, but delivery/sequencing is DmOutbox's job now -
 /// see its own doc comment for why (only one thing, of any kind, is ever outstanding per user).

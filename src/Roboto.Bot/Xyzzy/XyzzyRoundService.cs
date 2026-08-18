@@ -12,7 +12,7 @@ namespace Roboto.Bot.Xyzzy;
 /// rather than being duplicated across every caller.
 ///
 /// Every DM to a player (hand keyboards, judge keyboards, "you're judging" notices) goes through
-/// DmOutbox rather than being sent directly - phase 11, user's explicit design call: only one
+/// DmOutbox rather than being sent directly - phase 8.9, user's explicit design call: only one
 /// thing (from any game) is ever outstanding in a player's DM at a time, so a player mid-round in
 /// two games gets dealt their second hand only once they've resolved the first.
 ///

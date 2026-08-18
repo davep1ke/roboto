@@ -7,7 +7,7 @@ using Telegram.Bot.Types;
 namespace Roboto.Bot.Tests;
 
 /// <summary>
-/// Covers DmOutbox's strict one-thing-at-a-time-per-user delivery (phase 11, user's explicit design
+/// Covers DmOutbox's strict one-thing-at-a-time-per-user delivery (phase 8.9, user's explicit design
 /// call: "queue everything... and only send things when the window is clear" - a still-unanswered
 /// question shouldn't be able to scroll off screen and get forgotten, and it shouldn't matter
 /// whether the "thing" is a button or a typed reply, they're the same from the user's perspective).

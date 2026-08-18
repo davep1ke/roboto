@@ -7,7 +7,7 @@ namespace Roboto.Bot.Commands;
 /// <summary>
 /// Dispatches CallbackQuery updates (inline-keyboard button taps) to whichever ICallbackQueryHandler
 /// claims the callback_data - but only if the tapped message is actually the user's current
-/// DmOutbox head (phase 11). A tap on anything else (an old, already-resolved keyboard still
+/// DmOutbox head (phase 8.9). A tap on anything else (an old, already-resolved keyboard still
 /// visually sitting in the chat) is rejected without ever reaching a handler, and doesn't advance
 /// the queue - only a tap that genuinely was the current question does. The head is removed
 /// *before* dispatching (same reasoning ReplyRouter uses for text answers) so the handler's own

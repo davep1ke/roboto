@@ -16,7 +16,7 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// step stay free-text through ReplyRouter - no sensible keyboard for an arbitrary number, same
 /// reasoning as /xyzzy_start's configure flow.
 ///
-/// The menu itself goes through DmOutbox (phase 11) like everything else that DMs a player - if the
+/// The menu itself goes through DmOutbox (phase 8.9) like everything else that DMs a player - if the
 /// admin already has something else outstanding (a card to play in another game, say), the menu
 /// simply won't appear until they've cleared it. That structurally replaces phase 8.7's
 /// RemindIfActionPendingAsync nudge: a still-pending game question can no longer get buried by

@@ -3,6 +3,7 @@ using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
 using Roboto.Bot.Stats;
+using Roboto.Bot.Wordcraft;
 using Roboto.Bot.Xyzzy;
 
 namespace Roboto.Bot;
@@ -43,6 +44,7 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<XyzzyRoundService>();
         services.AddSingleton<XyzzyRoundReconciler>();
         services.AddSingleton<QuietHoursQuery>();
+        services.AddSingleton<WordcraftStore>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
         services.AddSingleton<DmOutbox>();

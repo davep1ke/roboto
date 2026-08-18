@@ -5,7 +5,7 @@ namespace Roboto.Bot.Commands;
 /// Superseded the legacy ExpectedReply mechanism (a single global List, matched by chat/user id +
 /// reply-to-message-id), then went through two more designs of its own before landing here: first
 /// one-slot-per-user (nothing else could be outstanding), then several-slots-with-reply-to-
-/// disambiguation (phase 8.8). Both got replaced by DmOutbox (phase 11, user's explicit design
+/// disambiguation (phase 8.8). Both got replaced by DmOutbox (phase 8.9, user's explicit design
 /// call): only one thing - a button question, a text question, or a notice, from any game or
 /// command - is ever visible/outstanding in a user's DM at a time; everything else queues and
 /// waits its turn rather than being sent immediately and disambiguated after the fact. ReplyRouter

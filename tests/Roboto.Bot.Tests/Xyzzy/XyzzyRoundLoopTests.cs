@@ -188,7 +188,7 @@ public class XyzzyRoundLoopTests
 
         // The judge never got a hand keyboard to tap in the first place - they have nothing
         // outstanding at all, so even a forged callback for a card they don't hold is rejected at
-        // the DmOutbox level (phase 11) before it ever reaches the game logic that used to be the
+        // the DmOutbox level (phase 8.9) before it ever reaches the game logic that used to be the
         // only thing guarding against this.
         var forgedData = new XyzzyCallbackData("a", ChatId, 1, "a01").Encode();
         await bot.SendCallbackAsync(judgeId, forgedData, messageId: 0);
