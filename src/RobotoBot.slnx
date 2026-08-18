@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="../tests/Roboto.Bot.Tests/Roboto.Bot.Tests.csproj" />
+  <Project Path="../tests/Roboto.Migrator.Tests/Roboto.Migrator.Tests.csproj" />
   <Project Path="Roboto.Bot/Roboto.Bot.csproj" />
   <Project Path="Roboto.Migrator/Roboto.Migrator.csproj" />
 </Solution>
