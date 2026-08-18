@@ -34,7 +34,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Done, verified | `d3742dd`/`d703b11`/`38e0035`/`ccbf285` |
 | 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
 | 10b. Charting (ScottPlot), `/statgraph` | Done, verified | `31f2b7c` |
-| 8.10 `mod_xyzzy`: multi-answer ("Pick 2"+) question support | Done, verified | `TBD` |
+| 8.10 `mod_xyzzy`: multi-answer ("Pick 2"+) question support | Done, verified | `4a6b1d8` |
 | 11. XML→SQLite migration importer | In progress — stage A (8.10) done; stage B (the importer itself) not started, see below | — |
 | 12. Cutover | Not started | — |
 
