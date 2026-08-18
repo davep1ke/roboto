@@ -89,6 +89,23 @@ public sealed class SqliteStateStore : IStateStore
         return results;
     }
 
+    public async Task<IReadOnlyList<string>> LoadAllKeysAsync(string keyPattern, CancellationToken cancellationToken)
+    {
+        await using var connection = await OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT key FROM state WHERE key LIKE $pattern;";
+        command.Parameters.AddWithValue("$pattern", keyPattern);
+
+        var keys = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            keys.Add(reader.GetString(0));
+        }
+
+        return keys;
+    }
+
     public async Task SaveAsync<T>(string key, T value, CancellationToken cancellationToken)
     {
         var json = JsonSerializer.Serialize(value, JsonOptions);

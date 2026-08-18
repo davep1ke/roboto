@@ -401,7 +401,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
 
     /// <summary>Excludes cards the player has already picked *this round* (Submissions), so a
     /// multi-answer question can't have the same card played into more than one of its slots.</summary>
-    private static List<List<DmButton>> BuildHandKeyboard(XyzzyGameState game, XyzzyPlayer player)
+    internal static List<List<DmButton>> BuildHandKeyboard(XyzzyGameState game, XyzzyPlayer player)
     {
         var alreadyPicked = game.Submissions.GetValueOrDefault(player.PlayerId, []);
         return player.Hand.Where(cardId => !alreadyPicked.Contains(cardId)).Select(cardId =>
@@ -418,7 +418,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
     /// belongs to one player's hand/submission at a time (see this class's own doc comment on deck
     /// uniqueness), so no extra bookkeeping is needed just because a submission can now hold more
     /// than one card.</summary>
-    private static List<List<DmButton>> BuildJudgeKeyboard(XyzzyGameState game) =>
+    internal static List<List<DmButton>> BuildJudgeKeyboard(XyzzyGameState game) =>
         game.Submissions.OrderBy(_ => Random.Shared.Next()).Select(kvp =>
         {
             var data = new XyzzyCallbackData("j", game.ChatId, game.RoundNumber, kvp.Value[0]).Encode();
@@ -429,6 +429,6 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
     /// deliberately instead of reproducing its primary regex-based per-blank interleaving (matching
     /// each answer into its own "_" in the question text). A single-card submission is just that
     /// one card's text, unaffected.</summary>
-    private static string CombinedAnswerText(IReadOnlyList<string> cardIds) =>
+    internal static string CombinedAnswerText(IReadOnlyList<string> cardIds) =>
         string.Join(" >> ", cardIds.Select(id => CardCatalog.Answers.First(a => a.Id == id).Text));
 }

@@ -114,6 +114,34 @@ public sealed class DmOutbox(IStateStore store, ILogger<DmOutbox> logger)
         _resolvingInsertIndex[userId] = 0;
     }
 
+    /// <summary>Startup safety net (Program.cs calls this once, right after IStateStore.
+    /// InitializeAsync) - delivers any user's queue whose head is sitting undelivered. Covers two
+    /// cases: a prior process crash/restart leaving a pump mid-flight (queues are normally only
+    /// ever left with an undelivered head very briefly, between AddAsync/PumpNextAsync writing it
+    /// and actually sending it), and a freshly imported instance (phase 11's XmlImporter) whose
+    /// resumed in-flight games/replies are deliberately written as undelivered data during import
+    /// itself - never sent live by the importer, only once the real bot process actually starts -
+    /// see MIGRATION.md's stale-data-safety notes for why that split matters.</summary>
+    public async Task PumpAllOutstandingAsync(ITelegramBotClient bot, CancellationToken cancellationToken)
+    {
+        foreach (var key in await store.LoadAllKeysAsync("dm-outbox:%", cancellationToken))
+        {
+            if (!long.TryParse(key.AsSpan("dm-outbox:".Length), out var userId))
+            {
+                continue;
+            }
+
+            try
+            {
+                await PumpNextAsync(bot, userId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed pumping outstanding DM outbox for user {UserId} on startup sweep", userId);
+            }
+        }
+    }
+
     /// <summary>Delivers as much of the queue as it currently can: every leading notice
     /// immediately (they don't block), stopping at (and delivering) the first not-yet-delivered
     /// question, which then blocks further delivery until it's resolved. A delivery failure (user

@@ -1,3 +1,5 @@
+using Roboto.Bot.Persistence;
+
 namespace Roboto.Bot.Xyzzy;
 
 /// <summary>AnswerCount > 1 ("Pick 2"+) only matters on question cards - a player must submit that
@@ -7,20 +9,66 @@ namespace Roboto.Bot.Xyzzy;
 public sealed record XyzzyCard(string Id, string Text, int AnswerCount = 1);
 
 /// <summary>
-/// The default (and, for v1, only) card pack: a modest hardcoded sample of the public Cards
-/// Against Humanity base set (CC BY-NC-SA-licensed, hence safe to reproduce here). This is a
-/// placeholder, not permanent content - no real card text exists anywhere in this repo (legacy
-/// only ever held it in the live production XML), so this stands in until the phase-11 XML
-/// migration importer brings across real data. CardCast/CRCast pack import (legacy's way of
-/// getting more packs) is explicitly out of scope for v1 - see MIGRATION.md.
+/// The default card pack: a modest hardcoded sample of the public Cards Against Humanity base set
+/// (CC BY-NC-SA-licensed, hence safe to reproduce here) - what every fresh dev/test instance gets,
+/// and every existing test still exercises unchanged (they never call LoadOverrideAsync, so these
+/// hardcoded IDs/texts stay exactly what they were).
+///
+/// A real, imported instance overrides this once at startup via LoadOverrideAsync (phase 11's
+/// XmlImporter writes the real catalog to IStateStore; Program.cs loads it before any game logic
+/// runs) - a mutable-backing-field swap rather than making every call site across XyzzyRoundService/
+/// XyzzyStartCommand load the catalog asynchronously from IStateStore on every access, which would
+/// have meant touching most of the already-tested round-play engine for this. Deliberately replaces
+/// the defaults outright when present, not merged - real content and the hardcoded placeholder
+/// jokes have no business sharing one deck.
 ///
 /// IDs are short, stable, human-debuggable strings (not GUIDs like legacy) - they get embedded
 /// directly in inline-keyboard callback_data (format: xy:&lt;action&gt;:&lt;groupChatId&gt;:
-/// &lt;round&gt;:&lt;cardId&gt;), and Telegram caps callback_data at 64 bytes.
+/// &lt;round&gt;:&lt;cardId&gt;), and Telegram caps callback_data at 64 bytes. The importer assigns
+/// its own new short IDs rather than reusing legacy's GUIDs for exactly this reason.
 /// </summary>
 public static class CardCatalog
 {
-    public static IReadOnlyList<XyzzyCard> Questions { get; } =
+    public const string QuestionsKey = "xyzzy:catalog:questions";
+    public const string AnswersKey = "xyzzy:catalog:answers";
+
+    // Assigned in the static constructor below, not inline here - DefaultQuestions/DefaultAnswers
+    // are declared later in this file, and static member initializers run in declaration order, so
+    // an inline initializer here would read them before their own initializers had run. A static
+    // constructor always runs after every static field/property initializer in the type, regardless
+    // of declaration order, which sidesteps that.
+    private static IReadOnlyList<XyzzyCard> _questions;
+    private static IReadOnlyList<XyzzyCard> _answers;
+
+    static CardCatalog()
+    {
+        _questions = DefaultQuestions;
+        _answers = DefaultAnswers;
+    }
+
+    public static IReadOnlyList<XyzzyCard> Questions => _questions;
+    public static IReadOnlyList<XyzzyCard> Answers => _answers;
+
+    /// <summary>Called once at startup (Program.cs, right after IStateStore.InitializeAsync,
+    /// before any hosted service can touch a game) - swaps in an imported catalog if this instance
+    /// has one, otherwise leaves the hardcoded defaults in place untouched.</summary>
+    public static async Task LoadOverrideAsync(IStateStore store, CancellationToken cancellationToken)
+    {
+        var questions = await store.LoadAsync<List<XyzzyCard>>(QuestionsKey, cancellationToken);
+        var answers = await store.LoadAsync<List<XyzzyCard>>(AnswersKey, cancellationToken);
+
+        if (questions is { Count: > 0 })
+        {
+            _questions = questions;
+        }
+
+        if (answers is { Count: > 0 })
+        {
+            _answers = answers;
+        }
+    }
+
+    private static IReadOnlyList<XyzzyCard> DefaultQuestions { get; } =
     [
         new("q01", "What's that smell?"),
         new("q02", "I got 99 problems but _ ain't one."),
@@ -55,7 +103,7 @@ public static class CardCatalog
         new("q31", "Give me two things that go poorly together.", AnswerCount: 2),
     ];
 
-    public static IReadOnlyList<XyzzyCard> Answers { get; } =
+    private static IReadOnlyList<XyzzyCard> DefaultAnswers { get; } =
     [
         new("a01", "Being on fire."),
         new("a02", "A windmill full of corpses."),

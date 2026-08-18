@@ -20,6 +20,12 @@ public interface IStateStore
     /// it.</summary>
     Task<IReadOnlyList<T>> LoadAllAsync<T>(string keyPattern, CancellationToken cancellationToken);
 
+    /// <summary>Like LoadAllAsync, but returns the matching keys themselves rather than their
+    /// deserialized values - for a caller whose value type doesn't carry its own identity (e.g.
+    /// DmOutbox's per-user queues are keyed "dm-outbox:{userId}", but DmOutboxEntry itself has no
+    /// UserId field - the key is the only place that id lives).</summary>
+    Task<IReadOnlyList<string>> LoadAllKeysAsync(string keyPattern, CancellationToken cancellationToken);
+
     Task SaveAsync<T>(string key, T value, CancellationToken cancellationToken);
 
     Task DeleteAsync(string key, CancellationToken cancellationToken);

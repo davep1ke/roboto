@@ -3,11 +3,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Roboto.Bot;
 using Roboto.Bot.Birthdays;
+using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
 using Roboto.Bot.Quotes;
 using Roboto.Bot.Steam;
 using Roboto.Bot.Xyzzy;
 using Serilog;
+using Telegram.Bot;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -49,7 +51,21 @@ builder.Services.AddHostedService<SteamSchedulerService>();
 
 using var host = builder.Build();
 
-await host.Services.GetRequiredService<IStateStore>().InitializeAsync(CancellationToken.None);
+var stateStore = host.Services.GetRequiredService<IStateStore>();
+await stateStore.InitializeAsync(CancellationToken.None);
+
+// Swaps in a real, imported card catalog if this instance has one (phase 11's XmlImporter) -
+// before any hosted service can touch a game. Every instance that's never had one imported keeps
+// the hardcoded placeholder set untouched.
+await CardCatalog.LoadOverrideAsync(stateStore, CancellationToken.None);
+
+// Startup safety net - delivers anything left sitting undelivered in a user's DM queue (a prior
+// crash mid-pump, or a freshly imported instance's resumed in-flight games/replies - see
+// DmOutbox.PumpAllOutstandingAsync's own doc comment). Uses its own TelegramBotClient rather than
+// resolving one via DI, same reasoning as every scheduler service - no command/router anywhere
+// takes ITelegramBotClient as a constructor dependency either.
+await host.Services.GetRequiredService<DmOutbox>()
+    .PumpAllOutstandingAsync(new TelegramBotClient(telegramToken), CancellationToken.None);
 
 await host.RunAsync();
 
