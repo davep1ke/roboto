@@ -14,6 +14,11 @@ public sealed class BotOptions
     public string TelegramToken { get; set; } = "";
     public string BotUsername { get; set; } = "";
 
+    /// <summary>Optional - unlike TelegramToken, a blank value doesn't block startup. mod_steam's
+    /// commands/background job just degrade to "not configured" rather than treating it as fatal,
+    /// since most instances won't set it.</summary>
+    public string SteamApiKey { get; set; } = "";
+
     /// <summary>
     /// {DataDir}/{Instance} - holds bot.env and roboto.db. InstanceBootstrapper computes this same
     /// path itself rather than reading it from here, since it runs before BotOptions is populated.

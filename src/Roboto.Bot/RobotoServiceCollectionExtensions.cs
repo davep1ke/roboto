@@ -5,6 +5,7 @@ using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
 using Roboto.Bot.Quotes;
 using Roboto.Bot.Stats;
+using Roboto.Bot.Steam;
 using Roboto.Bot.Wordcraft;
 using Roboto.Bot.Xyzzy;
 
@@ -51,6 +52,12 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<BirthdaysReconciler>();
         services.AddSingleton<QuotesRepository>();
         services.AddSingleton<QuotesReconciler>();
+        // A single shared HttpClient for the app's lifetime - same lightweight-direct-construction
+        // preference this codebase already uses for TelegramBotClient (no AddHttpClient/factory
+        // dependency needed for one client).
+        services.AddSingleton(_ => new SteamApiClient(new HttpClient()));
+        services.AddSingleton<SteamRepository>();
+        services.AddSingleton<SteamReconciler>();
         services.AddSingleton(new AppClock(DateTime.UtcNow));
         services.AddSingleton<CommandRouter>();
         services.AddSingleton<DmOutbox>();

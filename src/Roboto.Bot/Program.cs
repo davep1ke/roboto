@@ -5,6 +5,7 @@ using Roboto.Bot;
 using Roboto.Bot.Birthdays;
 using Roboto.Bot.Persistence;
 using Roboto.Bot.Quotes;
+using Roboto.Bot.Steam;
 using Roboto.Bot.Xyzzy;
 using Serilog;
 
@@ -18,7 +19,7 @@ builder.Services.Configure<BotOptions>(builder.Configuration);
 var instance = builder.Configuration["Instance"] ?? "default";
 var dataDir = builder.Configuration["DataDir"] ?? "/data";
 
-if (!InstanceBootstrapper.TryLoad(dataDir, instance, out var telegramToken, out var botUsername, out var message))
+if (!InstanceBootstrapper.TryLoad(dataDir, instance, out var telegramToken, out var botUsername, out var steamApiKey, out var message))
 {
     Console.Error.WriteLine(message);
     return 1;
@@ -30,6 +31,7 @@ builder.Services.Configure<BotOptions>(o =>
     o.DataDir = dataDir;
     o.TelegramToken = telegramToken;
     o.BotUsername = botUsername;
+    o.SteamApiKey = steamApiKey;
 });
 
 builder.Services.AddSerilog((_, loggerConfig) => loggerConfig
@@ -43,6 +45,7 @@ builder.Services.AddHostedService<TelegramPollingService>();
 builder.Services.AddHostedService<XyzzyRoundSchedulerService>();
 builder.Services.AddHostedService<BirthdaysSchedulerService>();
 builder.Services.AddHostedService<QuotesSchedulerService>();
+builder.Services.AddHostedService<SteamSchedulerService>();
 
 using var host = builder.Build();
 
