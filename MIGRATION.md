@@ -31,9 +31,9 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.7 `mod_xyzzy`: `/xyzzy_settings` keyboard + pending-action reminder | Done, verified | `eecdd66` |
 | 8.8 `ReplyRouter` multi-context support (several pending replies per user) | Done, superseded by 8.9 | `7440283` |
 | 8.9 `DmOutbox`: strict per-user one-thing-at-a-time DM serialization | Done, verified | `a18c972` |
-| 9. Remaining modules (quote, birthdays, wordcraft, steam) | Not started | — |
+| 9. Remaining modules (quote, birthdays, wordcraft, steam) | Done, verified | `d3742dd`/`d703b11`/`38e0035`/`ccbf285` |
 | 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
-| 10b. Charting (ScottPlot), `/statgraph` | Not started - separate from 10a, see below | — |
+| 10b. Charting (ScottPlot), `/statgraph` | Done, verified | `31f2b7c` |
 | 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
 | 12. Cutover | Not started | — |
 
@@ -559,6 +559,81 @@ taps (`AStaleTapAfterTheRoundHasMovedOnIsRejected`, `TheJudgeCannotSubmitAnAnswe
 `AnsweringTwiceInTheSameRoundIsRejected`) failed with the old "no longer valid" toast never
 appearing, while the other 78 passed, then reverted. `docker compose build` unaffected.
 
+## 9: remaining modules (mod_quote, mod_birthdays, mod_wordcraft, mod_steam) — done and verified (2026-08-18)
+
+Ported all four remaining legacy modules in one pass, batched with 10b and the shutdown
+investigation per the user's request ("go for all of those in one pass - then one big test phase
+afterwards"), rather than the previous phase-by-phase verify loop - individual commits per module,
+one big verification pass at the end instead.
+
+**Design call confirmed with the user up front**: every multi-step conversational flow (quote
+add/conv/config, birthday add/remove, steam add/remove-player) goes over DM through `DmOutbox`,
+matching `SetQuietHoursCommand`/`XyzzySettingsCommand` - not in the group chat the way legacy asked
+them. Keeps every "bot is waiting on you" interaction in the codebase going through the same
+one-thing-at-a-time queue (8.9's mandate) instead of adding a second, un-queued callback pathway
+just for group-posted keyboards.
+
+- **`Wordcraft/`** - simplest: one global (not per-chat) word list, `/craft` (ports the odd
+  chained-number-suffix roll verbatim), `/craft_add`/`/craft_remove`.
+- **`Birthdays/`** - per-chat `List<BirthdayEntry>`, `/birthday_add` (2-step DM), `/birthday_remove`,
+  `/birthday_list`. `BirthdaysReconciler`/`BirthdaysSchedulerService` (hourly tick) is the same
+  testable-class-plus-`BackgroundService` split `XyzzyRoundReconciler`/`XyzzyRoundSchedulerService`
+  established - repeated here and for quotes/steam rather than introducing a new shared scheduler
+  abstraction, since three more instances of an already-proven pattern is simpler than a generic one
+  built speculatively for exactly three callers.
+- **`Quotes/`** - the trickiest flow: `/quote_conv` is open-ended (an unknown number of "Name\text"
+  lines until "done"/"cancel"), so unlike every fixed-step flow elsewhere it re-asks the same step
+  repeatedly, accumulating lines into `PendingReply.Data` via a unit-separator-delimited string
+  (same idea legacy's own flattening approach used, replacing its fragile `<<#::#>>` text marker).
+  `/quote_config`'s menu (`QuoteConfigCallbackHandler`) re-offers itself on an unrecognised
+  choice - the same fix `XyzzySetupCallbackHandler` needed in 8.9 (the router removes a tapped
+  keyboard as the resolved head before the handler runs, so an unhandled choice needs a real
+  replacement or the flow gets stuck) - applied proactively here instead of shipping the same bug
+  into new code.
+- **`Steam/`** - the only module needing a real external dependency: a Steam Web API key.
+  `bot.env` gains an optional `SteamApiKey=` line (`InstanceBootstrapper`/`BotOptions`) - blank by
+  default, and unlike `TelegramToken` a blank value never blocks startup; commands say tracking
+  isn't configured, the background job logs once and no-ops. `SteamApiClient` ports the three GET
+  calls with `HttpClient`/`System.Text.Json` instead of legacy's `WebClient`/`Newtonsoft.Json`.
+  **Deliberate correction, not a faithful-bug port**: achievement-fetching filters to `Achieved ==
+  1`. Legacy's equivalent added every achievement name the endpoint returned regardless of that
+  flag, which would have misannounced every achievement in a game as "just earned" the first time
+  any player was ever checked - clearly not the intent for a live announcer bot, so this fixes it.
+
+**Verified**: 32 new tests (113 total, up from 81) across `Wordcraft/WordcraftTests.cs` (5),
+`Birthdays/BirthdaysTests.cs` (7, including the reconciler's once-per-day guard),
+`Quotes/QuotesTests.cs` (12, including the full `/quote_conv` loop, a malformed-line abandons-the-
+flow case matching legacy, and the config-menu re-offer), `Steam/SteamTests.cs` (8, including a
+`FakeSteamHttpHandler`-backed test of `SteamApiClient` against realistic Steam API response shapes
+and a full reconciler run proving a new achievement gets announced once and only once). Stable
+across repeated runs. `docker compose build` unaffected. Live-bot pass against `beefy` covered
+`/craft`, `/birthday_add` + `/birthday_list`, `/quote_add` and `/quote_conv`, and Steam's
+no-key-configured messaging on `/steam_addplayer`/`/steam_stats`/`/steam_help`.
+
+## 10b: `/statgraph` charting — done and verified (2026-08-18)
+
+On top of 10a's `StatsRecorder` - purely a rendering layer, no new data collection. Added the
+`ScottPlot` NuGet package (5.1.59), which pulls in `SkiaSharp.NativeAssets.Linux.NoDependencies` -
+statically linked, so no `libfontconfig1`/etc needed in the Debian runtime image after all (the
+Dockerfile's own comment had flagged this as a likely need; turned out not to be one, confirmed by
+actually running `docker compose build` after adding the package rather than assuming). `/statgraph
+<name>` renders the named `StatSeries`' `RecentPoints` (already bounded to
+`StatsRecorder.MaxRecentPoints`) as a PNG line chart via `plot.GetImageBytes(...)`, sent with
+`bot.SendPhoto`. No name, or an unrecognised one, lists the available stat names (same list
+`/stats` already shows).
+
+`FakeTelegramBotClient` gained a `SendPhotoRequest` case (captures chat id/caption/filename/raw
+bytes onto a new `SentPhoto` record), following its own doc comment's "add a case as soon as a
+command needs something else" convention.
+
+**Verified**: 4 new tests (117 total, up from 113) (`StatGraphTests.cs`) - no-argument and unknown-name both list available
+stats without sending a photo; a known stat with recorded history actually renders and sends a real
+PNG (asserted via the file's magic-byte signature, not just "didn't throw"); name matching is
+case-insensitive. `docker compose build` succeeds with the new dependency. A live `/statgraph`
+round-trip against the `beefy` container (not just a local build) is the real proof the
+statically-linked SkiaSharp assumption holds inside the actual runtime image, not just on this dev
+machine which already has more system libraries installed than the container does.
+
 ## 10a: Stats engine — done and verified (2026-08-17)
 
 Requested alongside 8.8 ("let's build that, and the stats engine at the same time"). Replaces
@@ -601,7 +676,6 @@ truncation, confirmed exactly `RecentPointsAreBoundedRatherThanGrowingForever` f
   (defaults-vs-custom chain, question-limit/timeout/throttle prompts before the game starts) was
   originally cut here too but got built out in phase 8.5, below - pack-filter selection specifically
   stays cut since v1 only has the one hardcoded pack, nothing to filter yet.
-- **Charting** (`/statgraph`) — ScottPlot/SkiaSharp, debian-slim runtime base. Not started at all.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user
   before work starts; build and prove it against test data first, only point it at a real prod XML
@@ -609,14 +683,31 @@ truncation, confirmed exactly `RecentPointsAreBoundedRatherThanGrowingForever` f
 - **JSON library for code that reads legacy-shaped data** (e.g. the migration importer) — the new
   SQLite layer uses `System.Text.Json`; whether the importer wants `Newtonsoft.Json` instead (to
   match the legacy code's looser `JObject`-style parsing) is still open, not urgent.
-- **Shutdown/cancellation redesign.** User's words: "the exit logic sucks." Current
-  `TelegramPollingService` inherits the legacy shape by construction — Ctrl-C/SIGTERM has to wait
-  out whatever long-poll HTTP call is currently in flight before it can actually exit. Not yet
-  decided how to do better (shorter poll timeouts? cancel the in-flight call outright? just accept
-  and document a bounded worst-case delay?).
 - **`ROBOTO_INSTANCE` vs legacy `-context`** — functionally the same concept (which bot identity to
   run as). Worth a deliberate naming/consistency pass later rather than carrying two names for one
   idea indefinitely; not urgent.
 - **`/save`, `/background`** — legacy mod_standard commands with no equivalent need any more
   (SQLite already writes incrementally; no periodic background-processing loop exists yet to
   manually trigger). Not planned to be ported as-is; revisit only if a real need shows up.
+- **`mod_xyzzy` bot top-up doesn't get re-checked after a kick or a leave.**
+  `XyzzyRoundService.TopUpWithBotsAsync` only runs once, at `FinishSetupAsync` - it's never called
+  again. `XyzzySettingsCallbackHandler.HandleKickAsync` removes a player and never rechecks
+  anything at all. `XyzzyLeaveCommand` does call `TryEndGameAsync` afterward (which ends the game
+  if under 2 total players or everyone left is a bot), but doesn't re-top-up with bots either. Net
+  effect: kicking a real player, or several people leaving, can leave a game limping along under
+  `MinPlayers` (3) with no bot fill and no end-condition catching it, until something else (like
+  every real player eventually leaving) finally triggers `TryEndGameAsync`. Found while scoping
+  phase 9's work, not fixed then - needs a deliberate look at whether top-up should re-run after
+  kick/leave, or whether top-up being setup-only is the intended design and the real gap is
+  elsewhere (e.g. `TryEndGameAsync`'s own thresholds).
+
+## Investigated and closed out, no code change needed
+
+- **Shutdown/cancellation.** User's words (phase 8 era): "the exit logic sucks." The concern was
+  that `TelegramPollingService` might inherit legacy's shape - Ctrl-C/SIGTERM waiting out whatever
+  long-poll HTTP call is in flight. Actually measured before starting phase 9's shutdown-redesign
+  item: `time docker stop -t 30` against the running `beefy` container came back at **0.17s**. The
+  installed `Telegram.Bot` 22.10.2.1's `ReceiverOptions` doesn't even have a `Timeout` property
+  (confirmed via reflection) - there's no multi-second long-poll actually held open to wait out the
+  way legacy's hand-rolled poller had. Nothing to fix; the assumption predated anyone actually
+  timing it.
