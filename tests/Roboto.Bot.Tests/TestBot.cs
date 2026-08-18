@@ -55,6 +55,24 @@ public sealed class TestBot : IDisposable
 
     public MessageDispatcher Dispatcher => Services.GetRequiredService<MessageDispatcher>();
 
+    /// <summary>Taps a player's current hand-keyboard card, then keeps tapping their next hand
+    /// keyboard for as long as SubmitAnswerAsync reports "pick your next card" - transparently
+    /// handles both single- and multi-answer questions, so existing single-answer call sites don't
+    /// need to know or care which kind of question is actually in play. A single-answer question
+    /// still resolves in exactly one tap, same as before multi-answer support existed.</summary>
+    public async Task AnswerHandFullyAsync(long playerId)
+    {
+        while (true)
+        {
+            var handMessage = BotClient.SentMessages.Last(m => m.ChatId == playerId && m.Buttons is { Count: > 0 });
+            await SendCallbackAsync(playerId, handMessage.Buttons![0]);
+            if (BotClient.AnsweredCallbacks[^1].Text != "Answer submitted! Pick your next card.")
+            {
+                break;
+            }
+        }
+    }
+
     public Task SendAsync(Message message, CancellationToken cancellationToken = default) =>
         Dispatcher.DispatchAsync(BotClient, new Update { Message = message }, cancellationToken);
 

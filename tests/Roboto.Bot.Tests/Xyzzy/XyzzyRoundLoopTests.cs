@@ -85,9 +85,7 @@ public class XyzzyRoundLoopTests
         // other non-judge player is also a bot (already auto-submitted), her tap alone should
         // complete the round: the bot judge auto-picks a winner with no further input from anyone,
         // chaining all the way to round 3 within this one callback.
-        var handMessage = bot.BotClient.SentMessages.Last(m =>
-            m.ChatId == Alice && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal)));
-        await bot.SendCallbackAsync(Alice, handMessage.Buttons![0]);
+        await bot.AnswerHandFullyAsync(Alice);
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_status"));
         Assert.Contains("Round 3", bot.BotClient.SentMessages[^1].Text);
@@ -130,8 +128,7 @@ public class XyzzyRoundLoopTests
         // Both non-judge players play a card from their hand.
         foreach (var playerId in answerers)
         {
-            var button = FirstHandButton(bot, playerId);
-            await bot.SendCallbackAsync(playerId, button);
+            await bot.AnswerHandFullyAsync(playerId);
         }
 
         // Judging should have kicked in automatically once both answered - the judge got a DM
@@ -196,6 +193,51 @@ public class XyzzyRoundLoopTests
     }
 
     [Fact]
+    public async Task MultiAnswerQuestionRequiresPickingTheFullSetBeforeJudgingBegins()
+    {
+        // CardCatalog's multi-answer card ("q31", AnswerCount=2) isn't drawn naturally here -
+        // forced directly via the repository so this test is deterministic rather than depending
+        // on a random deck shuffle happening to land on it.
+        using var bot = await StartedGameWithThreePlayersAsync();
+        await BeginRoundAsync(bot, Alice);
+
+        var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+        var game = await games.GetAsync(ChatId, CancellationToken.None);
+        game.CurrentQuestionCardId = "q31";
+        await games.SaveAsync(game, CancellationToken.None);
+
+        var judgeId = new[] { Alice, Bob, Carol }.First(id =>
+            !bot.BotClient.SentMessages.Any(m => m.ChatId == id && m.Buttons is { Count: > 0 } && m.Buttons.Any(b => b.CallbackData.StartsWith("xy:a:", StringComparison.Ordinal))));
+        var answerers = new[] { Alice, Bob, Carol }.Where(id => id != judgeId).ToArray();
+
+        // First card from the first answerer isn't enough on its own - no judging keyboard yet,
+        // and the re-offered hand excludes the card they already picked.
+        var firstAnswerer = answerers[0];
+        var firstButton = bot.BotClient.SentMessages.Last(m => m.ChatId == firstAnswerer && m.Buttons is { Count: > 0 }).Buttons![0];
+        await bot.SendCallbackAsync(firstAnswerer, firstButton);
+        Assert.Contains("Pick your next card", bot.BotClient.AnsweredCallbacks[^1].Text!);
+        Assert.DoesNotContain(bot.BotClient.SentMessages, m => m.ChatId == judgeId && m.Text.Contains("Pick the winner"));
+
+        var secondHandMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == firstAnswerer && m.Buttons is { Count: > 0 });
+        Assert.DoesNotContain(secondHandMessage.Buttons!, b => b.CallbackData == firstButton.CallbackData);
+
+        // Finish both answerers - now judging should start, one button per submitter (not per
+        // card), with each submission's two cards joined with " >> ".
+        await bot.AnswerHandFullyAsync(firstAnswerer);
+        await bot.AnswerHandFullyAsync(answerers[1]);
+
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Text.Contains("Pick the winner"));
+        Assert.Equal(2, judgeMessage.Buttons!.Count);
+        Assert.Contains(judgeMessage.Buttons!, b => b.Text.Contains(">>", StringComparison.Ordinal));
+
+        await bot.SendCallbackAsync(judgeId, judgeMessage.Buttons![0]);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins the round"));
+
+        var finalGame = await games.GetAsync(ChatId, CancellationToken.None);
+        Assert.Equal(2, finalGame.RoundNumber);
+    }
+
+    [Fact]
     public async Task AStaleTapAfterTheRoundHasMovedOnIsRejected()
     {
         using var bot = await StartedGameWithThreePlayersAsync();
@@ -210,7 +252,7 @@ public class XyzzyRoundLoopTests
         // Play the round out normally first so the round number advances past the stale button.
         foreach (var playerId in answerers)
         {
-            await bot.SendCallbackAsync(playerId, FirstHandButton(bot, playerId));
+            await bot.AnswerHandFullyAsync(playerId);
         }
         var judgeKeyboardMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Buttons is { Count: > 0 });
         await bot.SendCallbackAsync(judgeId, judgeKeyboardMessage.Buttons![0]);

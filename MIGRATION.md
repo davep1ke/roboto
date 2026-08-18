@@ -34,7 +34,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 9. Remaining modules (quote, birthdays, wordcraft, steam) | Done, verified | `d3742dd`/`d703b11`/`38e0035`/`ccbf285` |
 | 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
 | 10b. Charting (ScottPlot), `/statgraph` | Done, verified | `31f2b7c` |
-| 11. XML→SQLite migration importer | Not started — needs real prod XML copy from user first | — |
+| 8.10 `mod_xyzzy`: multi-answer ("Pick 2"+) question support | Done, verified | `TBD` |
+| 11. XML→SQLite migration importer | In progress — stage A (8.10) done; stage B (the importer itself) not started, see below | — |
 | 12. Cutover | Not started | — |
 
 "Verified" means actually exercised for real (build + run + real Telegram round-trip, sometimes
@@ -668,6 +669,107 @@ reconciler's active-games/players snapshot and `/stats` surfacing a recorded sta
 across 8 repeated runs. Sanity-checked per the established pattern: disabled the bounded-history
 truncation, confirmed exactly `RecentPointsAreBoundedRatherThanGrowingForever` failed (500 expected,
 510 actual) while everything else passed, then reverted. `docker compose build` unaffected.
+
+## 8.10: `mod_xyzzy` multi-answer ("Pick 2"+) question support — done and verified (2026-08-18)
+
+Prerequisite for phase 11's importer, not an isolated feature request: the user handed over real
+production XML exports (see phase 11's kickoff section below) and asked that the real card catalog
+- including genuine multi-answer cards, which the placeholder `CardCatalog` and v1 round-play logic
+never supported - import with full fidelity rather than being silently dropped. Built this first,
+on its own, before any importer code.
+
+Good news uncovered while scoping it: `XyzzyGameState.Submissions` (`Dictionary<long, List<string>>`)
+was already shaped to hold more than one card per player - it just wasn't used that way. This was a
+flow/UI change on top of an already-compatible data shape, not a data migration of its own.
+
+- `XyzzyCard` ([CardCatalog.cs](src/Roboto.Bot/Xyzzy/CardCatalog.cs)) gained `AnswerCount = 1`
+  (only meaningful on question cards).
+- `XyzzyRoundService.SubmitAnswerAsync` now appends to the player's submission list instead of
+  hard-rejecting a second submit; below the question's `AnswerCount` it re-offers a "pick your next
+  card" hand keyboard (excluding cards already picked this round - `BuildHandKeyboard`) instead of
+  checking for judging. The "is everyone done" check changed from "does everyone have an entry in
+  Submissions" to "has everyone reached their full AnswerCount" - the former was a real bug caught
+  before it shipped (a partially-submitted multi-answer player would have incorrectly counted as
+  done).
+- `BuildJudgeKeyboard` shows one button per *submitter*, not per card - multi-card submissions join
+  with `" >> "` (`CombinedAnswerText`), legacy's own fallback format, used deliberately instead of
+  reproducing legacy's primary regex-based per-blank interleaving. `PickWinnerAsync`'s winning-answer
+  message uses the same join for a multi-card win; a single-card win is completely unchanged
+  (still substitutes directly into the question's blank).
+- Bots (`BeginQuestionAsync`'s auto-answer loop) submit in a loop until they've met the question's
+  `AnswerCount`, same as a real player tapping through several cards.
+- `XyzzyCallbackData`'s `xy:a:...`/`xy:j:...` encoding didn't need to change - each tap still
+  submits/represents exactly one card; only the flow around how many taps are needed changed.
+
+**Verified**: one new dedicated test
+(`MultiAnswerQuestionRequiresPickingTheFullSetBeforeJudgingBegins`, 118 total, up from 117) that
+forces a real 2-answer question via direct repository state (not a random draw - see below for
+why), proving: a lone first card doesn't trigger judging and the re-offered hand excludes it; both
+answerers fully completing triggers judging with one combined (`" >> "`-joined) button per
+submitter; picking a winner advances the round normally. The full existing suite (117 tests, zero
+changes to their own assertions) stayed green across 8 repeated runs both *before and after* adding
+a multi-answer card to the real `CardCatalog.Questions` pool - the first attempt at adding it
+non-conditionally caused one genuine, real flake
+(`XyzzySettingsTests.StillWaitingOnACardBlocksTheSettingsMenuUntilItsAnswered`, caught immediately,
+not left latent) because several existing tests assumed "tap one hand card = fully answered".
+Fixed at the root with a new shared `TestBot.AnswerHandFullyAsync` helper (taps hand-keyboard
+buttons in a loop until the round genuinely accepts the answer as complete) and updated every
+affected call site across `XyzzyRoundLoopTests.cs`, `XyzzyRoundReconcilerTests.cs`,
+`XyzzySettingsTests.cs`, `XyzzyStartWizardTests.cs`, and `ReplyRouterMultiContextTests.cs` -
+deliberately *not* left as an accepted low-probability flake, since this codebase's own posture on
+determinism (e.g. the judge-rotation-order invariants used throughout) treats that as a real defect
+to fix, not noise to tolerate. Sanity-checked per the established pattern: temporarily forced
+`SubmitAnswerAsync`'s "not yet done" branch to `if (false)`, confirmed exactly the new multi-answer
+test failed (with the exact wrong message - "Answer submitted!" instead of "...pick your next
+card") while all 117 others passed, then reverted. `docker compose build` unaffected.
+
+## Phase 11 kickoff: XML→SQLite migration importer (2026-08-18)
+
+User handed over three real production XML exports at `data/beefy/` (gitignored, confirmed via
+`git check-ignore -v` before touching anything): `chat_mangler_bot.xml` (~139KB, 8 chats),
+`robotolive.xml` (~4.1MB, 6 chats, includes mod_xyzzy + mod_steam + a real Steam API key),
+`chat_against_humanity_bot.xml` (~114MB, 4783 chats, 766 pending ExpectedReplies - the xyzzy
+production bot, mod_xyzzy-only). Explicitly flagged by the user as sensitive (live user data, live
+pending conversations, live credentials) - schema reconnaissance was done safely, reading only tag
+names/counts via Python `xml.etree.ElementTree`, never field values, confirming the root `settings`
+type (`Roboto/settings.cs`) and its polymorphic per-module `chatData`/`pluginData` blobs
+(`xsi:type`-tagged subclasses of `RobotoModuleChatDataTemplate`/`RobotoModuleDataTemplate`, one per
+legacy module). This copy is stale (the user's own words) and for development/proof only - there
+are still active games on the real server, and a *fresh* export will be pulled nearer actual
+cutover, not this one.
+
+**Decisions confirmed with the user for this phase:**
+- Resume in-flight games (current question/hands/judge/pending replies) on import, not reset to
+  Stopped - the harder, higher-fidelity path, which is why 8.10 (above) had to happen first.
+- One `ROBOTO_INSTANCE` per source bot identity - `chatmangler`, `robotolive`, `cah` - imported in
+  that order, matching the user's own stated sequence (easiest/smallest first).
+- `robotolive`'s real Steam API key gets carried into that instance's `bot.env` - the *only*
+  credential the importer will ever write. `telegramAPIKey` (present at the XML root on every
+  export) is never written anywhere, in any instance, under any circumstance.
+- **Stale-timestamp safety (explicit user concern, not a footnote)**: resumed games/replies are
+  old enough that a reconciler tick would see them as instantly overdue and fire reminder/timeout
+  logic the moment anything runs against the imported data. The importer resets every
+  reconciler-driving timestamp (`StatusChangedUtc`, `ReminderSent`, quotes' `NextAutoQuoteAfter`,
+  birthdays' `LastDayProcessed`) to import time rather than carrying the original stale value -
+  and, as a second, independent layer, the default validation path never runs any live bot process
+  (real or test token) against imported data at all - pure SQLite-level count/checksum reads. A
+  live round-trip check, if ever wanted, only happens against a brand-new dedicated test-bot token
+  that's never touched a real chat.
+
+**Cutover shape (confirmed, not being done yet)**: legacy runs from a Windows VM on the user's NAS
+(TrueNAS); the rewrite moves each bot to its own Docker container on that same NAS. Per bot: user
+stops/disables the legacy app, downloads that bot's now-final XML export to this dev laptop, the
+importer runs here producing `roboto.db` (validated via the checksum pass above) - `bot.env`'s
+`TelegramToken` is deliberately never written by the importer, staying blank exactly like
+`InstanceBootstrapper`'s existing stub-file convention already handles, so the real production
+token never has to pass through this laptop or session at all. User fills it in themselves
+directly on the NAS, uploads the generated data, and instantiates the new container. One bot at a
+time, old legacy VM kept as an untouched rollback.
+
+**Not started yet**: the importer itself (stage B). Deliberately not detailed further here until
+it's actually underway - the exact legacy-status→`XyzzyStatus` mapping and `ExpectedReply`→
+`DmOutboxEntry` reconstruction design depend on specifics that are easier to get right with 8.10's
+finished shape in hand than to speculate about now.
 
 ## Explicitly deferred / blocked work
 

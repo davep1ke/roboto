@@ -1,6 +1,10 @@
 namespace Roboto.Bot.Xyzzy;
 
-public sealed record XyzzyCard(string Id, string Text);
+/// <summary>AnswerCount > 1 ("Pick 2"+) only matters on question cards - a player must submit that
+/// many cards before they're done for the round, and the judge sees them joined with " >> " rather
+/// than substituted into the question's blank(s) (see XyzzyRoundService.CombinedAnswerText -
+/// deliberately not reproducing legacy's regex-based per-blank interleaving).</summary>
+public sealed record XyzzyCard(string Id, string Text, int AnswerCount = 1);
 
 /// <summary>
 /// The default (and, for v1, only) card pack: a modest hardcoded sample of the public Cards
@@ -48,6 +52,7 @@ public static class CardCatalog
         new("q28", "What am I bringing to the office party?"),
         new("q29", "What's the most disappointing?"),
         new("q30", "What did the doctor say I have?"),
+        new("q31", "Give me two things that go poorly together.", AnswerCount: 2),
     ];
 
     public static IReadOnlyList<XyzzyCard> Answers { get; } =

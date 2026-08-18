@@ -103,16 +103,17 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         // randomly for now" per the initial ask. Re-checks Status each time: an earlier bot's
         // submission may already have completed the round (SubmitAnswerAsync triggers judging once
         // everyone's in) and moved it past Question, including - if the judge is also a bot - all
-        // the way through to a new Question entirely.
+        // the way through to a new Question entirely. Loops per bot until it's submitted the
+        // question's full AnswerCount, same as a real player would across several taps.
         foreach (var botPlayer in game.Players.Where(p => p.PlayerId != game.JudgePlayerId && p.IsBot).ToList())
         {
-            if (game.Status is not XyzzyStatus.Question)
+            while (game.Status is XyzzyStatus.Question
+                   && game.Submissions.GetValueOrDefault(botPlayer.PlayerId, []).Count < question.AnswerCount
+                   && botPlayer.Hand.Count > 0)
             {
-                break;
+                var randomCardId = botPlayer.Hand[Random.Shared.Next(botPlayer.Hand.Count)];
+                await SubmitAnswerAsync(bot, game, botPlayer.PlayerId, randomCardId, cancellationToken);
             }
-
-            var randomCardId = botPlayer.Hand[Random.Shared.Next(botPlayer.Hand.Count)];
-            await SubmitAnswerAsync(bot, game, botPlayer.PlayerId, randomCardId, cancellationToken);
         }
     }
 
@@ -134,7 +135,9 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             return "You're not in this game any more.";
         }
 
-        if (game.Submissions.ContainsKey(playerId))
+        var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
+        var picked = game.Submissions.GetValueOrDefault(playerId, []);
+        if (picked.Count >= question.AnswerCount)
         {
             return "You've already answered this round.";
         }
@@ -144,11 +147,28 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             return "That card isn't in your hand any more.";
         }
 
-        game.Submissions[playerId] = [cardId];
+        picked = [.. picked, cardId];
+        game.Submissions[playerId] = picked;
         await games.SaveAsync(game, cancellationToken);
 
-        var nonJudgePlayers = game.Players.Count(p => p.PlayerId != game.JudgePlayerId);
-        if (game.Submissions.Count >= nonJudgePlayers)
+        // Multi-answer question, not yet done - ask for the next card rather than checking for
+        // judging. BuildHandKeyboard excludes what's already been picked this round.
+        if (picked.Count < question.AnswerCount)
+        {
+            if (!player.IsBot)
+            {
+                await outbox.EnqueueButtonQuestionAsync(bot, playerId,
+                    $"Pick your next card ({picked.Count}/{question.AnswerCount}):", BuildHandKeyboard(game, player), cancellationToken);
+            }
+
+            return "Answer submitted! Pick your next card.";
+        }
+
+        // Not just "has everyone submitted something" any more - each non-judge player needs to
+        // have reached the question's full AnswerCount, not just have an entry in Submissions.
+        var allDone = game.Players.Where(p => p.PlayerId != game.JudgePlayerId)
+            .All(p => game.Submissions.GetValueOrDefault(p.PlayerId, []).Count >= question.AnswerCount);
+        if (allDone)
         {
             await BeginJudgingAsync(bot, game, cancellationToken);
         }
@@ -178,8 +198,22 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         winner.Wins++;
 
         var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
-        var answer = CardCatalog.Answers.First(a => a.Id == cardId);
-        var filled = question.Text.Contains('_') ? question.Text.Replace("_", answer.Text) : $"{question.Text} {answer.Text}";
+        var winningCards = game.Submissions[winner.PlayerId];
+
+        // Single-answer questions substitute directly into the blank, unchanged from before
+        // multi-answer support existed. A multi-answer submission falls back to showing the
+        // question and the joined answer separately - see BuildJudgeKeyboard's doc comment on why
+        // per-blank interleaving isn't reproduced here.
+        string filled;
+        if (winningCards.Count == 1)
+        {
+            var answer = CardCatalog.Answers.First(a => a.Id == winningCards[0]);
+            filled = question.Text.Contains('_') ? question.Text.Replace("_", answer.Text) : $"{question.Text} {answer.Text}";
+        }
+        else
+        {
+            filled = $"{question.Text}\nAnswer: {CombinedAnswerText(winningCards)}";
+        }
 
         await bot.SendMessage(game.ChatId,
             $"{winner.DisplayName} wins the round with: {filled}\n({winner.DisplayName} now has {winner.Wins} win(s))",
@@ -365,19 +399,36 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         }
     }
 
-    private static List<List<DmButton>> BuildHandKeyboard(XyzzyGameState game, XyzzyPlayer player) =>
-        player.Hand.Select(cardId =>
+    /// <summary>Excludes cards the player has already picked *this round* (Submissions), so a
+    /// multi-answer question can't have the same card played into more than one of its slots.</summary>
+    private static List<List<DmButton>> BuildHandKeyboard(XyzzyGameState game, XyzzyPlayer player)
+    {
+        var alreadyPicked = game.Submissions.GetValueOrDefault(player.PlayerId, []);
+        return player.Hand.Where(cardId => !alreadyPicked.Contains(cardId)).Select(cardId =>
         {
             var card = CardCatalog.Answers.First(a => a.Id == cardId);
             var data = new XyzzyCallbackData("a", game.ChatId, game.RoundNumber, cardId).Encode();
             return new List<DmButton> { new(card.Text, data) };
         }).ToList();
+    }
 
+    /// <summary>One button per submitter (not per card) - callback_data keys on the submission's
+    /// first card, same as before multi-answer support existed. That's still enough to uniquely
+    /// identify the submission: PickWinnerAsync matches via Contains(cardId), and a card only ever
+    /// belongs to one player's hand/submission at a time (see this class's own doc comment on deck
+    /// uniqueness), so no extra bookkeeping is needed just because a submission can now hold more
+    /// than one card.</summary>
     private static List<List<DmButton>> BuildJudgeKeyboard(XyzzyGameState game) =>
-        game.Submissions.Select(kvp => kvp.Value[0]).OrderBy(_ => Random.Shared.Next()).Select(cardId =>
+        game.Submissions.OrderBy(_ => Random.Shared.Next()).Select(kvp =>
         {
-            var card = CardCatalog.Answers.First(a => a.Id == cardId);
-            var data = new XyzzyCallbackData("j", game.ChatId, game.RoundNumber, cardId).Encode();
-            return new List<DmButton> { new(card.Text, data) };
+            var data = new XyzzyCallbackData("j", game.ChatId, game.RoundNumber, kvp.Value[0]).Encode();
+            return new List<DmButton> { new(CombinedAnswerText(kvp.Value), data) };
         }).ToList();
+
+    /// <summary>Joins a multi-card submission with " >> " - legacy's own fallback format, used here
+    /// deliberately instead of reproducing its primary regex-based per-blank interleaving (matching
+    /// each answer into its own "_" in the question text). A single-card submission is just that
+    /// one card's text, unaffected.</summary>
+    private static string CombinedAnswerText(IReadOnlyList<string> cardIds) =>
+        string.Join(" >> ", cardIds.Select(id => CardCatalog.Answers.First(a => a.Id == id).Text));
 }

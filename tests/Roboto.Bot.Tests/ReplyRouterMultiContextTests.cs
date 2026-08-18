@@ -126,13 +126,15 @@ public class ReplyRouterMultiContextTests
         Assert.Equal(deliveredCount, bot.BotClient.SentMessages.Count(m => m.ChatId == UserId));
 
         // Resolving game A's hand reveals game B's hand next - not game C's setup choice yet.
-        await bot.SendCallbackAsync(UserId, handA.Buttons![0]);
+        // AnswerHandFullyAsync (not a single tap) since either game's question could be a
+        // multi-answer one, drawn randomly from CardCatalog same as any other game.
+        await bot.AnswerHandFullyAsync(UserId);
         var handB = bot.BotClient.SentMessages.Last(m => m.ChatId == UserId);
         Assert.NotEqual(handA.Id, handB.Id);
         Assert.Contains(handB.Buttons!, b => b.CallbackData.StartsWith($"xy:a:{GameChatB}:", StringComparison.Ordinal));
 
         // Resolving game B's hand finally reveals game C's setup choice.
-        await bot.SendCallbackAsync(UserId, handB.Buttons![0]);
+        await bot.AnswerHandFullyAsync(UserId);
         var choiceC = bot.BotClient.SentMessages.Last(m => m.ChatId == UserId);
         Assert.Contains(choiceC.Buttons!, b => b.Text == "Configure Game");
 

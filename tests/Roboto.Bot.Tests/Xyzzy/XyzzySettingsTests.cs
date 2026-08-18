@@ -177,8 +177,7 @@ public class XyzzySettingsTests
         // begin and Alice can pick a winner, rotating the judge to Bob for round 2.
         foreach (var playerId in new[] { Bob, Carol })
         {
-            var handMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == playerId && m.Buttons is { Count: > 0 });
-            await bot.SendCallbackAsync(playerId, handMessage.Buttons![0]);
+            await bot.AnswerHandFullyAsync(playerId);
         }
 
         var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
@@ -191,8 +190,7 @@ public class XyzzySettingsTests
         Assert.DoesNotContain("Cards Against Humanity settings", afterSettingsCommand.Text);
 
         // Resolving the card reveals the settings menu, exactly as if it had been waiting patiently.
-        var handKeyboard = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
-        await bot.SendCallbackAsync(Alice, handKeyboard.Buttons![0]);
+        await bot.AnswerHandFullyAsync(Alice);
         Assert.Contains("Cards Against Humanity settings", bot.BotClient.SentMessages.Last(m => m.ChatId == Alice).Text);
     }
 

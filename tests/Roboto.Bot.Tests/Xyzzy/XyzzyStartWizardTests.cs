@@ -165,8 +165,7 @@ public class XyzzyStartWizardTests
         var answerers = new[] { Alice, Bob, Carol }.Where(id => id != judgeId).ToArray();
         foreach (var playerId in answerers)
         {
-            var button = bot.BotClient.SentMessages.Last(m => m.ChatId == playerId && m.Buttons is { Count: > 0 }).Buttons![0];
-            await bot.SendCallbackAsync(playerId, button);
+            await bot.AnswerHandFullyAsync(playerId);
         }
         var judgeButton = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Buttons is { Count: > 0 }).Buttons![0];
         await bot.SendCallbackAsync(judgeId, judgeButton);
