@@ -35,9 +35,9 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
 | 10b. Charting (ScottPlot), `/statgraph` | Done, verified | `31f2b7c` |
 | 8.10 `mod_xyzzy`: multi-answer ("Pick 2"+) question support | Done, verified | `4a6b1d8` |
-| 8.11 `mod_xyzzy`: settings-menu completeness (Re-deal/Reset/Extend/Force Question/Change Packs), catalog lookup performance, bot top-up re-check | Done, verified | — |
-| 13. Dormant-chat purge (`ChatPurgeReconciler`) | Done, verified | — |
-| 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
+| 8.11 `mod_xyzzy`: settings-menu completeness (Re-deal/Reset/Extend/Force Question/Change Packs), catalog lookup performance, bot top-up re-check | Done, verified | `e73d4ec` |
+| 13. Dormant-chat purge (`ChatPurgeReconciler`) | Done, verified | `e73d4ec` |
+| 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
 "Verified" means actually exercised for real (build + run + real Telegram round-trip, sometimes
