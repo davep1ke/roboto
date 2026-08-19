@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Roboto.Bot;
 using Roboto.Bot.Birthdays;
+using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Persistence;
 using Roboto.Bot.Quotes;
@@ -48,6 +49,7 @@ builder.Services.AddHostedService<XyzzyRoundSchedulerService>();
 builder.Services.AddHostedService<BirthdaysSchedulerService>();
 builder.Services.AddHostedService<QuotesSchedulerService>();
 builder.Services.AddHostedService<SteamSchedulerService>();
+builder.Services.AddHostedService<ChatPurgeSchedulerService>();
 
 using var host = builder.Build();
 

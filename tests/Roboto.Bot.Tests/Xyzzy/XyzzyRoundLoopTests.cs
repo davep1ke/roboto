@@ -61,6 +61,37 @@ public class XyzzyRoundLoopTests
     }
 
     [Fact]
+    public async Task KickingAPlayerBelowMinPlayersIsToppedBackUpWithABotAtTheNextRound()
+    {
+        // Closes a real gap (MIGRATION.md, fixed alongside this test): FillBotSlots used to run
+        // only once, at the very first round - a kick or a leave that dropped the real player
+        // count below MinPlayers was never re-topped-up. Now it re-runs at the start of every
+        // round (BeginQuestionAsync itself), so this should self-heal the moment the next round
+        // begins, with no special-casing needed in the kick/leave handlers themselves.
+        using var bot = await StartedGameWithThreePlayersAsync();
+        await BeginRoundAsync(bot, Alice); // Alice judges round 1 (a non-blocking notice), queue clear
+
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
+        var menuMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Kick"));
+        var kickMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, kickMessage.Buttons!.First(b => b.Text == "Carol"));
+
+        var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+        Assert.Equal(2, (await games.GetAsync(ChatId, CancellationToken.None)).Players.Count); // Alice + Bob only
+
+        // Finish round 1 (Bob's the only remaining non-judge answerer) so it advances to round 2.
+        await bot.AnswerHandFullyAsync(Bob);
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
+        await bot.SendCallbackAsync(Alice, judgeMessage.Buttons![0]);
+
+        var game = await games.GetAsync(ChatId, CancellationToken.None);
+        Assert.Equal(2, game.RoundNumber);
+        Assert.Equal(3, game.Players.Count);
+        Assert.Contains(game.Players, p => p.IsBot);
+    }
+
+    [Fact]
     public async Task SoloPlayerCanCompleteFullRoundsAgainstBots()
     {
         // Proves the actual bot-play mechanics, not just that bots get added: a solo starter needs

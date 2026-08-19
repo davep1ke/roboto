@@ -48,6 +48,12 @@ public sealed class XyzzyGameState
     /// otherwise, matching "use defaults".</summary>
     public int QuestionLimit { get; set; } = -1;
 
+    /// <summary>Which CardCatalog packs this chat draws from. Empty means "all packs" - mirrors
+    /// legacy's AllPacksEnabledID sentinel (a magic Guid.Empty meaning "no filter"), but as an empty
+    /// list instead of a sentinel value since there's no single "unfiltered" ID to reuse here.
+    /// Populated via /xyzzy_settings' "Change Packs" menu (XyzzySettingsCallbackHandler) or import.</summary>
+    public List<string> EnabledPackIds { get; set; } = [];
+
     public XyzzyPlayer? FindPlayer(long playerId) => Players.FirstOrDefault(p => p.PlayerId == playerId);
     public bool IsPlayer(long playerId) => FindPlayer(playerId) is not null;
 }

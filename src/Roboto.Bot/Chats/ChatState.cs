@@ -21,4 +21,9 @@ public sealed class ChatState
     /// <summary>Matches legacy `chat.isChatAdmin()`: if the chat has no admins yet, everyone counts
     /// as one - lets the first person to try become the first admin with no separate bootstrap step.</summary>
     public bool IsAdmin(long userId) => Admins.Count == 0 || Admins.Contains(userId);
+
+    /// <summary>Legacy chat.lastupdate - bumped via ChatRepository.TouchAsync on every incoming
+    /// message/callback (MessageDispatcher), same as legacy's chat.resetLastUpdateTime(). Drives
+    /// ChatPurgeReconciler's dormant-chat sweep.</summary>
+    public DateTime LastActiveUtc { get; set; } = DateTime.UtcNow;
 }

@@ -18,5 +18,11 @@ public sealed class QuotesRepository(IStateStore store)
     public Task<IReadOnlyList<QuoteChatState>> GetAllAsync(CancellationToken cancellationToken) =>
         store.LoadAllAsync<QuoteChatState>("quotes:%", cancellationToken);
 
+    /// <summary>For ChatPurgeReconciler - legacy's mod_quote never blocks purge on existence alone,
+    /// only on actually having quotes (see GetAsync().Quotes.Count), so deleting is always safe once
+    /// that's already been checked.</summary>
+    public Task DeleteAsync(long chatId, CancellationToken cancellationToken) =>
+        store.DeleteAsync(Key(chatId), cancellationToken);
+
     private static string Key(long chatId) => $"quotes:{chatId}";
 }

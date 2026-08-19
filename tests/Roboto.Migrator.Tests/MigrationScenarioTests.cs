@@ -124,6 +124,37 @@ public class MigrationScenarioTests : IDisposable
     }
 
     [Fact]
+    public async Task PackFilterTranslationMapsLegacySemanticsOntoEnabledPackIds()
+    {
+        var importer = new XmlImporter();
+        var result = await importer.RunAsync(new ImportOptions(_xmlPath, _dataDir, "packs", DryRun: false, CarrySteamKey: false), CancellationToken.None);
+
+        Assert.Equal(2, result.Report.PacksImported);
+        // QuestionChat's packFilterIDs also references a Guid with no matching pack.
+        Assert.True(result.Report.UnmappablePackReferencesDropped >= 1);
+
+        var store = OpenTargetStore("packs");
+        var packs = await store.LoadAsync<List<XyzzyPack>>(CardCatalog.PacksKey, CancellationToken.None);
+        Assert.NotNull(packs);
+        Assert.Contains(packs!, p => p.Name == "Pack One");
+        Assert.Contains(packs!, p => p.Name == "Pack Two");
+
+        var questions = await store.LoadAsync<List<XyzzyCard>>(CardCatalog.QuestionsKey, CancellationToken.None);
+        var packOneId = packs!.First(p => p.Name == "Pack One").Id;
+        Assert.Equal(packOneId, questions!.First(q => q.Text == "Pick 2: name two things").PackId);
+
+        var games = new XyzzyGameRepository(store);
+
+        // Explicit single-pack filter (plus one unmappable Guid, dropped) - not "all packs".
+        var questionGame = await games.GetAsync(SyntheticXmlFixture.QuestionChatId, CancellationToken.None);
+        Assert.Equal([packOneId], questionGame.EnabledPackIds);
+
+        // Legacy's AllPacksEnabledID sentinel collapses onto the rewrite's own "empty = all packs".
+        var judgingGame = await games.GetAsync(SyntheticXmlFixture.JudgingChatId, CancellationToken.None);
+        Assert.Empty(judgingGame.EnabledPackIds);
+    }
+
+    [Fact]
     public async Task UnmappableCardReferenceIsDroppedAndCountedNotFatal()
     {
         var importer = new XmlImporter();

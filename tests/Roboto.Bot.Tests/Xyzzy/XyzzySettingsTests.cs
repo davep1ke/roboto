@@ -204,4 +204,84 @@ public class XyzzySettingsTests
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
         Assert.Contains("Cards Against Humanity settings", bot.BotClient.SentMessages.Last(m => m.ChatId == Alice).Text);
     }
+
+    [Fact]
+    public async Task ResetScoresZeroesEveryPlayer()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Score");
+        var scoreMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, scoreMessage.Buttons!.First(b => b.Text == "Bob"));
+        await bot.SendAsync(TestBot.PrivateMessage(Alice, "5"));
+        Assert.Equal(5, (await GameAsync(bot)).Players.First(p => p.DisplayName == "Bob").Wins);
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Reset Scores");
+
+        Assert.Contains("Scores have been reset", bot.BotClient.SentMessages[^1].Text);
+        Assert.All((await GameAsync(bot)).Players, p => Assert.Equal(0, p.Wins));
+    }
+
+    [Fact]
+    public async Task GameLengthUpdatesTheQuestionLimit()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Game Length");
+        await bot.SendAsync(TestBot.PrivateMessage(Alice, "10"));
+
+        Assert.Contains("Game length set to 10 questions", bot.BotClient.SentMessages[^1].Text);
+        Assert.Equal(10, (await GameAsync(bot)).QuestionLimit);
+    }
+
+    [Fact]
+    public async Task RedealClearsHandsAndStartsAFreshQuestion()
+    {
+        using var bot = await ThreePlayerGameAsync();
+        var beforeQuestion = (await GameAsync(bot)).CurrentQuestionCardId;
+
+        var result = await OpenSettingsAndTapAsync(bot, Alice, "Re-deal");
+
+        Assert.Equal("Redealt.", result);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Reshuffled"));
+        var game = await GameAsync(bot);
+        Assert.Equal(XyzzyStatus.Question, game.Status);
+        Assert.All(game.Players, p => Assert.NotEmpty(p.Hand)); // cleared, then topped back up by BeginQuestionAsync
+        Assert.NotNull(game.CurrentQuestionCardId);
+        _ = beforeQuestion; // a fresh deal may legitimately draw the same question again by chance
+    }
+
+    [Fact]
+    public async Task ForceQuestionAdvancesAStuckRound()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        var result = await OpenSettingsAndTapAsync(bot, Alice, "Force Question");
+
+        Assert.Equal("Forced!", result);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Nobody answered in time"));
+    }
+
+    [Fact]
+    public async Task ExtendResumesAStoppedGameWithTheSameRosterAndScores()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Score");
+        var scoreMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, scoreMessage.Buttons!.First(b => b.Text == "Bob"));
+        await bot.SendAsync(TestBot.PrivateMessage(Alice, "7"));
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Abandon");
+        Assert.Equal(XyzzyStatus.Stopped, (await GameAsync(bot)).Status);
+
+        var result = await OpenSettingsAndTapAsync(bot, Alice, "Extend");
+
+        Assert.Equal("Extended!", result);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Extending the game"));
+        var game = await GameAsync(bot);
+        Assert.Equal(XyzzyStatus.Question, game.Status);
+        Assert.Equal(3, game.Players.Count);
+        Assert.Equal(7, game.Players.First(p => p.DisplayName == "Bob").Wins);
+    }
 }

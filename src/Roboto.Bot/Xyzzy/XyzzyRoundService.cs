@@ -54,16 +54,21 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             cancellationToken: cancellationToken);
     }
 
-    /// <summary>Entry point for the "Start" DM button (XyzzyBeginCallbackHandler) - tops the game up
-    /// with bots if it's short of MinPlayers, then deals the first hand.</summary>
-    public async Task BeginRoundAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
-    {
-        FillBotSlots(game);
+    /// <summary>Entry point for the "Start" DM button (XyzzyBeginCallbackHandler) - deals the first
+    /// hand. Bot top-up now happens inside BeginQuestionAsync itself, not here specifically.</summary>
+    public async Task BeginRoundAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken) =>
         await BeginQuestionAsync(bot, game, cancellationToken);
-    }
 
     public async Task BeginQuestionAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
+        // Re-tops-up to MinPlayers with bots at the start of *every* round, not just the first -
+        // closes a real gap (logged in MIGRATION.md before this fix): a kick (XyzzySettingsCallbackHandler)
+        // never rechecked anything, and a leave (XyzzyLeaveCommand) only ever checked whether the
+        // game should *end*, not whether it should top back up. FillBotSlots is a no-op once the
+        // real player count is already at or above MinPlayers, so this is free on every ordinary
+        // round where nothing dropped below threshold.
+        FillBotSlots(game);
+
         RotateJudge(game);
         DrawQuestion(game);
         game.RoundNumber++;
@@ -79,7 +84,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
 
         await games.SaveAsync(game, cancellationToken);
 
-        var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
+        var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId)!;
         var judge = game.FindPlayer(game.JudgePlayerId!.Value)!;
 
         if (!judge.IsBot)
@@ -135,7 +140,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             return "You're not in this game any more.";
         }
 
-        var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
+        var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId)!;
         var picked = game.Submissions.GetValueOrDefault(playerId, []);
         if (picked.Count >= question.AnswerCount)
         {
@@ -197,7 +202,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
 
         winner.Wins++;
 
-        var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
+        var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId)!;
         var winningCards = game.Submissions[winner.PlayerId];
 
         // Single-answer questions substitute directly into the blank, unchanged from before
@@ -207,7 +212,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         string filled;
         if (winningCards.Count == 1)
         {
-            var answer = CardCatalog.Answers.First(a => a.Id == winningCards[0]);
+            var answer = CardCatalog.FindAnswer(winningCards[0])!;
             filled = question.Text.Contains('_') ? question.Text.Replace("_", answer.Text) : $"{question.Text} {answer.Text}";
         }
         else
@@ -287,11 +292,51 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             return;
         }
 
-        var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
+        var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId)!;
         await outbox.EnqueueButtonQuestionAsync(bot, judge.PlayerId,
             $"Everyone's answered! Pick the winner for: \"{question.Text}\"", BuildJudgeKeyboard(game), cancellationToken);
 
         await bot.SendMessage(game.ChatId, "All answers are in - the judge is picking a winner.", cancellationToken: cancellationToken);
+    }
+
+    /// <summary>Ports legacy's /xyzzy_settings "Re-deal" - clears every player's hand and this
+    /// round's submissions, and empties the chat's draw piles so the next draw naturally reshuffles
+    /// fresh from the full catalog (same self-refill DrawQuestion/TopUpHand already use, not a
+    /// separate code path), then deals a brand new question. Doesn't touch scores (see the "Reset"
+    /// menu action for that) or the player roster. Only meaningful for a round actually in
+    /// progress - the caller gates on Status being Question/Judging/WaitingForNextHand.</summary>
+    public async Task RedealAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    {
+        foreach (var player in game.Players)
+        {
+            player.Hand.Clear();
+        }
+
+        game.Submissions = [];
+        game.RemainingQuestionCardIds = [];
+        game.RemainingAnswerCardIds = [];
+        game.CurrentQuestionCardId = null;
+
+        await bot.SendMessage(game.ChatId, "Reshuffled the decks and dealt everyone a fresh hand!", cancellationToken: cancellationToken);
+        await BeginQuestionAsync(bot, game, cancellationToken);
+    }
+
+    /// <summary>Ports legacy's /xyzzy_settings "Extend" - resumes a Stopped game with the same
+    /// roster/scores rather than requiring a brand new /xyzzy_start from scratch. Only meaningful
+    /// once a game has actually ended with players still on its roster - TryEndGameAsync leaves
+    /// Players intact when it stops a game (only the explicit setup-time "Cancel" path clears it).
+    /// Returns false (does nothing) if there's nothing to extend, so the caller can report that
+    /// back rather than silently no-op.</summary>
+    public async Task<bool> TryExtendAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    {
+        if (game.Status is not XyzzyStatus.Stopped || game.Players.Count < 2)
+        {
+            return false;
+        }
+
+        await bot.SendMessage(game.ChatId, "Extending the game with the same players and scores!", cancellationToken: cancellationToken);
+        await BeginQuestionAsync(bot, game, cancellationToken);
+        return true;
     }
 
     /// <summary>Throttle/quiet-hours gate between hands (phase 8.3) - mirrors legacy's
@@ -358,11 +403,38 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         game.JudgePlayerId = game.Players[nextIndex].PlayerId;
     }
 
+    /// <summary>Cards belonging to one of the chat's EnabledPackIds, or every card if that list is
+    /// empty (the "all packs" state). Falls back to the full unfiltered catalog if the filter would
+    /// otherwise empty the deck entirely (e.g. a chat's enabled packs got removed from the catalog
+    /// on a later import) - an empty deck would hang DrawQuestion/TopUpHand outright, and a stale
+    /// filter shouldn't be able to brick a game.</summary>
+    private static IReadOnlyList<XyzzyCard> FilteredQuestions(XyzzyGameState game)
+    {
+        if (game.EnabledPackIds.Count == 0)
+        {
+            return CardCatalog.Questions;
+        }
+
+        var filtered = CardCatalog.Questions.Where(q => q.PackId is not null && game.EnabledPackIds.Contains(q.PackId)).ToList();
+        return filtered.Count > 0 ? filtered : CardCatalog.Questions;
+    }
+
+    private static IReadOnlyList<XyzzyCard> FilteredAnswers(XyzzyGameState game)
+    {
+        if (game.EnabledPackIds.Count == 0)
+        {
+            return CardCatalog.Answers;
+        }
+
+        var filtered = CardCatalog.Answers.Where(a => a.PackId is not null && game.EnabledPackIds.Contains(a.PackId)).ToList();
+        return filtered.Count > 0 ? filtered : CardCatalog.Answers;
+    }
+
     private static void DrawQuestion(XyzzyGameState game)
     {
         if (game.RemainingQuestionCardIds.Count == 0)
         {
-            game.RemainingQuestionCardIds = CardCatalog.Questions
+            game.RemainingQuestionCardIds = FilteredQuestions(game)
                 .Select(q => q.Id)
                 .Where(id => id != game.CurrentQuestionCardId)
                 .OrderBy(_ => Random.Shared.Next())
@@ -381,7 +453,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             if (game.RemainingAnswerCardIds.Count == 0)
             {
                 var inPlay = game.Players.SelectMany(p => p.Hand).ToHashSet();
-                game.RemainingAnswerCardIds = CardCatalog.Answers
+                game.RemainingAnswerCardIds = FilteredAnswers(game)
                     .Select(a => a.Id)
                     .Where(id => !inPlay.Contains(id))
                     .OrderBy(_ => Random.Shared.Next())
@@ -406,7 +478,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         var alreadyPicked = game.Submissions.GetValueOrDefault(player.PlayerId, []);
         return player.Hand.Where(cardId => !alreadyPicked.Contains(cardId)).Select(cardId =>
         {
-            var card = CardCatalog.Answers.First(a => a.Id == cardId);
+            var card = CardCatalog.FindAnswer(cardId)!;
             var data = new XyzzyCallbackData("a", game.ChatId, game.RoundNumber, cardId).Encode();
             return new List<DmButton> { new(card.Text, data) };
         }).ToList();
@@ -430,5 +502,5 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
     /// each answer into its own "_" in the question text). A single-card submission is just that
     /// one card's text, unaffected.</summary>
     internal static string CombinedAnswerText(IReadOnlyList<string> cardIds) =>
-        string.Join(" >> ", cardIds.Select(id => CardCatalog.Answers.First(a => a.Id == id).Text));
+        string.Join(" >> ", cardIds.Select(id => CardCatalog.FindAnswer(id)!.Text));
 }

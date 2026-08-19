@@ -5,8 +5,14 @@ namespace Roboto.Bot.Xyzzy;
 /// <summary>AnswerCount > 1 ("Pick 2"+) only matters on question cards - a player must submit that
 /// many cards before they're done for the round, and the judge sees them joined with " >> " rather
 /// than substituted into the question's blank(s) (see XyzzyRoundService.CombinedAnswerText -
-/// deliberately not reproducing legacy's regex-based per-blank interleaving).</summary>
-public sealed record XyzzyCard(string Id, string Text, int AnswerCount = 1);
+/// deliberately not reproducing legacy's regex-based per-blank interleaving). PackId is null for
+/// the hardcoded placeholder set (no pack concept there); an imported card always has one - see
+/// XyzzyGameState.EnabledPackIds for how it's used to filter a chat's deck.</summary>
+public sealed record XyzzyCard(string Id, string Text, int AnswerCount = 1, string? PackId = null);
+
+/// <summary>A pack a card can belong to (legacy's cardcast_pack, Roboto/Helpers/cardCast.cs) - just
+/// enough to show a name in the "Change Packs" picker and filter a deck by selection.</summary>
+public sealed record XyzzyPack(string Id, string Name);
 
 /// <summary>
 /// The default card pack: a modest hardcoded sample of the public Cards Against Humanity base set
@@ -31,6 +37,7 @@ public static class CardCatalog
 {
     public const string QuestionsKey = "xyzzy:catalog:questions";
     public const string AnswersKey = "xyzzy:catalog:answers";
+    public const string PacksKey = "xyzzy:catalog:packs";
 
     // Assigned in the static constructor below, not inline here - DefaultQuestions/DefaultAnswers
     // are declared later in this file, and static member initializers run in declaration order, so
@@ -39,15 +46,34 @@ public static class CardCatalog
     // of declaration order, which sidesteps that.
     private static IReadOnlyList<XyzzyCard> _questions;
     private static IReadOnlyList<XyzzyCard> _answers;
+    private static IReadOnlyList<XyzzyPack> _packs;
+    private static Dictionary<string, XyzzyCard> _questionsById;
+    private static Dictionary<string, XyzzyCard> _answersById;
 
     static CardCatalog()
     {
         _questions = DefaultQuestions;
         _answers = DefaultAnswers;
+        _packs = [];
+        _questionsById = BuildIndex(_questions);
+        _answersById = BuildIndex(_answers);
     }
 
     public static IReadOnlyList<XyzzyCard> Questions => _questions;
     public static IReadOnlyList<XyzzyCard> Answers => _answers;
+    public static IReadOnlyList<XyzzyPack> Packs => _packs;
+
+    /// <summary>O(1) lookups - the real imported catalog is tens to hundreds of thousands of cards
+    /// (72,441 questions / 229,734 answers in the largest real production export seen so far), and
+    /// every round-play operation (dealing a hand, building a judge keyboard, matching a submission)
+    /// needs at least one lookup. XyzzyRoundService used to do this via CardCatalog.Questions.First(
+    /// predicate) - an O(n) scan that was fine against the ~30/90-card hardcoded placeholder set but
+    /// became a real, measured cost once real catalogs were actually loaded (up to ~2.3M comparisons
+    /// to build one 10-card hand keyboard). These dictionaries are rebuilt alongside Questions/Answers
+    /// any time either changes (LoadOverrideAsync), so they're never stale.</summary>
+    public static XyzzyCard? FindQuestion(string? id) => id is not null && _questionsById.TryGetValue(id, out var card) ? card : null;
+
+    public static XyzzyCard? FindAnswer(string? id) => id is not null && _answersById.TryGetValue(id, out var card) ? card : null;
 
     /// <summary>Called once at startup (Program.cs, right after IStateStore.InitializeAsync,
     /// before any hosted service can touch a game) - swaps in an imported catalog if this instance
@@ -56,17 +82,34 @@ public static class CardCatalog
     {
         var questions = await store.LoadAsync<List<XyzzyCard>>(QuestionsKey, cancellationToken);
         var answers = await store.LoadAsync<List<XyzzyCard>>(AnswersKey, cancellationToken);
+        var packs = await store.LoadAsync<List<XyzzyPack>>(PacksKey, cancellationToken);
 
         if (questions is { Count: > 0 })
         {
             _questions = questions;
+            _questionsById = BuildIndex(_questions);
         }
 
         if (answers is { Count: > 0 })
         {
             _answers = answers;
+            _answersById = BuildIndex(_answers);
+        }
+
+        if (packs is { Count: > 0 })
+        {
+            _packs = packs;
         }
     }
+
+    /// <summary>Test-only escape hatch: LoadOverrideAsync deliberately can't clear Packs back to
+    /// empty (an empty stored list means "nothing to override", same convention as
+    /// Questions/Answers) - but a test that seeds pack-tagged cards via LoadOverrideAsync needs a
+    /// way to undo that afterward, since CardCatalog is a shared static across the whole test run.</summary>
+    internal static void ResetPacksForTesting() => _packs = [];
+
+    private static Dictionary<string, XyzzyCard> BuildIndex(IReadOnlyList<XyzzyCard> cards) =>
+        cards.ToDictionary(c => c.Id);
 
     private static IReadOnlyList<XyzzyCard> DefaultQuestions { get; } =
     [

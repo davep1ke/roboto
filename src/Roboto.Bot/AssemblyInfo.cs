@@ -5,3 +5,4 @@ using System.Runtime.CompilerServices;
 // in-flight game's DmOutbox entries are built exactly the same way the live engine builds them -
 // not a second, drift-prone reimplementation of the same formatting.
 [assembly: InternalsVisibleTo("Roboto.Migrator")]
+[assembly: InternalsVisibleTo("Roboto.Bot.Tests")]

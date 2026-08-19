@@ -29,6 +29,10 @@ public static class SyntheticXmlFixture
     public const long JudgingKickTargetId = 303;
     public const long OrphanedReplyChatId = 999999; // deliberately not present in chatData
 
+    public static readonly Guid PackOneGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    public static readonly Guid PackTwoGuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    public static readonly Guid UnmappablePackGuid = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
     public static string Write()
     {
         var settings = new LegacySettings
@@ -55,14 +59,19 @@ public static class SyntheticXmlFixture
                 {
                     questions =
                     [
-                        new LegacyXyzzyCard { uniqueID = "Q-GUID-1", text = "Pick 2: name two things", nrAnswers = 2 },
-                        new LegacyXyzzyCard { uniqueID = "Q-GUID-2", text = "Single question?", nrAnswers = 1 },
+                        new LegacyXyzzyCard { uniqueID = "Q-GUID-1", text = "Pick 2: name two things", nrAnswers = 2, packID = PackOneGuid },
+                        new LegacyXyzzyCard { uniqueID = "Q-GUID-2", text = "Single question?", nrAnswers = 1, packID = PackTwoGuid },
                     ],
                     answers =
                     [
-                        new LegacyXyzzyCard { uniqueID = "A-GUID-1", text = "Answer One" },
-                        new LegacyXyzzyCard { uniqueID = "A-GUID-2", text = "Answer Two" },
-                        new LegacyXyzzyCard { uniqueID = "A-GUID-3", text = "Answer Three" },
+                        new LegacyXyzzyCard { uniqueID = "A-GUID-1", text = "Answer One", packID = PackOneGuid },
+                        new LegacyXyzzyCard { uniqueID = "A-GUID-2", text = "Answer Two", packID = PackOneGuid },
+                        new LegacyXyzzyCard { uniqueID = "A-GUID-3", text = "Answer Three", packID = PackTwoGuid },
+                    ],
+                    packs =
+                    [
+                        new LegacyCardcastPack { packID = PackOneGuid, name = "Pack One", packCode = "PK1" },
+                        new LegacyCardcastPack { packID = PackTwoGuid, name = "Pack Two", packCode = "PK2" },
                     ],
                 },
             ],
@@ -129,6 +138,9 @@ public static class SyntheticXmlFixture
                             remainingAnswers = ["A-GUID-3"],
                             maxWaitTimeHours = 12,
                             enteredQuestionCount = -1,
+                            // Restricted to Pack One, plus one GUID with no matching pack - proves
+                            // both the normal pack-filter translation and unmappable-reference drop.
+                            packFilterIDs = [PackOneGuid, UnmappablePackGuid],
                         },
                     ],
                 },
@@ -151,6 +163,9 @@ public static class SyntheticXmlFixture
                             currentQuestion = "Q-GUID-2",
                             maxWaitTimeHours = 12,
                             enteredQuestionCount = -1,
+                            // The AllPacksEnabledID sentinel (Guid.Empty) - proves it collapses onto
+                            // EnabledPackIds' own "empty = all" representation.
+                            packFilterIDs = [Guid.Empty],
                         },
                     ],
                 },

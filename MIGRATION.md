@@ -35,7 +35,9 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 10a. Stats engine (`StatsRecorder`, `/stats` extended) | Done, verified | `89fdf50` |
 | 10b. Charting (ScottPlot), `/statgraph` | Done, verified | `31f2b7c` |
 | 8.10 `mod_xyzzy`: multi-answer ("Pick 2"+) question support | Done, verified | `4a6b1d8` |
-| 11. XML→SQLite migration importer | In progress — stage A (8.10) done; stage B (the importer itself) not started, see below | — |
+| 8.11 `mod_xyzzy`: settings-menu completeness (Re-deal/Reset/Extend/Force Question/Change Packs), catalog lookup performance, bot top-up re-check | Done, verified | — |
+| 13. Dormant-chat purge (`ChatPurgeReconciler`) | Done, verified | — |
+| 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
 "Verified" means actually exercised for real (build + run + real Telegram round-trip, sometimes
@@ -771,6 +773,84 @@ it's actually underway - the exact legacy-status→`XyzzyStatus` mapping and `Ex
 `DmOutboxEntry` reconstruction design depend on specifics that are easier to get right with 8.10's
 finished shape in hand than to speculate about now.
 
+## 8.11: settings-menu completeness, catalog performance, bot top-up, pack filtering (2026-08-19)
+
+Prompted by a real dry-run against `chat_against_humanity_bot.xml` (114MB, 4783 chats): a genuine
+completeness audit against legacy's live `sendSettingsMessage` turned up several features that were
+live in production and simply never built in the rewrite's 8.4 admin-menu phase, not a deliberate
+scope cut as originally (and incorrectly) reported.
+
+- **`XyzzySettingsCommand`/`XyzzySettingsCallbackHandler`**: added Reset Scores, Game Length
+  (mid-game question-limit change), Re-deal (`XyzzyRoundService.RedealAsync` - clears hands/decks,
+  deals fresh), Extend (`TryExtendAsync` - resumes a Stopped game with the same roster/scores), and
+  Force Question (exposes `XyzzyRoundReconciler.ForceAdvanceAsync`, now `internal`, as an on-demand
+  admin action). Fixed a real bug caught while wiring Extend: both `XyzzySettingsCommand.ExecuteAsync`
+  and `XyzzySettingsCallbackHandler.HandleAsync` gated on `Status is not Stopped` *before* dispatch,
+  which made Extend - built specifically to work on a Stopped game - permanently unreachable. Both
+  gates now only refuse when `Status is Stopped && Players.Count == 0` (truly nothing to manage or
+  extend).
+- **`CardCatalog` O(1) lookups**: `FindQuestion`/`FindAnswer` via `Dictionary<string, XyzzyCard>`
+  indexes, replacing `Questions.First(...)`/`Answers.First(...)` O(n) scans - measured as a real cost
+  (up to ~2.3M comparisons to build one 10-card hand) once real catalogs (72k-229k cards) are loaded,
+  not just a theoretical concern.
+- **Bot top-up re-check**: `FillBotSlots` now runs at the start of every `BeginQuestionAsync`, not
+  just once at `FinishSetupAsync` - closes the gap where a kick or a leave could strand a game under
+  `MinPlayers` with no bot fill and no end-condition catching it (previously logged below as
+  deferred).
+- **Pack filtering** (`XyzzyGameState.EnabledPackIds`): a chat's deck now draws only from its
+  selected packs via `XyzzyRoundService`'s `FilteredQuestions`/`FilteredAnswers` (empty list = all
+  packs, falls back to the unfiltered catalog if a stale filter would otherwise empty the deck
+  entirely - a filter can never brick a game). New "Change Packs" paginated toggle UI in
+  `XyzzySettingsCallbackHandler` (`PacksPerPage = 30`, matching legacy's own `maxPacksPerPage`, plus
+  an "Enable All Packs" escape hatch mirroring legacy's `AllPacksEnabledID` sentinel). The importer
+  (`XyzzyImportMapper.BuildCatalog`/`MapEnabledPackIds`) now carries `mod_xyzzy_coredata.packs` and
+  each card's `packID` into the new catalog, and translates each chat's `packFilterIDs` onto
+  `EnabledPackIds` - legacy's scheme is the *inverse* of the rewrite's (defaults to one specific
+  pack, "all packs" is the explicit `AllPacksEnabledID`/`Guid.Empty` sentinel appearing *inside* the
+  list), both of which collapse onto the rewrite's simpler "empty = all" representation.
+
+Verified: 139 `Roboto.Bot.Tests` + 12 `Roboto.Migrator.Tests`, stable across repeated runs; each new
+behavior (Extend's gate fix, Re-deal, pack-filter fallback, pack-toggle UI, importer pack mapping)
+proven with a deliberate break-then-confirm-the-test-catches-it pass, not just green-on-first-try;
+`docker compose build` clean.
+
+## 13: dormant-chat purge (2026-08-19)
+
+Same completeness audit turned up legacy's `Chats.removeDormantChats()`/`chat.tryPurgeData()` -
+automated deletion of a chat's data once it's gone idle past `purgeInactiveChatsAfterXDays` (100),
+with per-module opt-outs. Explicitly confirmed with the user to build the **full automated version**
+(not a log-only candidate report) given the destructive/irreversible nature of the feature - see
+CLAUDE.md's caution around risky actions.
+
+- **`ChatState.LastActiveUtc`**, bumped by the new `ChatRepository.TouchAsync` from
+  `MessageDispatcher` on every incoming message/callback - mirrors legacy's
+  `chat.resetLastUpdateTime()`.
+- **`ChatPurgeReconciler`** (ticked daily by `ChatPurgeSchedulerService`): for every chat idle past
+  `PurgeInactiveAfterDays` (100), every module gets a say - if even one objects, the whole chat is
+  skipped this pass (all-or-nothing, matching legacy). Per-module rules ported exactly, including
+  legacy's own quirks:
+  - Quotes block purge only while actual quotes exist (`mod_quote.isPurgable()`).
+  - Birthdays block purge *permanently* once the module's ever been touched for a chat, even if
+    every birthday was later removed (`mod_birthdays.isPurgable()` - a genuine legacy quirk,
+    reproduced faithfully rather than "fixed").
+  - Xyzzy blocks purge unless its own `StatusChangedUtc` is also past `XyzzyKillInactiveAfterDays`
+    (30) - legacy's separate `killInactiveChatsAfterXDays` setting, almost always already satisfied
+    by the time the outer 100-day gate trips since playing xyzzy is itself chat activity.
+  - Steam and quiet-hours have no protection in legacy either - always purged once eligible.
+  - `BirthdaysRepository.ExistsAsync`/`XyzzyGameRepository.ExistsAsync` check the raw stored value
+    rather than going through each repository's own `GetAsync` "?? new default" fallback, which
+    can't distinguish "never touched" from "touched but now empty/fresh" - the exact distinction
+    legacy's own per-module rules depend on.
+- New `IStateStore`-backed `DeleteAsync`/`ExistsAsync` helpers added to `QuotesRepository`,
+  `BirthdaysRepository`, `SteamRepository` (`DeleteChatAsync`), `XyzzyGameRepository`, and
+  `ChatRepository` itself (`GetAllAsync` filters `chat:%` keys down to exactly `chat:{chatId}` -
+  SQL `LIKE` alone can't exclude longer keys sharing that prefix, e.g. quiet-hours'
+  `chat:{chatId}:quiet-hours`).
+
+Verified: 6 new tests in `ChatPurgeReconcilerTests` (full purge, quotes-blocks, birthdays-blocks-
+even-when-empty, recently-active-chat-skipped, xyzzy's-own-inactivity-window, steam-always-purged) -
+each confirmed to actually catch a deliberately-reintroduced regression before being trusted.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
@@ -781,8 +861,9 @@ finished shape in hand than to speculate about now.
   every other command; stats/metrics (`registerStatType`/`logStat` calls throughout legacy) — no
   stats subsystem exists yet beyond command-usage counts. The elaborate multi-step setup wizard
   (defaults-vs-custom chain, question-limit/timeout/throttle prompts before the game starts) was
-  originally cut here too but got built out in phase 8.5, below - pack-filter selection specifically
-  stays cut since v1 only has the one hardcoded pack, nothing to filter yet.
+  originally cut here too but got built out in phase 8.5, below. Pack-filter selection was cut here
+  too, on the (incorrect) belief it was a deliberate scope cut - it was actually a real gap, and got
+  built out in phase 8.11, below.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user
   before work starts; build and prove it against test data first, only point it at a real prod XML
@@ -796,17 +877,9 @@ finished shape in hand than to speculate about now.
 - **`/save`, `/background`** — legacy mod_standard commands with no equivalent need any more
   (SQLite already writes incrementally; no periodic background-processing loop exists yet to
   manually trigger). Not planned to be ported as-is; revisit only if a real need shows up.
-- **`mod_xyzzy` bot top-up doesn't get re-checked after a kick or a leave.**
-  `XyzzyRoundService.TopUpWithBotsAsync` only runs once, at `FinishSetupAsync` - it's never called
-  again. `XyzzySettingsCallbackHandler.HandleKickAsync` removes a player and never rechecks
-  anything at all. `XyzzyLeaveCommand` does call `TryEndGameAsync` afterward (which ends the game
-  if under 2 total players or everyone left is a bot), but doesn't re-top-up with bots either. Net
-  effect: kicking a real player, or several people leaving, can leave a game limping along under
-  `MinPlayers` (3) with no bot fill and no end-condition catching it, until something else (like
-  every real player eventually leaving) finally triggers `TryEndGameAsync`. Found while scoping
-  phase 9's work, not fixed then - needs a deliberate look at whether top-up should re-run after
-  kick/leave, or whether top-up being setup-only is the intended design and the real gap is
-  elsewhere (e.g. `TryEndGameAsync`'s own thresholds).
+- ~~**`mod_xyzzy` bot top-up doesn't get re-checked after a kick or a leave.**~~ Fixed in phase
+  8.11: `FillBotSlots` now re-runs at the start of every `BeginQuestionAsync`, not just once at
+  setup.
 
 ## Investigated and closed out, no code change needed
 

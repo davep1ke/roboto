@@ -119,7 +119,12 @@ public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundSe
         await bot.SendMessage(game.ChatId, "Game setup timed out - use /xyzzy_start to try again.", cancellationToken: cancellationToken);
     }
 
-    private async Task ForceAdvanceAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
+    /// <summary>Internal, not private - also the mechanics behind /xyzzy_settings' "Force Question"
+    /// admin action (XyzzySettingsCallbackHandler), an on-demand version of the same timeout logic
+    /// this class applies automatically. Callers outside this class are expected to have already
+    /// gated on Status being Question or Judging - this method assumes it (the Judging branch below
+    /// doesn't check, matching the one call site inside this class that already guarantees it).</summary>
+    internal async Task ForceAdvanceAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
         if (game.Status is XyzzyStatus.Question)
         {

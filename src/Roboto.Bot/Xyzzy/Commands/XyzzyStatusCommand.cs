@@ -46,7 +46,7 @@ public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
 
         if (game.Status is XyzzyStatus.Question or XyzzyStatus.Judging && game.CurrentQuestionCardId is not null)
         {
-            var question = CardCatalog.Questions.First(q => q.Id == game.CurrentQuestionCardId);
+            var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId)!;
             sb.AppendLine($"Round {game.RoundNumber}: \"{question.Text}\"");
         }
 

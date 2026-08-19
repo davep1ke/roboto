@@ -31,9 +31,10 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
     public const string AwaitTimeout = "timeout";
     public const string AwaitThrottle = "throttle";
     public const string AwaitScorePoints = "score-points";
+    public const string AwaitQuestionLimit = "question-limit";
 
     public string Name => "xyzzy_settings";
-    public string Description => "Admin menu for the Cards Against Humanity game in this chat (kick/abandon/timeout/throttle/score).";
+    public string Description => "Admin menu for the Cards Against Humanity game in this chat.";
 
     public async Task ExecuteAsync(CommandContext context, CancellationToken cancellationToken)
     {
@@ -55,7 +56,7 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
         }
 
         var game = await games.GetAsync(chatId, cancellationToken);
-        if (game.Status is XyzzyStatus.Stopped)
+        if (game.Status is XyzzyStatus.Stopped && game.Players.Count == 0)
         {
             await context.Bot.SendMessage(chatId, "No game running here.", cancellationToken: cancellationToken);
             return;
@@ -68,6 +69,12 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
             [new DmButton("Throttle", $"xy:se:{chatId}:menu:throttle")],
             [new DmButton("Kick", $"xy:se:{chatId}:menu:kick")],
             [new DmButton("Score", $"xy:se:{chatId}:menu:score")],
+            [new DmButton("Reset Scores", $"xy:se:{chatId}:menu:reset")],
+            [new DmButton("Game Length", $"xy:se:{chatId}:menu:gamelength")],
+            [new DmButton("Re-deal", $"xy:se:{chatId}:menu:redeal")],
+            [new DmButton("Extend", $"xy:se:{chatId}:menu:extend")],
+            [new DmButton("Force Question", $"xy:se:{chatId}:menu:force")],
+            [new DmButton("Change Packs", $"xy:se:{chatId}:menu:packs")],
             [new DmButton("Cancel", $"xy:se:{chatId}:menu:cancel")],
         ];
 
@@ -111,6 +118,20 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
                 game.MinWaitHours = minHours;
                 await games.SaveAsync(game, cancellationToken);
                 await bot.SendMessage(pending.UserId, $"Throttle set to {minHours}h.", cancellationToken: cancellationToken);
+                break;
+
+            case AwaitQuestionLimit:
+                if (!int.TryParse(text, out var limit) || limit < -1)
+                {
+                    await replies.AskAsync(bot, game.ChatId, pending.UserId, Name, AwaitQuestionLimit, data: null,
+                        "Not a valid number. How many questions should the round last for? Enter a number, or -1 for unlimited.", cancellationToken);
+                    return;
+                }
+
+                game.QuestionLimit = limit;
+                await games.SaveAsync(game, cancellationToken);
+                await bot.SendMessage(pending.UserId,
+                    $"Game length set to {(limit == -1 ? "unlimited" : $"{limit} questions")}.", cancellationToken: cancellationToken);
                 break;
 
             case AwaitScorePoints:

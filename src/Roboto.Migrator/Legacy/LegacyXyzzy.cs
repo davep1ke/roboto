@@ -27,16 +27,34 @@ public sealed class LegacyXyzzyChatData : LegacyModuleChatData
     public int maxWaitTimeHours;
     public int minWaitTimeHours;
     public int enteredQuestionCount = -1;
+
+    /// <summary>GUIDs - remapped via the catalog import's pack ID map (see
+    /// XyzzyImportMapper.MapEnabledPackIds). Legacy's own semantics are the inverse of what the
+    /// field name suggests: this does NOT default to empty ("all enabled") - it defaults to
+    /// [primaryPackID] (one specific pack), and "all packs" is instead represented by the sentinel
+    /// mod_xyzzy.AllPacksEnabledID (Guid.Empty) appearing *inside* this list. See MapEnabledPackIds
+    /// for the translation onto XyzzyGameState.EnabledPackIds' own (simpler) "empty = all" scheme.</summary>
+    public List<Guid> packFilterIDs = [];
 }
 
 /// <summary>Global - the real card catalog (packs/questions/answers) and background-scan
-/// bookkeeping. Only questions/answers matter to this importer; pack metadata is out of scope (v1
-/// never built pack filtering - see MIGRATION.md's scope-cuts note).</summary>
+/// bookkeeping.</summary>
 [XmlType("mod_xyzzy_coredata")]
 public sealed class LegacyXyzzyCoreData : LegacyModuleData
 {
     public List<LegacyXyzzyCard> questions = [];
     public List<LegacyXyzzyCard> answers = [];
+    public List<LegacyCardcastPack> packs = [];
+}
+
+/// <summary>Roboto/Helpers/cardCast.cs's cardcast_pack - only the fields the importer actually
+/// needs (packID for remapping/filter translation, name for the "Change Packs" picker label).</summary>
+[XmlType("cardcast_pack")]
+public sealed class LegacyCardcastPack
+{
+    public Guid packID = Guid.NewGuid();
+    public string name = "";
+    public string? packCode;
 }
 
 [XmlType("mod_xyzzy_player")]
@@ -58,4 +76,9 @@ public sealed class LegacyXyzzyCard
     /// <summary>Only meaningful on question cards - legacy defaults answer cards to -1, where the
     /// field is meaningless (see XyzzyImportMapper's defensive "<= 0 treated as 1" handling).</summary>
     public int nrAnswers = -1;
+
+    /// <summary>Guid.Empty on a card that predates pack filtering (or was never assigned one) -
+    /// treated as "no pack" (XyzzyCard.PackId stays null), same as the rewrite's own hardcoded
+    /// placeholder set.</summary>
+    public Guid packID = Guid.Empty;
 }

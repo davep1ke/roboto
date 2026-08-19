@@ -12,13 +12,31 @@ namespace Roboto.Migrator;
 /// </summary>
 public static class XyzzyImportMapper
 {
+    /// <summary>Legacy's magic Guid.Empty sentinel meaning "all packs" when it appears inside a
+    /// chat's packFilterIDs - Roboto/Modules/mod_xyzzy.cs's mod_xyzzy.AllPacksEnabledID.</summary>
+    private static readonly Guid AllPacksEnabledId = Guid.Empty;
+
     /// <summary>Legacy IDs are GUIDs - too long to reuse directly (risks blowing Telegram's 64-byte
     /// callback_data limit for large supergroup chat IDs, exactly why CardCatalog chose short IDs
     /// over GUIDs originally). Assigns new sequential short IDs while building a GUID -> new-ID map
-    /// used to translate every other card reference in the same file.</summary>
-    public static (List<XyzzyCard> Questions, List<XyzzyCard> Answers, Dictionary<string, string> CardIdMap) BuildCatalog(
+    /// used to translate every other card/pack reference in the same file.</summary>
+    public static (List<XyzzyCard> Questions, List<XyzzyCard> Answers, List<XyzzyPack> Packs,
+        Dictionary<string, string> CardIdMap, Dictionary<Guid, string> PackIdMap) BuildCatalog(
         LegacyXyzzyCoreData core, ImportReport report)
     {
+        var packIdMap = new Dictionary<Guid, string>();
+        var packs = new List<XyzzyPack>();
+
+        var pIndex = 1;
+        foreach (var p in core.packs)
+        {
+            var newId = $"p{pIndex++}";
+            packIdMap[p.packID] = newId;
+            packs.Add(new XyzzyPack(newId, p.name));
+        }
+
+        report.PacksImported = packs.Count;
+
         var cardIdMap = new Dictionary<string, string>();
         var questions = new List<XyzzyCard>();
         var answers = new List<XyzzyCard>();
@@ -32,7 +50,8 @@ public static class XyzzyImportMapper
             // Legacy defaults answer cards to -1 (meaningless there); defensively treat any
             // non-positive value as a plain single-answer question rather than trusting it blindly.
             var answerCount = q.nrAnswers <= 0 ? 1 : q.nrAnswers;
-            questions.Add(new XyzzyCard(newId, q.text, answerCount));
+            var packId = packIdMap.GetValueOrDefault(q.packID);
+            questions.Add(new XyzzyCard(newId, q.text, answerCount, packId));
             if (answerCount > 1)
             {
                 report.MultiAnswerCardsImported++;
@@ -44,12 +63,46 @@ public static class XyzzyImportMapper
         {
             var newId = $"a{aIndex++}";
             cardIdMap[a.uniqueID] = newId;
-            answers.Add(new XyzzyCard(newId, a.text));
+            var packId = packIdMap.GetValueOrDefault(a.packID);
+            answers.Add(new XyzzyCard(newId, a.text, PackId: packId));
         }
 
         report.QuestionCardsImported = questions.Count;
         report.AnswerCardsImported = answers.Count;
-        return (questions, answers, cardIdMap);
+        return (questions, answers, packs, cardIdMap, packIdMap);
+    }
+
+    /// <summary>Translates a chat's legacy packFilterIDs onto XyzzyGameState.EnabledPackIds.
+    /// Legacy's scheme is the inverse of the rewrite's: packFilterIDs defaults to one specific pack
+    /// (never starts empty), and "all packs" is the explicit AllPacksEnabledId sentinel appearing
+    /// *inside* the list - the rewrite instead uses an empty list to mean "all packs" (see
+    /// XyzzyGameState.EnabledPackIds' own doc comment), so both of those map onto []. A
+    /// packFilterIDs list that's empty with no sentinel (legacy's own "nothing enabled" edge case -
+    /// only reachable by explicitly picking "None" in the legacy UI) collapses onto the same []
+    /// result; XyzzyRoundService's own empty-after-filter fallback then treats it as "all packs"
+    /// rather than leaving the game unable to draw a card, which is a safer outcome for a resumed
+    /// game than reproducing a genuinely broken legacy state.</summary>
+    public static List<string> MapEnabledPackIds(IReadOnlyList<Guid> legacyPackFilterIds, IReadOnlyDictionary<Guid, string> packIdMap, ImportReport report)
+    {
+        if (legacyPackFilterIds.Count == 0 || legacyPackFilterIds.Contains(AllPacksEnabledId))
+        {
+            return [];
+        }
+
+        var mapped = new List<string>();
+        foreach (var guid in legacyPackFilterIds)
+        {
+            if (packIdMap.TryGetValue(guid, out var shortId))
+            {
+                mapped.Add(shortId);
+            }
+            else
+            {
+                report.UnmappablePackReferencesDropped++;
+            }
+        }
+
+        return mapped;
     }
 
     /// <summary>Legacy's setup-wizard sub-statuses all collapse into SettingUp - v1's own wizard
@@ -84,7 +137,8 @@ public static class XyzzyImportMapper
     }
 
     public static XyzzyGameState MapGame(
-        long chatId, LegacyXyzzyChatData legacy, IReadOnlyDictionary<string, string> cardIdMap, DateTime importTimeUtc, ImportReport report)
+        long chatId, LegacyXyzzyChatData legacy, IReadOnlyDictionary<string, string> cardIdMap,
+        IReadOnlyDictionary<Guid, string> packIdMap, DateTime importTimeUtc, ImportReport report)
     {
         var game = new XyzzyGameState
         {
@@ -94,6 +148,7 @@ public static class XyzzyImportMapper
             MinWaitHours = legacy.minWaitTimeHours,
             QuestionLimit = legacy.enteredQuestionCount,
             RoundNumber = 1,
+            EnabledPackIds = MapEnabledPackIds(legacy.packFilterIDs, packIdMap, report),
 
             // Stale-data safety (explicit user concern) - never carry the original timestamp
             // forward. A resumed game's clock starts at the moment it's actually imported, not
@@ -233,7 +288,7 @@ public static class XyzzyImportMapper
 
     private static DmOutboxEntry? BuildQuestionEntry(XyzzyGameState game, XyzzyPlayer player)
     {
-        var question = CardCatalog.Questions.FirstOrDefault(q => q.Id == game.CurrentQuestionCardId);
+        var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId);
         if (question is null)
         {
             return null;
@@ -249,7 +304,7 @@ public static class XyzzyImportMapper
 
     private static DmOutboxEntry? BuildJudgingEntry(XyzzyGameState game)
     {
-        var question = CardCatalog.Questions.FirstOrDefault(q => q.Id == game.CurrentQuestionCardId);
+        var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId);
         if (question is null || game.Submissions.Count == 0)
         {
             return null;

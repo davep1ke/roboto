@@ -30,5 +30,11 @@ public sealed class SteamRepository(IStateStore store)
     public Task<IReadOnlyList<SteamChatState>> GetAllChatsAsync(CancellationToken cancellationToken) =>
         store.LoadAllAsync<SteamChatState>("steam:chat:%", cancellationToken);
 
+    /// <summary>For ChatPurgeReconciler - legacy's mod_steam never overrides isPurgable(), so
+    /// tracked-player data is always purgable regardless of content once the chat itself is
+    /// eligible; no existence/content check needed before deleting, unlike quotes/birthdays.</summary>
+    public Task DeleteChatAsync(long chatId, CancellationToken cancellationToken) =>
+        store.DeleteAsync(ChatKey(chatId), cancellationToken);
+
     private static string ChatKey(long chatId) => $"steam:chat:{chatId}";
 }

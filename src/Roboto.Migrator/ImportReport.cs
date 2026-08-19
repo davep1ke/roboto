@@ -22,6 +22,8 @@ public sealed class ImportReport
     public int AnswerCardsImported { get; set; }
     public int MultiAnswerCardsImported { get; set; }
     public int UnmappableCardReferencesDropped { get; set; }
+    public int PacksImported { get; set; }
+    public int UnmappablePackReferencesDropped { get; set; }
 
     public int XyzzyGamesImported { get; set; }
     public Dictionary<string, int> XyzzyGamesByStatus { get; set; } = [];
@@ -38,7 +40,7 @@ public sealed class ImportReport
             $"Quotes: {QuotesImported}, Birthdays: {BirthdaysImported}, Wordcraft words: {WordcraftWordsImported}",
             $"Quiet-hours chats: {QuietHoursChatsImported}",
             $"Steam: {SteamPlayersImported} tracked players, {SteamGamesImported} cached games, API key found={SteamApiKeyFound} carried={SteamApiKeyCarried}",
-            $"Xyzzy catalog: {QuestionCardsImported} questions ({MultiAnswerCardsImported} multi-answer), {AnswerCardsImported} answers, {UnmappableCardReferencesDropped} unmappable card references dropped",
+            $"Xyzzy catalog: {QuestionCardsImported} questions ({MultiAnswerCardsImported} multi-answer), {AnswerCardsImported} answers, {PacksImported} packs, {UnmappableCardReferencesDropped} unmappable card references dropped, {UnmappablePackReferencesDropped} unmappable pack references dropped",
             $"Xyzzy games: {XyzzyGamesImported} ({string.Join(", ", XyzzyGamesByStatus.Select(kv => $"{kv.Key}={kv.Value}"))})",
             $"Pending replies resumed: {PendingRepliesResumed}",
         };

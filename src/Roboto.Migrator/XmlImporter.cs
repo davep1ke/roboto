@@ -43,6 +43,7 @@ public sealed class XmlImporter
 
             var importTimeUtc = DateTime.UtcNow;
             var cardIdMap = new Dictionary<string, string>();
+            var packIdMap = new Dictionary<Guid, string>();
             string? steamApiKeyFound = null;
 
             // Global data first - the xyzzy catalog needs to be written and loaded into this
@@ -86,10 +87,12 @@ public sealed class XmlImporter
                         break;
 
                     case LegacyXyzzyCoreData xyzzyCore:
-                        var (questions, answers, map) = XyzzyImportMapper.BuildCatalog(xyzzyCore, report);
+                        var (questions, answers, packs, map, pMap) = XyzzyImportMapper.BuildCatalog(xyzzyCore, report);
                         cardIdMap = map;
+                        packIdMap = pMap;
                         await store.SaveAsync(CardCatalog.QuestionsKey, questions, cancellationToken);
                         await store.SaveAsync(CardCatalog.AnswersKey, answers, cancellationToken);
+                        await store.SaveAsync(CardCatalog.PacksKey, packs, cancellationToken);
 
                         // Loads into *this process's* CardCatalog statics (Roboto.Migrator's own
                         // process, separate from any Roboto.Bot process) so the resumption logic
@@ -139,7 +142,7 @@ public sealed class XmlImporter
                             break;
 
                         case LegacyXyzzyChatData legacyXyzzy:
-                            var game = XyzzyImportMapper.MapGame(legacyChat.chatID, legacyXyzzy, cardIdMap, importTimeUtc, report);
+                            var game = XyzzyImportMapper.MapGame(legacyChat.chatID, legacyXyzzy, cardIdMap, packIdMap, importTimeUtc, report);
                             await xyzzyGames.SaveAsync(game, cancellationToken);
                             report.XyzzyGamesImported++;
                             var statusKey = game.Status.ToString();

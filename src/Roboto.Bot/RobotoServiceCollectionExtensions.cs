@@ -43,6 +43,7 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<IStateStore, SqliteStateStore>();
         services.AddSingleton<StatsRecorder>();
         services.AddSingleton<ChatRepository>();
+        services.AddSingleton<ChatPurgeReconciler>();
         services.AddSingleton<XyzzyGameRepository>();
         services.AddSingleton<XyzzyRoundService>();
         services.AddSingleton<XyzzyRoundReconciler>();
