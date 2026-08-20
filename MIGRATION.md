@@ -45,6 +45,7 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.6 Pack selection in the `/xyzzy_start` setup wizard | Done, verified | `4cc6087` |
 | 14.7 Fix the "infinite timeout" bug (input + reconciler) | Done, verified | `012ab89` |
 | 14.8 Instance identity merge (hostname-derived `ROBOTO_INSTANCE`) | Done, verified | — |
+| 14.9 Fix `DmOutbox` front-insert window preempting unrelated queued requests | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1117,6 +1118,40 @@ directly). Verified instead with a real, non-mocked smoke test against the built
 --hostname mytest-instance` with no `ROBOTO_INSTANCE` set correctly created `/data/mytest-instance/
 bot.env`; a second run with both `--hostname` and `ROBOTO_INSTANCE` set confirmed the env var still
 wins as an explicit override. `docker compose build` clean.
+
+### 14.9: fix `DmOutbox` front-insert window preempting unrelated queued requests - done, verified
+
+Live bug, found by actually playing against the beefy test bot rather than by the automated suite:
+in a bot-heavy game, repeatedly asking for `/xyzzy_settings` while a round was in progress kept
+getting shouted down by fresh round-dealt messages, no matter how many times it was retried.
+
+Root cause was in `DmOutbox`'s 8.9 "resolving window" design (`_resolvingInsertIndex`, opened by
+`RemoveCurrentHeadAsync`, closed by `PumpNextAsync`, in `CallbackQueryRouter.HandleAsync`): any
+`AddAsync` call for that user during the window front-inserts instead of appending. That's correct
+for a flow's own genuine continuation (e.g. "pick your next card" on a multi-answer question), but
+it was applied unconditionally to *every* enqueue during the window - including a brand new round
+being dealt as a side effect of the same callback, when the judge and/or remaining answerers are
+bots and answering/judging cascades synchronously through `XyzzyRoundService.BeginQuestionAsync`/
+`BeginJudgingAsync` before `PumpNextAsync` ever runs. Each new round's hand keyboard jumped the
+queue ahead of a `/xyzzy_settings` request that was already legitimately waiting - and since
+resolving that round just deals straight into the next one, it kept happening every time the player
+answered.
+
+Fixed with a new `allowFrontInsert` parameter (default `true`, preserving the 8.9 behavior
+everywhere else) on `DmOutbox.EnqueueNoticeAsync`/`EnqueueButtonQuestionAsync`/the private
+`AddAsync`; `XyzzyRoundService.BeginQuestionAsync`'s and `BeginJudgingAsync`'s broadcast calls now
+pass `allowFrontInsert: false` - a freshly-dealt round is an independent event, not the triggering
+player's own flow continuing, regardless of which callback happened to cause it. `SubmitAnswerAsync`'s
+"pick your next card" re-prompt is deliberately left at the default (still front-inserts, correctly).
+
+New regression test `tests/Roboto.Bot.Tests/Xyzzy/DmOutboxQueueOrderingTests.cs` reproduces the
+exact reported shape (solo starter + 2 auto-filled bots, so round 2's judge is a bot): queues
+`/xyzzy_settings` behind an outstanding round-2 hand, answers that hand (cascading synchronously
+through judging and dealing round 3), asserts the settings menu - not round 3's hand - wins.
+Verified failing without the fix (temporarily reverted the `allowFrontInsert: false` call sites,
+confirmed the test failed with round 3's hand delivered instead of settings) and passing with it,
+run 4x for stability. Full suite (165 Roboto.Bot.Tests + 12 Roboto.Migrator.Tests) green throughout.
+`docker compose build` clean.
 
 ## Explicitly deferred / blocked work
 

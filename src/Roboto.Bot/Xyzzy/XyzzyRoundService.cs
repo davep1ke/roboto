@@ -89,15 +89,19 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
 
         if (!judge.IsBot)
         {
+            // allowFrontInsert: false - a brand-new round is an independent event, not "the same
+            // flow's own continuation" for whoever's action happened to trigger it via a bot-cascade
+            // (see DmOutbox.EnqueueButtonQuestionAsync's own doc comment) - it must never preempt
+            // something that player already has queued, like an /xyzzy_settings menu.
             await outbox.EnqueueNoticeAsync(bot, judge.PlayerId,
                 $"Round {game.RoundNumber}: you're judging! \"{question.Text}\"\nWaiting for everyone else to answer...",
-                cancellationToken);
+                cancellationToken, allowFrontInsert: false);
         }
 
         foreach (var player in game.Players.Where(p => p.PlayerId != game.JudgePlayerId && !p.IsBot))
         {
             await outbox.EnqueueButtonQuestionAsync(bot, player.PlayerId,
-                $"Round {game.RoundNumber}: \"{question.Text}\"\nPick a card:", BuildHandKeyboard(game, player), cancellationToken);
+                $"Round {game.RoundNumber}: \"{question.Text}\"\nPick a card:", BuildHandKeyboard(game, player), cancellationToken, allowFrontInsert: false);
         }
 
         await bot.SendMessage(game.ChatId,
@@ -293,8 +297,11 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         }
 
         var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId)!;
+        // allowFrontInsert: false - same reasoning as BeginQuestionAsync's own calls: judging a new
+        // round is an independent event, not a continuation of whatever flow the judge might
+        // currently be resolving of their own.
         await outbox.EnqueueButtonQuestionAsync(bot, judge.PlayerId,
-            $"Everyone's answered! Pick the winner for: \"{question.Text}\"", BuildJudgeKeyboard(game), cancellationToken);
+            $"Everyone's answered! Pick the winner for: \"{question.Text}\"", BuildJudgeKeyboard(game), cancellationToken, allowFrontInsert: false);
 
         await bot.SendMessage(game.ChatId, "All answers are in - the judge is picking a winner.", cancellationToken: cancellationToken);
     }

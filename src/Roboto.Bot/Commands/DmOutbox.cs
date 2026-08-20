@@ -37,12 +37,22 @@ public sealed class DmOutbox(IStateStore store, ILogger<DmOutbox> logger)
     private readonly Dictionary<long, int> _resolvingInsertIndex = [];
 
 
-    public Task<bool> EnqueueNoticeAsync(ITelegramBotClient bot, long userId, string text, CancellationToken cancellationToken) =>
-        AddAsync(bot, userId, new DmOutboxEntry { Text = text, ExpectsResponse = false }, cancellationToken);
+    public Task<bool> EnqueueNoticeAsync(ITelegramBotClient bot, long userId, string text, CancellationToken cancellationToken, bool allowFrontInsert = true) =>
+        AddAsync(bot, userId, new DmOutboxEntry { Text = text, ExpectsResponse = false }, cancellationToken, allowFrontInsert);
 
+    /// <summary>allowFrontInsert (default true, matching every existing caller's expectation):
+    /// whether this entry may use the resolving-window queue-jump described on AddAsync, when one's
+    /// open for this user. True is correct for "the next step of the interactive flow the user is
+    /// actively in" (a settings sub-prompt, a setup-wizard step, "pick your next card" for a
+    /// still-unfinished multi-answer question). Pass false for anything that's really a *new*,
+    /// independently-triggered event that merely happens to run inside someone else's resolving
+    /// window as a side effect - a fresh xyzzy round/judging phase reached via a bot-cascade being
+    /// the concrete case that motivated this (see XyzzyRoundService.BeginQuestionAsync/
+    /// BeginJudgingAsync) - so it takes its place in line normally instead of preempting whatever
+    /// that user already had queued, like an `/xyzzy_settings` menu they're waiting on.</summary>
     public Task<bool> EnqueueButtonQuestionAsync(
-        ITelegramBotClient bot, long userId, string text, List<List<DmButton>> keyboard, CancellationToken cancellationToken) =>
-        AddAsync(bot, userId, new DmOutboxEntry { Text = text, Keyboard = keyboard, ExpectsResponse = true }, cancellationToken);
+        ITelegramBotClient bot, long userId, string text, List<List<DmButton>> keyboard, CancellationToken cancellationToken, bool allowFrontInsert = true) =>
+        AddAsync(bot, userId, new DmOutboxEntry { Text = text, Keyboard = keyboard, ExpectsResponse = true }, cancellationToken, allowFrontInsert);
 
     public Task<bool> EnqueueTextQuestionAsync(
         ITelegramBotClient bot, long userId, long targetChatId, string handlerCommand, string step, string? data, string text,
@@ -55,7 +65,7 @@ public sealed class DmOutbox(IStateStore store, ILogger<DmOutbox> logger)
             HandlerCommand = handlerCommand,
             Step = step,
             Data = data,
-        }, cancellationToken);
+        }, cancellationToken, allowFrontInsert: true);
 
     /// <summary>Whether callbackMessageId is the currently-blocking button question for this user -
     /// callers should treat a false result as "that button isn't valid any more" and not dispatch
@@ -201,12 +211,12 @@ public sealed class DmOutbox(IStateStore store, ILogger<DmOutbox> logger)
         }
     }
 
-    private async Task<bool> AddAsync(ITelegramBotClient bot, long userId, DmOutboxEntry entry, CancellationToken cancellationToken)
+    private async Task<bool> AddAsync(ITelegramBotClient bot, long userId, DmOutboxEntry entry, CancellationToken cancellationToken, bool allowFrontInsert)
     {
         entry.QueuedUtc = DateTime.UtcNow;
         var queue = await LoadAsync(userId, cancellationToken);
 
-        if (_resolvingInsertIndex.TryGetValue(userId, out var insertIndex))
+        if (allowFrontInsert && _resolvingInsertIndex.TryGetValue(userId, out var insertIndex))
         {
             // A router is actively resolving this user's just-answered head (we're running inside
             // that handler's own dispatch, before PumpNextAsync). This entry is that same flow's own
