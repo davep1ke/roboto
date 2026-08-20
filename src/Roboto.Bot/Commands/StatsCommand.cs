@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Options;
 using Roboto.Bot.Chats;
-using Roboto.Bot.Persistence;
 using Roboto.Bot.Stats;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
@@ -12,10 +11,12 @@ namespace Roboto.Bot.Commands;
 /// identity/uptime/chat-count plus each module's own live-computed snapshot line (getStats()),
 /// *not* a dump of the stats-engine's time-series registry (that's /statgraph). IModuleStatsProvider
 /// is the rewrite's equivalent of getStats() overrides, reflection-discovered the same way
-/// IBotCommand/ICallbackQueryHandler are.
+/// IBotCommand/ICallbackQueryHandler are. Deliberately doesn't show a "Top commands" tail any more
+/// (user's explicit ask) - CommandRouter still tracks per-command usage counts (UsageStatsKey),
+/// just not surfaced here.
 /// </summary>
 public sealed class StatsCommand(
-    IOptions<BotOptions> options, AppClock clock, ChatRepository chats, IStateStore store, IEnumerable<IModuleStatsProvider> providers) : IBotCommand
+    IOptions<BotOptions> options, AppClock clock, ChatRepository chats, IEnumerable<IModuleStatsProvider> providers) : IBotCommand
 {
     public string Name => "stats";
     public string Description => "Shows uptime, chat count, and per-module stats.";
@@ -37,14 +38,6 @@ public sealed class StatsCommand(
         {
             lines.Add($"*{provider.ModuleName}*");
             lines.Add(await provider.GetStatsAsync(cancellationToken));
-        }
-
-        var counts = await store.LoadAsync<Dictionary<string, int>>(CommandRouter.UsageStatsKey, cancellationToken)
-                     ?? new Dictionary<string, int>();
-        if (counts.Count > 0)
-        {
-            lines.Add("Top commands:");
-            lines.AddRange(counts.OrderByDescending(kv => kv.Value).Take(5).Select(kv => $"/{kv.Key}: {kv.Value}"));
         }
 
         await context.Bot.SendMessage(context.Message.Chat.Id, string.Join('\n', lines), parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);

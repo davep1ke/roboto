@@ -47,7 +47,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.8 Instance identity merge (hostname-derived `ROBOTO_INSTANCE`) | Done, verified | `dca00bd` |
 | 14.9 Fix `DmOutbox` front-insert window preempting unrelated queued requests | Done, verified | `52042e5` |
 | 14.10 Round-flow message parity: judging/win-announcement wording, multi-game DM chat stamp | Done, verified | `9fe6481` |
-| 14.11 Real chat-name stamp (not chat ID), bolded winning answer, round-start wording | Done, verified | — |
+| 14.11 Real chat-name stamp (not chat ID), bolded winning answer, round-start wording | Done, verified | `459969a` |
+| 14.12 Fix duplicated-answer blank substitution, `/statgraph` missing text (Dockerfile fonts), drop /stats "Top commands" | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1261,6 +1262,50 @@ FullRoundEndToEndDealAnswerJudgeAndAdvance` to assert the winning answer appears
 always skip; bold wrapper stripped to plain text) before restoring - full suite (166
 Roboto.Bot.Tests + 12 Roboto.Migrator.Tests) green across 4 consecutive runs. `docker compose
 build` clean.
+
+### 14.12: fix duplicated-answer blank substitution, `/statgraph` missing text, drop /stats "Top commands" - done, verified
+
+Three more live-reported issues:
+
+**Winning-answer duplication on a multi-character blank.** Reported live: a crcast-imported
+question whose blank is a run of several underscores ("...you immediately __.", not a single "_")
+came back with the answer duplicated back-to-back and no separator ("...immediately Thrall's
+ballsThrall's balls."). `XyzzyRoundService.PickWinnerAsync`'s single-answer substitution used a
+plain string `Replace("_", bolded)`, which swaps in the answer once *per individual underscore
+character* rather than once per blank - a genuine pre-existing bug (present before 14.10/14.11's
+bolding change touched this line at all, just never exercised by the hardcoded placeholder catalog,
+whose one blank is always a single "_"). Fixed with `Regex.Replace(text, "_+", ...)` (a
+`MatchEvaluator` overload, not the plain-string one, so an answer containing "$" can't be misread
+as a regex backreference) - a whole run of underscores is now treated as one blank. New test
+`XyzzyWinAnnouncementFormattingTests.cs` overrides the catalog with a real multi-underscore-blank
+question to reproduce this (none of the hardcoded placeholder cards have one); confirmed failing
+against the old `Replace` before restoring the fix.
+
+**`/statgraph` charts had no title, axis labels, or legend text.** Root cause wasn't the charting
+code - `StatGraphCommand.BuildPlot` already calls `Title`/`YLabel`/`ShowLegend` correctly - it was
+the Dockerfile: the base `mcr.microsoft.com/dotnet/runtime:10.0` image ships neither `fontconfig`
+nor a single font file, and SkiaSharp (ScottPlot's renderer) silently draws *no text at all* when it
+can't resolve a font, rather than erroring - it still draws every line, marker, gridline, and axis
+tick mark, just with all text stripped, which is exactly what made this so easy to miss locally
+(any normal dev machine already has system fonts, so the same code produced a fully-labelled image
+in every local check). Confirmed by direct reproduction: a minimal standalone ScottPlot probe
+produced a correctly-labelled PNG when run against `mcr.microsoft.com/dotnet/runtime:10.0` +
+`fontconfig`/`fonts-dejavu-core` installed, and the identical probe against the bare base image
+came back with the title, axis numbers, and legend text all blank - geometry only. Fixed by
+installing `fontconfig` and `fonts-dejavu-core` (Debian's own small default sans-serif, ASCII
+coverage is all this bot's stat names/labels ever need) in the Dockerfile's final stage, before
+switching to the non-root `$APP_UID` user (needs root for `apt-get`).
+
+**`/stats` no longer shows a "Top commands" tail** - user's explicit ask, removed outright rather
+than gated behind a flag. `CommandRouter` still tracks per-command usage counts (`UsageStatsKey`)
+in case something else wants them later; only the `/stats` display and its now-unused `IStateStore`
+constructor dependency were removed.
+
+Full suite (167 Roboto.Bot.Tests + 12 Roboto.Migrator.Tests) green across 5 consecutive runs
+(including several the multi-answer bolding assertion added in 14.11 happened to exercise against
+the default catalog's one "Pick 2" card, q31 - see that test's own fix in this same commit: it had
+assumed every winning submission bolds as a single wrapped string, which only holds for a
+single-answer question). `docker compose build` clean.
 
 ## Explicitly deferred / blocked work
 

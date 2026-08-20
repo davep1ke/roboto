@@ -180,12 +180,18 @@ public class XyzzyRoundLoopTests
 
         // Ports legacy's judgesResponse win message: every player's score, not just the winner's -
         // previously this only showed the winner's own new tally. The winning answer itself is
-        // bolded (legacy wraps it in "*...*" and sends with markDown=true) so it stands out.
+        // bolded (legacy wraps it in "*...*" and sends with markDown=true) so it stands out - each
+        // card individually for a multi-answer ("Pick 2"+) submission, per winningButton.Text's own
+        // " >> "-joined format (XyzzyRoundService.CombinedAnswerText), not the whole joined string
+        // wrapped as one - the default catalog's q31 is exactly such a question.
         var winMessage = groupMessages.Last(m => m.Text.Contains("wins a point"));
         Assert.Contains("Alice", winMessage.Text);
         Assert.Contains("Bob", winMessage.Text);
         Assert.Contains("Carol", winMessage.Text);
-        Assert.Contains($"*{winningButton.Text}*", winMessage.Text);
+        foreach (var answerPiece in winningButton.Text.Split(" >> "))
+        {
+            Assert.Contains($"*{answerPiece}*", winMessage.Text);
+        }
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_status"));
         var status = bot.BotClient.SentMessages[^1].Text;

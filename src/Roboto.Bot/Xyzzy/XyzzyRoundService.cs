@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Stats;
@@ -231,7 +232,15 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, ChatRepository 
         {
             var answer = CardCatalog.FindAnswer(winningCards[0])!;
             var bolded = $"*{answer.Text}*";
-            filled = question.Text.Contains('_') ? question.Text.Replace("_", bolded) : $"{question.Text} {bolded}";
+            // A blank can be a run of several underscores, not just one (imported crcast cards
+            // routinely use "__" or more) - Regex.Replace("_+", ...) swaps the whole run for one
+            // answer; a plain string Replace("_", ...) would instead substitute once per individual
+            // underscore character, duplicating the answer back-to-back for every blank longer than
+            // one character (a real bug hit live: "you immediately __." -> the answer twice, glued
+            // together with no space).
+            // MatchEvaluator overload, not the plain-string one - a card whose answer text happens
+            // to contain "$" would otherwise be misread as a regex backreference.
+            filled = question.Text.Contains('_') ? Regex.Replace(question.Text, "_+", _ => bolded) : $"{question.Text} {bolded}";
         }
         else
         {
