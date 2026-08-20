@@ -39,7 +39,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 13. Dormant-chat purge (`ChatPurgeReconciler`) | Done, verified | `e73d4ec` |
 | 14.1 Pack default-semantics reversal (`XyzzyPackFilter`) | Done, verified | `d24a007` |
 | 14.2 Stats engine dual-track (`StatBucket`), `/stats`/`/statgraph` rebuild | Done, verified | `c74bec5` |
-| 14.3 Settings menu: fixed Abandon confirm, Extend on a running game, Mess With | Done, verified | — |
+| 14.3 Settings menu: fixed Abandon confirm, Extend on a running game, Mess With | Done, verified | `1b5f24e` |
+| 14.4 `/xyzzy_leave` DM picker, `/xyzzy_get_settings` real content | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -980,19 +981,40 @@ touching real `Wins`) and `XyzzyStatsTests.cs` (Abandon's stat now requires the 
 Abandon-confirm fix confirmed to actually catch a deliberately-reintroduced regression before being
 trusted. `docker compose build` clean.
 
+### 14.4: `/xyzzy_leave` DM picker, real `/xyzzy_get_settings` content - done, verified
+
+Caught a near-miss here worth recording: `/xyzzy_get_settings` already existed (phase 8.1, a
+deliberate placeholder pending real pack support - "Reports the hardcoded catalog counts... since
+v1 only has the one built-in pack"), and this phase's first pass almost blind-overwrote it without
+checking. `git stash`/`pop` recovered the original before anything was lost. The corrected version
+keeps the file but replaces its placeholder content with legacy's actual settings-summary text
+(remaining deck counts, timeouts, enabled-pack count/names capped at 30 with a "plus N more" tail,
+matching the pack picker's own cap) - real content is possible now that packs actually exist
+(phase 14.1), which is exactly what the placeholder was waiting on.
+
+`/xyzzy_leave`'s DM variant (typed with no chat context) was a genuine, confirmed-cut v1 gap -
+restored now: scans every active game the caller is in (`XyzzyGameRepository.GetAllActiveAsync`)
+and shows a "which game?" picker (chat title, falling back to the raw chat ID if the title was
+never captured - only `/start`/`/stop` set it today) via a new `XyzzyLeavePickerCallbackHandler`
+(`xy:lv:<chatId>` / `xy:lv:cancel`). The existing group-context `/xyzzy_leave` is unaffected.
+
+Verified: `XyzzyGameSkeletonTests.cs` updated (the "rejected in private chats" test no longer
+includes `/xyzzy_leave`, which now has its own legitimate DM behavior; the settings test now starts
+a real game first and asserts the actual summary text). New `XyzzyLeaveDmVariantTests.cs` (picker
+lists every active game, picking one only removes you from that one, Cancel leaves everything
+unchanged) - the game-filter fix confirmed to actually catch a deliberately-reintroduced regression
+before being trusted. `docker compose build` clean.
+
 ## Explicitly deferred / blocked work
 
-- **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back):
-  CardCast/CRCast pack import (the original service is dead, current code points at a community
-  mirror and already has its own dormant-pack-removal disabled); multi-blank ("Pick 2") questions;
-  "Mess With" (joke/fake score display, purely cosmetic); cross-chat DM `/xyzzy_leave` (typed with
-  no chat context, scans every chat you're in) — v1's `/xyzzy_leave` is group-context only like
-  every other command; stats/metrics (`registerStatType`/`logStat` calls throughout legacy) — no
-  stats subsystem exists yet beyond command-usage counts. The elaborate multi-step setup wizard
-  (defaults-vs-custom chain, question-limit/timeout/throttle prompts before the game starts) was
-  originally cut here too but got built out in phase 8.5, below. Pack-filter selection was cut here
-  too, on the (incorrect) belief it was a deliberate scope cut - it was actually a real gap, and got
-  built out in phase 8.11, below.
+- **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back) -
+  almost all of these turned out to be real gaps, not deliberate cuts, once the full parity audit
+  (phase 14) actually checked: ~~multi-blank ("Pick 2") questions~~ built in phase 8.10;
+  ~~"Mess With"~~ built in phase 14.3; ~~cross-chat DM `/xyzzy_leave`~~ built in phase 14.4;
+  ~~stats/metrics~~ built out across phases 10a/10b/14.2; ~~pack-filter selection~~ built in phase
+  14.1. CardCast/CRCast pack import specifically is in progress (phase 14.5). The elaborate
+  multi-step setup wizard (defaults-vs-custom chain, question-limit/timeout/throttle prompts before
+  the game starts) was cut here too but got built out in phase 8.5.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production
   warning in `CLAUDE.md`. Needs a real copy of the production XML + test-bot tokens from the user
   before work starts; build and prove it against test data first, only point it at a real prod XML

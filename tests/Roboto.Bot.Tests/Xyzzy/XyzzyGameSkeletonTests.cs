@@ -160,24 +160,39 @@ public class XyzzyGameSkeletonTests
         await bot.SendAsync(TestBot.PrivateMessage(FirstUser, "/xyzzy_join"));
         Assert.Contains("group chats", bot.BotClient.SentMessages[^1].Text);
 
+        // /xyzzy_leave in a private chat is now its own legitimate flow (the "which game?" picker),
+        // not rejected - see XyzzyLeaveDmVariant tests below.
         await bot.SendAsync(TestBot.PrivateMessage(FirstUser, "/xyzzy_leave"));
-        Assert.Contains("group chats", bot.BotClient.SentMessages[^1].Text);
+        Assert.Contains("not in any active games", bot.BotClient.SentMessages[^1].Text);
 
         await bot.SendAsync(TestBot.PrivateMessage(FirstUser, "/xyzzy_status"));
         Assert.Contains("group chats", bot.BotClient.SentMessages[^1].Text);
     }
 
     [Fact]
+    public async Task GetSettingsReportsNoGameRunningWhenStopped()
+    {
+        using var bot = new TestBot();
+
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, FirstUser, "/xyzzy_get_settings"));
+
+        Assert.Contains("No game is running", bot.BotClient.SentMessages[^1].Text);
+    }
+
+    [Fact]
     public async Task GetSettingsReportsTheCatalogAndTimingDefaults()
     {
         using var bot = new TestBot();
+        await StartWithDefaultsAsync(bot, ChatId, FirstUser);
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, FirstUser, "/xyzzy_get_settings"));
 
         var text = bot.BotClient.SentMessages[^1].Text;
         Assert.Contains("questions", text);
         Assert.Contains("answers", text);
-        Assert.Contains("Max wait", text);
+        Assert.Contains("hour timeouts", text);
+        Assert.Contains("Wait at least", text);
+        Assert.Contains("packs currently enabled", text);
     }
 
     [Fact]
