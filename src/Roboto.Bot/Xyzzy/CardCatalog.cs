@@ -11,8 +11,10 @@ namespace Roboto.Bot.Xyzzy;
 public sealed record XyzzyCard(string Id, string Text, int AnswerCount = 1, string? PackId = null);
 
 /// <summary>A pack a card can belong to (legacy's cardcast_pack, Roboto/Helpers/cardCast.cs) - just
-/// enough to show a name in the "Change Packs" picker and filter a deck by selection.</summary>
-public sealed record XyzzyPack(string Id, string Name);
+/// enough to show a name in the "Change Packs" picker and filter a deck by selection. IsDefault
+/// marks the one pack a brand-new chat starts enabled on (legacy's primaryPackID, the base CAH
+/// set) - see XyzzyPackFilter.DefaultSelection.</summary>
+public sealed record XyzzyPack(string Id, string Name, bool IsDefault = false);
 
 /// <summary>
 /// The default card pack: a modest hardcoded sample of the public Cards Against Humanity base set
@@ -49,6 +51,7 @@ public static class CardCatalog
     private static IReadOnlyList<XyzzyPack> _packs;
     private static Dictionary<string, XyzzyCard> _questionsById;
     private static Dictionary<string, XyzzyCard> _answersById;
+    private static string? _defaultPackId;
 
     static CardCatalog()
     {
@@ -57,11 +60,17 @@ public static class CardCatalog
         _packs = [];
         _questionsById = BuildIndex(_questions);
         _answersById = BuildIndex(_answers);
+        _defaultPackId = ComputeDefaultPackId(_packs);
     }
 
     public static IReadOnlyList<XyzzyCard> Questions => _questions;
     public static IReadOnlyList<XyzzyCard> Answers => _answers;
     public static IReadOnlyList<XyzzyPack> Packs => _packs;
+
+    /// <summary>The pack a brand-new chat starts enabled on (see XyzzyPackFilter.DefaultSelection) -
+    /// whichever pack is flagged IsDefault, else the first pack, else null if no packs are loaded at
+    /// all (the hardcoded placeholder catalog has none).</summary>
+    public static string? DefaultPackId => _defaultPackId;
 
     /// <summary>O(1) lookups - the real imported catalog is tens to hundreds of thousands of cards
     /// (72,441 questions / 229,734 answers in the largest real production export seen so far), and
@@ -100,13 +109,22 @@ public static class CardCatalog
         {
             _packs = packs;
         }
+
+        _defaultPackId = ComputeDefaultPackId(_packs);
     }
+
+    private static string? ComputeDefaultPackId(IReadOnlyList<XyzzyPack> packs) =>
+        packs.FirstOrDefault(p => p.IsDefault)?.Id ?? packs.FirstOrDefault()?.Id;
 
     /// <summary>Test-only escape hatch: LoadOverrideAsync deliberately can't clear Packs back to
     /// empty (an empty stored list means "nothing to override", same convention as
     /// Questions/Answers) - but a test that seeds pack-tagged cards via LoadOverrideAsync needs a
     /// way to undo that afterward, since CardCatalog is a shared static across the whole test run.</summary>
-    internal static void ResetPacksForTesting() => _packs = [];
+    internal static void ResetPacksForTesting()
+    {
+        _packs = [];
+        _defaultPackId = null;
+    }
 
     private static Dictionary<string, XyzzyCard> BuildIndex(IReadOnlyList<XyzzyCard> cards) =>
         cards.ToDictionary(c => c.Id);

@@ -16,23 +16,40 @@ public static class XyzzyImportMapper
     /// chat's packFilterIDs - Roboto/Modules/mod_xyzzy.cs's mod_xyzzy.AllPacksEnabledID.</summary>
     private static readonly Guid AllPacksEnabledId = Guid.Empty;
 
+    /// <summary>The GUID legacy pins the base "Cards Against Humanity" pack to at startup
+    /// (mod_xyzzy.primaryPackID, Roboto/Modules/mod_xyzzy.cs:18) - a fresh legacy chat's
+    /// packFilterIDs defaults to exactly this one pack. A real export should carry the override,
+    /// but packCode "CAHBS" (Roboto/Modules/ModuleStorage/mod_xyzzy_coredata.cs's hardcoded pack
+    /// list) is the belt-and-braces fallback identifier if the GUID itself doesn't match.</summary>
+    private static readonly Guid PrimaryPackGuid = Guid.Parse("FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE");
+    private const string PrimaryPackCode = "CAHBS";
+
     /// <summary>Legacy IDs are GUIDs - too long to reuse directly (risks blowing Telegram's 64-byte
     /// callback_data limit for large supergroup chat IDs, exactly why CardCatalog chose short IDs
     /// over GUIDs originally). Assigns new sequential short IDs while building a GUID -> new-ID map
-    /// used to translate every other card/pack reference in the same file.</summary>
+    /// used to translate every other card/pack reference in the same file. Also identifies which
+    /// imported pack is "the" default one (XyzzyPack.IsDefault) - see MapEnabledPackIds for why a
+    /// resumed chat needs this, not just a freshly-created one.</summary>
     public static (List<XyzzyCard> Questions, List<XyzzyCard> Answers, List<XyzzyPack> Packs,
-        Dictionary<string, string> CardIdMap, Dictionary<Guid, string> PackIdMap) BuildCatalog(
+        Dictionary<string, string> CardIdMap, Dictionary<Guid, string> PackIdMap, string? DefaultPackId) BuildCatalog(
         LegacyXyzzyCoreData core, ImportReport report)
     {
         var packIdMap = new Dictionary<Guid, string>();
         var packs = new List<XyzzyPack>();
+
+        // Identify the primary pack before assigning short IDs: exact GUID match first (legacy
+        // overrides the base pack's GUID to this value at its own startup), packCode second (belt
+        // and braces - the GUID override might predate this export), first pack otherwise.
+        var primaryGuid = core.packs.Any(p => p.packID == PrimaryPackGuid) ? PrimaryPackGuid
+            : core.packs.FirstOrDefault(p => p.packCode == PrimaryPackCode)?.packID
+              ?? core.packs.FirstOrDefault()?.packID;
 
         var pIndex = 1;
         foreach (var p in core.packs)
         {
             var newId = $"p{pIndex++}";
             packIdMap[p.packID] = newId;
-            packs.Add(new XyzzyPack(newId, p.name));
+            packs.Add(new XyzzyPack(newId, p.name, IsDefault: p.packID == primaryGuid));
         }
 
         report.PacksImported = packs.Count;
@@ -69,24 +86,28 @@ public static class XyzzyImportMapper
 
         report.QuestionCardsImported = questions.Count;
         report.AnswerCardsImported = answers.Count;
-        return (questions, answers, packs, cardIdMap, packIdMap);
+        var defaultPackId = primaryGuid is { } guid ? packIdMap.GetValueOrDefault(guid) : null;
+        return (questions, answers, packs, cardIdMap, packIdMap, defaultPackId);
     }
 
-    /// <summary>Translates a chat's legacy packFilterIDs onto XyzzyGameState.EnabledPackIds.
-    /// Legacy's scheme is the inverse of the rewrite's: packFilterIDs defaults to one specific pack
-    /// (never starts empty), and "all packs" is the explicit AllPacksEnabledId sentinel appearing
-    /// *inside* the list - the rewrite instead uses an empty list to mean "all packs" (see
-    /// XyzzyGameState.EnabledPackIds' own doc comment), so both of those map onto []. A
-    /// packFilterIDs list that's empty with no sentinel (legacy's own "nothing enabled" edge case -
-    /// only reachable by explicitly picking "None" in the legacy UI) collapses onto the same []
-    /// result; XyzzyRoundService's own empty-after-filter fallback then treats it as "all packs"
-    /// rather than leaving the game unable to draw a card, which is a safer outcome for a resumed
-    /// game than reproducing a genuinely broken legacy state.</summary>
-    public static List<string> MapEnabledPackIds(IReadOnlyList<Guid> legacyPackFilterIds, IReadOnlyDictionary<Guid, string> packIdMap, ImportReport report)
+    /// <summary>Translates a chat's legacy packFilterIDs onto XyzzyGameState.EnabledPackIds, now
+    /// matching legacy's own scheme exactly (see XyzzyPackFilter): the AllPacksEnabledId sentinel
+    /// maps onto XyzzyPackFilter.AllPacksId, and a genuinely empty packFilterIDs list (legacy's own
+    /// "nothing enabled" edge case - only reachable by explicitly picking "None" in the legacy UI,
+    /// itself a legacy bug that leaves the game unable to draw a card) maps onto the imported
+    /// primary pack rather than being left empty or defaulting to "all" - resuming into the base
+    /// pack is the safe, honest translation of an otherwise-unplayable state.</summary>
+    public static List<string> MapEnabledPackIds(
+        IReadOnlyList<Guid> legacyPackFilterIds, IReadOnlyDictionary<Guid, string> packIdMap, string? defaultPackId, ImportReport report)
     {
-        if (legacyPackFilterIds.Count == 0 || legacyPackFilterIds.Contains(AllPacksEnabledId))
+        if (legacyPackFilterIds.Contains(AllPacksEnabledId))
         {
-            return [];
+            return [XyzzyPackFilter.AllPacksId];
+        }
+
+        if (legacyPackFilterIds.Count == 0)
+        {
+            return defaultPackId is not null ? [defaultPackId] : [XyzzyPackFilter.AllPacksId];
         }
 
         var mapped = new List<string>();
@@ -138,7 +159,7 @@ public static class XyzzyImportMapper
 
     public static XyzzyGameState MapGame(
         long chatId, LegacyXyzzyChatData legacy, IReadOnlyDictionary<string, string> cardIdMap,
-        IReadOnlyDictionary<Guid, string> packIdMap, DateTime importTimeUtc, ImportReport report)
+        IReadOnlyDictionary<Guid, string> packIdMap, string? defaultPackId, DateTime importTimeUtc, ImportReport report)
     {
         var game = new XyzzyGameState
         {
@@ -148,7 +169,7 @@ public static class XyzzyImportMapper
             MinWaitHours = legacy.minWaitTimeHours,
             QuestionLimit = legacy.enteredQuestionCount,
             RoundNumber = 1,
-            EnabledPackIds = MapEnabledPackIds(legacy.packFilterIDs, packIdMap, report),
+            EnabledPackIds = MapEnabledPackIds(legacy.packFilterIDs, packIdMap, defaultPackId, report),
 
             // Stale-data safety (explicit user concern) - never carry the original timestamp
             // forward. A resumed game's clock starts at the moment it's actually imported, not

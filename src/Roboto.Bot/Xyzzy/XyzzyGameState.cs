@@ -48,9 +48,12 @@ public sealed class XyzzyGameState
     /// otherwise, matching "use defaults".</summary>
     public int QuestionLimit { get; set; } = -1;
 
-    /// <summary>Which CardCatalog packs this chat draws from. Empty means "all packs" - mirrors
-    /// legacy's AllPacksEnabledID sentinel (a magic Guid.Empty meaning "no filter"), but as an empty
-    /// list instead of a sentinel value since there's no single "unfiltered" ID to reuse here.
+    /// <summary>Which CardCatalog packs this chat draws from - see XyzzyPackFilter for the actual
+    /// semantics (a brand-new chat defaults to just the one base pack; "all packs" is the explicit
+    /// XyzzyPackFilter.AllPacksId sentinel, matching legacy's packFilterIDs/AllPacksEnabledID
+    /// exactly, not an empty-list convention). The field-initializer default here is only ever seen
+    /// by a XyzzyGameState constructed directly (tests) - the real default for a chat with no stored
+    /// game comes from XyzzyGameRepository.GetAsync, which needs CardCatalog already loaded.
     /// Populated via /xyzzy_settings' "Change Packs" menu (XyzzySettingsCallbackHandler) or import.</summary>
     public List<string> EnabledPackIds { get; set; } = [];
 

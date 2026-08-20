@@ -44,6 +44,7 @@ public sealed class XmlImporter
             var importTimeUtc = DateTime.UtcNow;
             var cardIdMap = new Dictionary<string, string>();
             var packIdMap = new Dictionary<Guid, string>();
+            string? defaultPackId = null;
             string? steamApiKeyFound = null;
 
             // Global data first - the xyzzy catalog needs to be written and loaded into this
@@ -87,9 +88,10 @@ public sealed class XmlImporter
                         break;
 
                     case LegacyXyzzyCoreData xyzzyCore:
-                        var (questions, answers, packs, map, pMap) = XyzzyImportMapper.BuildCatalog(xyzzyCore, report);
+                        var (questions, answers, packs, map, pMap, defaultPack) = XyzzyImportMapper.BuildCatalog(xyzzyCore, report);
                         cardIdMap = map;
                         packIdMap = pMap;
+                        defaultPackId = defaultPack;
                         await store.SaveAsync(CardCatalog.QuestionsKey, questions, cancellationToken);
                         await store.SaveAsync(CardCatalog.AnswersKey, answers, cancellationToken);
                         await store.SaveAsync(CardCatalog.PacksKey, packs, cancellationToken);
@@ -142,7 +144,7 @@ public sealed class XmlImporter
                             break;
 
                         case LegacyXyzzyChatData legacyXyzzy:
-                            var game = XyzzyImportMapper.MapGame(legacyChat.chatID, legacyXyzzy, cardIdMap, packIdMap, importTimeUtc, report);
+                            var game = XyzzyImportMapper.MapGame(legacyChat.chatID, legacyXyzzy, cardIdMap, packIdMap, defaultPackId, importTimeUtc, report);
                             await xyzzyGames.SaveAsync(game, cancellationToken);
                             report.XyzzyGamesImported++;
                             var statusKey = game.Status.ToString();

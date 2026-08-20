@@ -29,7 +29,9 @@ public static class SyntheticXmlFixture
     public const long JudgingKickTargetId = 303;
     public const long OrphanedReplyChatId = 999999; // deliberately not present in chatData
 
-    public static readonly Guid PackOneGuid = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    // Legacy's real primaryPackID (Roboto/Modules/mod_xyzzy.cs:18) - exercises BuildCatalog's exact-
+    // GUID-match path for identifying the default pack, not just the packCode fallback.
+    public static readonly Guid PackOneGuid = Guid.Parse("FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE");
     public static readonly Guid PackTwoGuid = Guid.Parse("22222222-2222-2222-2222-222222222222");
     public static readonly Guid UnmappablePackGuid = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
@@ -163,8 +165,8 @@ public static class SyntheticXmlFixture
                             currentQuestion = "Q-GUID-2",
                             maxWaitTimeHours = 12,
                             enteredQuestionCount = -1,
-                            // The AllPacksEnabledID sentinel (Guid.Empty) - proves it collapses onto
-                            // EnabledPackIds' own "empty = all" representation.
+                            // The AllPacksEnabledID sentinel (Guid.Empty) - proves it maps onto
+                            // XyzzyPackFilter.AllPacksId.
                             packFilterIDs = [Guid.Empty],
                         },
                     ],

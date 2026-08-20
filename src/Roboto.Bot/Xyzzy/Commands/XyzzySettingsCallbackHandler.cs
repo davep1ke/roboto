@@ -49,6 +49,7 @@ public sealed class XyzzySettingsCallbackHandler(
             "packs" => await HandlePackPageAsync(bot, game, userId, value, cancellationToken),
             "packtoggle" => await HandlePackToggleAsync(bot, game, userId, value, cancellationToken),
             "packsall" => await HandlePackEnableAllAsync(bot, game, userId, value, cancellationToken),
+            "packsreset" => await HandlePackResetAsync(bot, game, userId, value, cancellationToken),
             _ => "Not a valid choice.",
         };
     }
@@ -135,7 +136,7 @@ public sealed class XyzzySettingsCallbackHandler(
                 {
                     return "No card packs are loaded - nothing to filter.";
                 }
-                await outbox.EnqueueButtonQuestionAsync(bot, userId, PackFiltersPrompt, BuildPacksKeyboard(game, 0), cancellationToken);
+                await SendPacksPageAsync(bot, game, userId, 0, cancellationToken);
                 return "Let's pick packs.";
 
             default:
@@ -143,18 +144,22 @@ public sealed class XyzzySettingsCallbackHandler(
         }
     }
 
-    /// <summary>Ports legacy's /xyzzy_settings pack filter, keyboard-ified with paging (legacy's own
-    /// maxPacksPerPage was 30 - real catalogs run up to ~1,285 packs, so pagination is load-bearing,
-    /// not decorative). EnabledPackIds empty means "all packs" (see its own doc comment) - the very
-    /// first toggle tap against that state has to materialize the full list minus the one just
-    /// turned off, since there's nothing else recorded yet to remove it from.</summary>
+    /// <summary>Ports legacy's /xyzzy_settings pack filter (sendPackFilterMessage/
+    /// processPackFilterMessage) - the message body groups the current page's packs into "Active
+    /// Packs"/"Inactive Packs" with checkmark/cross emoji exactly as legacy did, while the keyboard
+    /// lets you toggle each one plus All/Reset/paging. PacksPerPage=30 matches legacy's own
+    /// maxPacksPerPage - real catalogs run up to ~1,285 packs, so pagination is load-bearing, not
+    /// decorative. Unlike legacy, page count here is a plain ceiling division - legacy's own
+    /// `(count / perPage) + 1` always shows one trailing empty page on an exact multiple, a bug not
+    /// worth reproducing.</summary>
     private const int PacksPerPage = 30;
-    private const string PackFiltersPrompt = "Cards Against Humanity - pack filters:";
+    private const string PackFiltersHeader = "The following packs (and their current status) are available. " +
+        "You can toggle the packs using the keyboard below, or click 'Continue' to carry on.";
 
     private async Task<string> HandlePackPageAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string pageText, CancellationToken cancellationToken)
     {
         var page = int.TryParse(pageText, out var parsed) ? parsed : 0;
-        await outbox.EnqueueButtonQuestionAsync(bot, userId, PackFiltersPrompt, BuildPacksKeyboard(game, page), cancellationToken);
+        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
         return "Page updated.";
     }
 
@@ -167,60 +172,124 @@ public sealed class XyzzySettingsCallbackHandler(
         }
 
         var packId = pieces[1];
-        if (game.EnabledPackIds.Count == 0)
+        if (XyzzyPackFilter.AllEnabled(game))
         {
+            // First toggle against the "all packs" sentinel materializes the full catalog minus the
+            // one just turned off - there's nothing else recorded yet to remove it from.
             game.EnabledPackIds = CardCatalog.Packs.Select(p => p.Id).Where(id => id != packId).ToList();
         }
-        else if (!game.EnabledPackIds.Remove(packId))
+        else if (game.EnabledPackIds.Contains(packId))
+        {
+            if (game.EnabledPackIds.Count == 1)
+            {
+                return "At least one pack has to stay enabled.";
+            }
+
+            game.EnabledPackIds.Remove(packId);
+        }
+        else
         {
             game.EnabledPackIds.Add(packId);
         }
 
         await games.SaveAsync(game, cancellationToken);
-        await outbox.EnqueueButtonQuestionAsync(bot, userId, PackFiltersPrompt, BuildPacksKeyboard(game, page), cancellationToken);
+        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
         return "Updated.";
     }
 
     private async Task<string> HandlePackEnableAllAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string pageText, CancellationToken cancellationToken)
     {
-        game.EnabledPackIds = [];
+        game.EnabledPackIds = [XyzzyPackFilter.AllPacksId];
         await games.SaveAsync(game, cancellationToken);
         var page = int.TryParse(pageText, out var parsed) ? parsed : 0;
-        await outbox.EnqueueButtonQuestionAsync(bot, userId, PackFiltersPrompt, BuildPacksKeyboard(game, page), cancellationToken);
+        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
         return "All packs enabled.";
+    }
+
+    private async Task<string> HandlePackResetAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string pageText, CancellationToken cancellationToken)
+    {
+        game.EnabledPackIds = XyzzyPackFilter.DefaultSelection();
+        await games.SaveAsync(game, cancellationToken);
+        var page = int.TryParse(pageText, out var parsed) ? parsed : 0;
+        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
+        return "Reset to the base pack.";
+    }
+
+    private Task SendPacksPageAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, int page, CancellationToken cancellationToken) =>
+        outbox.EnqueueButtonQuestionAsync(bot, userId, BuildPacksMessage(game, page, out var clampedPage), BuildPacksKeyboard(game, clampedPage), cancellationToken);
+
+    private static string BuildPacksMessage(XyzzyGameState game, int page, out int clampedPage)
+    {
+        var (pagePacks, totalPages) = PagePacks(game, page, out clampedPage);
+
+        var active = pagePacks.Where(p => XyzzyPackFilter.IsEnabled(game, p.Id)).ToList();
+        var inactive = pagePacks.Where(p => !XyzzyPackFilter.IsEnabled(game, p.Id)).ToList();
+
+        // Plain text, not markdown-bold - DmOutbox doesn't carry a ParseMode through to the actual
+        // send today (nothing in this codebase does yet), so "*Active Packs:*" would show up as
+        // literal asterisks rather than bold.
+        var message = PackFiltersHeader;
+        if (active.Count > 0)
+        {
+            message += "\n\nActive Packs:\n" + string.Join('\n', active.Select(p => $"✅ {p.Name}"));
+        }
+        if (inactive.Count > 0)
+        {
+            message += "\n\nInactive Packs:\n" + string.Join('\n', inactive.Select(p => $"❌ {p.Name}"));
+        }
+        if (totalPages > 1)
+        {
+            message += $"\n\n(Page {clampedPage + 1} of {totalPages})";
+        }
+
+        return message;
     }
 
     private static List<List<DmButton>> BuildPacksKeyboard(XyzzyGameState game, int page)
     {
-        var packs = CardCatalog.Packs;
-        var totalPages = Math.Max(1, (packs.Count + PacksPerPage - 1) / PacksPerPage);
-        page = Math.Clamp(page, 0, totalPages - 1);
+        var (pagePacks, _) = PagePacks(game, page, out var clampedPage);
 
         var keyboard = new List<List<DmButton>>();
-        foreach (var pack in packs.Skip(page * PacksPerPage).Take(PacksPerPage))
+        foreach (var pack in pagePacks)
         {
-            var enabled = game.EnabledPackIds.Count == 0 || game.EnabledPackIds.Contains(pack.Id);
+            var enabled = XyzzyPackFilter.IsEnabled(game, pack.Id);
             var label = (enabled ? "✓ " : "") + pack.Name;
-            keyboard.Add([new DmButton(label, $"xy:se:{game.ChatId}:packtoggle:{page}|{pack.Id}")]);
+            keyboard.Add([new DmButton(label, $"xy:se:{game.ChatId}:packtoggle:{clampedPage}|{pack.Id}")]);
         }
 
+        var totalPages = Math.Max(1, (CardCatalog.Packs.Count + PacksPerPage - 1) / PacksPerPage);
         var navRow = new List<DmButton>();
-        if (page > 0)
+        if (clampedPage > 0)
         {
-            navRow.Add(new DmButton("< Prev", $"xy:se:{game.ChatId}:packs:{page - 1}"));
+            navRow.Add(new DmButton("< Prev", $"xy:se:{game.ChatId}:packs:{clampedPage - 1}"));
         }
-        if (page < totalPages - 1)
+        if (clampedPage < totalPages - 1)
         {
-            navRow.Add(new DmButton("Next >", $"xy:se:{game.ChatId}:packs:{page + 1}"));
+            navRow.Add(new DmButton("Next >", $"xy:se:{game.ChatId}:packs:{clampedPage + 1}"));
         }
         if (navRow.Count > 0)
         {
             keyboard.Add(navRow);
         }
 
-        keyboard.Add([new DmButton("Enable All Packs", $"xy:se:{game.ChatId}:packsall:{page}")]);
-        keyboard.Add([new DmButton("Done", $"xy:se:{game.ChatId}:menu:cancel")]);
+        keyboard.Add([new DmButton("All Packs", $"xy:se:{game.ChatId}:packsall:{clampedPage}")]);
+        keyboard.Add([new DmButton("Reset to Base Pack", $"xy:se:{game.ChatId}:packsreset:{clampedPage}")]);
+        keyboard.Add([new DmButton("Continue", $"xy:se:{game.ChatId}:menu:cancel")]);
         return keyboard;
+    }
+
+    /// <summary>Packs sorted enabled-first-then-name (legacy's own ordering - a real win once a chat
+    /// has hundreds/thousands of packs and only a handful enabled), sliced to one page.</summary>
+    private static (List<XyzzyPack> PagePacks, int TotalPages) PagePacks(XyzzyGameState game, int page, out int clampedPage)
+    {
+        var ordered = CardCatalog.Packs
+            .OrderByDescending(p => XyzzyPackFilter.IsEnabled(game, p.Id))
+            .ThenBy(p => p.Name, StringComparer.Ordinal)
+            .ToList();
+
+        var totalPages = Math.Max(1, (ordered.Count + PacksPerPage - 1) / PacksPerPage);
+        clampedPage = Math.Clamp(page, 0, totalPages - 1);
+        return (ordered.Skip(clampedPage * PacksPerPage).Take(PacksPerPage).ToList(), totalPages);
     }
 
     private async Task<string> HandleKickAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string targetIdText, CancellationToken cancellationToken)

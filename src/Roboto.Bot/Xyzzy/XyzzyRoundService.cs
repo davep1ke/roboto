@@ -403,30 +403,31 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         game.JudgePlayerId = game.Players[nextIndex].PlayerId;
     }
 
-    /// <summary>Cards belonging to one of the chat's EnabledPackIds, or every card if that list is
-    /// empty (the "all packs" state). Falls back to the full unfiltered catalog if the filter would
-    /// otherwise empty the deck entirely (e.g. a chat's enabled packs got removed from the catalog
-    /// on a later import) - an empty deck would hang DrawQuestion/TopUpHand outright, and a stale
-    /// filter shouldn't be able to brick a game.</summary>
+    /// <summary>Cards belonging to one of the chat's EnabledPackIds, or every card if the
+    /// XyzzyPackFilter.AllPacksId sentinel is present. Falls back to the full unfiltered catalog if
+    /// the filter would otherwise empty the deck entirely (e.g. a chat's enabled packs got removed
+    /// from the catalog on a later import) - an empty deck would hang DrawQuestion/TopUpHand
+    /// outright, and a stale filter shouldn't be able to brick a game. This fallback is orthogonal
+    /// to the sentinel check above it - it only ever fires for a genuinely stale/mismatched filter.</summary>
     private static IReadOnlyList<XyzzyCard> FilteredQuestions(XyzzyGameState game)
     {
-        if (game.EnabledPackIds.Count == 0)
+        if (XyzzyPackFilter.AllEnabled(game))
         {
             return CardCatalog.Questions;
         }
 
-        var filtered = CardCatalog.Questions.Where(q => q.PackId is not null && game.EnabledPackIds.Contains(q.PackId)).ToList();
+        var filtered = CardCatalog.Questions.Where(q => XyzzyPackFilter.IsEnabled(game, q.PackId)).ToList();
         return filtered.Count > 0 ? filtered : CardCatalog.Questions;
     }
 
     private static IReadOnlyList<XyzzyCard> FilteredAnswers(XyzzyGameState game)
     {
-        if (game.EnabledPackIds.Count == 0)
+        if (XyzzyPackFilter.AllEnabled(game))
         {
             return CardCatalog.Answers;
         }
 
-        var filtered = CardCatalog.Answers.Where(a => a.PackId is not null && game.EnabledPackIds.Contains(a.PackId)).ToList();
+        var filtered = CardCatalog.Answers.Where(a => XyzzyPackFilter.IsEnabled(game, a.PackId)).ToList();
         return filtered.Count > 0 ? filtered : CardCatalog.Answers;
     }
 

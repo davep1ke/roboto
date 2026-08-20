@@ -65,7 +65,7 @@ public class XyzzyPackFilteringTests
             new("pb09", "Pack two answer I.", PackId: "p2"),
             new("pb10", "Pack two answer J.", PackId: "p2"),
         };
-        var packs = new List<XyzzyPack> { new("p1", "Pack One"), new("p2", "Pack Two") };
+        var packs = new List<XyzzyPack> { new("p1", "Pack One", IsDefault: true), new("p2", "Pack Two") };
         await store.SaveAsync(CardCatalog.QuestionsKey, questions, CancellationToken.None);
         await store.SaveAsync(CardCatalog.AnswersKey, answers, CancellationToken.None);
         await store.SaveAsync(CardCatalog.PacksKey, packs, CancellationToken.None);
@@ -121,7 +121,35 @@ public class XyzzyPackFilteringTests
     }
 
     [Fact]
-    public async Task AnEmptyEnabledPackListDealsFromEveryPack()
+    public async Task AFreshGameDefaultsToTheBasePackOnly()
+    {
+        // Matches legacy exactly: a brand-new chat starts with just the one default-flagged pack
+        // enabled (XyzzyPackFilter.DefaultSelection), not "everything".
+        var originalQuestions = CardCatalog.Questions;
+        var originalAnswers = CardCatalog.Answers;
+        try
+        {
+            using var bot = new TestBot();
+            var store = bot.Services.GetRequiredService<IStateStore>();
+            await SeedTwoPackCatalogAsync(store);
+
+            var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+            var freshGame = await games.GetAsync(ChatId, CancellationToken.None);
+            Assert.Equal(["p1"], freshGame.EnabledPackIds);
+
+            var game = await StartThreePlayerGameAsync(bot);
+
+            Assert.Equal("pq1", game.CurrentQuestionCardId);
+            Assert.All(game.Players, p => Assert.All(p.Hand, cardId => Assert.StartsWith("pa", cardId)));
+        }
+        finally
+        {
+            await RestoreCatalogAsync(originalQuestions, originalAnswers);
+        }
+    }
+
+    [Fact]
+    public async Task TheAllPacksSentinelDealsFromEveryPack()
     {
         var originalQuestions = CardCatalog.Questions;
         var originalAnswers = CardCatalog.Answers;
@@ -130,6 +158,9 @@ public class XyzzyPackFilteringTests
             using var bot = new TestBot();
             var store = bot.Services.GetRequiredService<IStateStore>();
             await SeedTwoPackCatalogAsync(store);
+
+            var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+            await games.SaveAsync(new XyzzyGameState { ChatId = ChatId, EnabledPackIds = [XyzzyPackFilter.AllPacksId] }, CancellationToken.None);
 
             var game = await StartThreePlayerGameAsync(bot);
 
@@ -169,7 +200,7 @@ public class XyzzyPackFilteringTests
     }
 
     [Fact]
-    public async Task ChangePacksTogglesAPackOffThenBackOn()
+    public async Task ChangePacksTogglesAPackOnThenBackOff()
     {
         var originalQuestions = CardCatalog.Questions;
         var originalAnswers = CardCatalog.Answers;
@@ -186,25 +217,116 @@ public class XyzzyPackFilteringTests
             await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Change Packs"));
 
             var picker = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
-            // Nothing's been narrowed yet (EnabledPackIds starts empty, meaning "all packs") - both
-            // show pre-checked.
+            // Only the default pack starts enabled.
             Assert.Contains(picker.Buttons!, b => b.Text == "✓ Pack One");
-            Assert.Contains(picker.Buttons!, b => b.Text == "✓ Pack Two");
+            Assert.Contains(picker.Buttons!, b => b.Text == "Pack Two");
 
-            await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "✓ Pack One"));
-            var afterToggleOff = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
-            Assert.Contains(afterToggleOff.Buttons!, b => b.Text == "Pack One");
-            Assert.DoesNotContain(afterToggleOff.Buttons!, b => b.Text == "✓ Pack One");
-            Assert.Contains(afterToggleOff.Buttons!, b => b.Text == "✓ Pack Two");
+            await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "Pack Two"));
+            var afterToggleOn = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            Assert.Contains(afterToggleOn.Buttons!, b => b.Text == "✓ Pack One");
+            Assert.Contains(afterToggleOn.Buttons!, b => b.Text == "✓ Pack Two");
 
             var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
-            var afterOff = await games.GetAsync(ChatId, CancellationToken.None);
-            Assert.DoesNotContain("p1", afterOff.EnabledPackIds);
-            Assert.Contains("p2", afterOff.EnabledPackIds);
+            var afterOn = await games.GetAsync(ChatId, CancellationToken.None);
+            Assert.Equal(["p1", "p2"], afterOn.EnabledPackIds.OrderBy(id => id));
 
-            await bot.SendCallbackAsync(Alice, afterToggleOff.Buttons!.First(b => b.Text == "Enable All Packs"));
+            await bot.SendCallbackAsync(Alice, afterToggleOn.Buttons!.First(b => b.Text == "✓ Pack Two"));
+            var afterToggleOff = await games.GetAsync(ChatId, CancellationToken.None);
+            Assert.Equal(["p1"], afterToggleOff.EnabledPackIds);
+
+            await bot.SendCallbackAsync(Alice, bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 }).Buttons!.First(b => b.Text == "All Packs"));
             var afterEnableAll = await games.GetAsync(ChatId, CancellationToken.None);
-            Assert.Empty(afterEnableAll.EnabledPackIds);
+            Assert.Equal([XyzzyPackFilter.AllPacksId], afterEnableAll.EnabledPackIds);
+        }
+        finally
+        {
+            await RestoreCatalogAsync(originalQuestions, originalAnswers);
+        }
+    }
+
+    [Fact]
+    public async Task TogglingAPackOffWhileAllPacksIsSetMaterializesTheRest()
+    {
+        var originalQuestions = CardCatalog.Questions;
+        var originalAnswers = CardCatalog.Answers;
+        try
+        {
+            using var bot = new TestBot();
+            var store = bot.Services.GetRequiredService<IStateStore>();
+            await SeedTwoPackCatalogAsync(store);
+
+            var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+            await games.SaveAsync(new XyzzyGameState { ChatId = ChatId, EnabledPackIds = [XyzzyPackFilter.AllPacksId] }, CancellationToken.None);
+            await StartThreePlayerGameAsync(bot);
+
+            await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
+            var menuMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Change Packs"));
+            var picker = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+
+            await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "✓ Pack One"));
+
+            var afterToggle = await games.GetAsync(ChatId, CancellationToken.None);
+            Assert.Equal(["p2"], afterToggle.EnabledPackIds);
+        }
+        finally
+        {
+            await RestoreCatalogAsync(originalQuestions, originalAnswers);
+        }
+    }
+
+    [Fact]
+    public async Task TheLastEnabledPackCannotBeTurnedOff()
+    {
+        var originalQuestions = CardCatalog.Questions;
+        var originalAnswers = CardCatalog.Answers;
+        try
+        {
+            using var bot = new TestBot();
+            var store = bot.Services.GetRequiredService<IStateStore>();
+            await SeedTwoPackCatalogAsync(store);
+            await StartThreePlayerGameAsync(bot); // default state: only Pack One (p1) enabled
+
+            await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
+            var menuMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Change Packs"));
+            var picker = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+
+            await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "✓ Pack One"));
+
+            Assert.Equal("At least one pack has to stay enabled.", bot.BotClient.AnsweredCallbacks[^1].Text);
+            var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+            Assert.Equal(["p1"], (await games.GetAsync(ChatId, CancellationToken.None)).EnabledPackIds);
+        }
+        finally
+        {
+            await RestoreCatalogAsync(originalQuestions, originalAnswers);
+        }
+    }
+
+    [Fact]
+    public async Task ResetToBasePackRestoresTheDefaultSelection()
+    {
+        var originalQuestions = CardCatalog.Questions;
+        var originalAnswers = CardCatalog.Answers;
+        try
+        {
+            using var bot = new TestBot();
+            var store = bot.Services.GetRequiredService<IStateStore>();
+            await SeedTwoPackCatalogAsync(store);
+
+            var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+            await games.SaveAsync(new XyzzyGameState { ChatId = ChatId, EnabledPackIds = [XyzzyPackFilter.AllPacksId] }, CancellationToken.None);
+            await StartThreePlayerGameAsync(bot);
+
+            await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
+            var menuMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Change Packs"));
+            var picker = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+
+            await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "Reset to Base Pack"));
+
+            Assert.Equal(["p1"], (await games.GetAsync(ChatId, CancellationToken.None)).EnabledPackIds);
         }
         finally
         {

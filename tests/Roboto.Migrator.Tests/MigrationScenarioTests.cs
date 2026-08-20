@@ -143,15 +143,19 @@ public class MigrationScenarioTests : IDisposable
         var packOneId = packs!.First(p => p.Name == "Pack One").Id;
         Assert.Equal(packOneId, questions!.First(q => q.Text == "Pick 2: name two things").PackId);
 
+        // Pack One carries the legacy primary-pack GUID in the fixture - the importer should have
+        // identified it as the default pack.
+        Assert.True(packs!.First(p => p.Name == "Pack One").IsDefault);
+
         var games = new XyzzyGameRepository(store);
 
         // Explicit single-pack filter (plus one unmappable Guid, dropped) - not "all packs".
         var questionGame = await games.GetAsync(SyntheticXmlFixture.QuestionChatId, CancellationToken.None);
         Assert.Equal([packOneId], questionGame.EnabledPackIds);
 
-        // Legacy's AllPacksEnabledID sentinel collapses onto the rewrite's own "empty = all packs".
+        // Legacy's AllPacksEnabledID sentinel maps onto XyzzyPackFilter.AllPacksId.
         var judgingGame = await games.GetAsync(SyntheticXmlFixture.JudgingChatId, CancellationToken.None);
-        Assert.Empty(judgingGame.EnabledPackIds);
+        Assert.Equal([XyzzyPackFilter.AllPacksId], judgingGame.EnabledPackIds);
     }
 
     [Fact]

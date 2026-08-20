@@ -29,11 +29,11 @@ public sealed class LegacyXyzzyChatData : LegacyModuleChatData
     public int enteredQuestionCount = -1;
 
     /// <summary>GUIDs - remapped via the catalog import's pack ID map (see
-    /// XyzzyImportMapper.MapEnabledPackIds). Legacy's own semantics are the inverse of what the
-    /// field name suggests: this does NOT default to empty ("all enabled") - it defaults to
-    /// [primaryPackID] (one specific pack), and "all packs" is instead represented by the sentinel
-    /// mod_xyzzy.AllPacksEnabledID (Guid.Empty) appearing *inside* this list. See MapEnabledPackIds
-    /// for the translation onto XyzzyGameState.EnabledPackIds' own (simpler) "empty = all" scheme.</summary>
+    /// XyzzyImportMapper.MapEnabledPackIds). Defaults to [primaryPackID] (one specific pack); "all
+    /// packs" is represented by the sentinel mod_xyzzy.AllPacksEnabledID (Guid.Empty) appearing
+    /// *inside* this list - the rewrite's XyzzyGameState.EnabledPackIds now mirrors this exact
+    /// scheme (XyzzyPackFilter.AllPacksId as its own in-list sentinel), so MapEnabledPackIds is a
+    /// close to 1:1 translation, not a semantic conversion.</summary>
     public List<Guid> packFilterIDs = [];
 }
 

@@ -7,7 +7,7 @@ public sealed class XyzzyGameRepository(IStateStore store)
     public async Task<XyzzyGameState> GetAsync(long chatId, CancellationToken cancellationToken)
     {
         return await store.LoadAsync<XyzzyGameState>(Key(chatId), cancellationToken)
-               ?? new XyzzyGameState { ChatId = chatId };
+               ?? new XyzzyGameState { ChatId = chatId, EnabledPackIds = XyzzyPackFilter.DefaultSelection() };
     }
 
     public Task SaveAsync(XyzzyGameState game, CancellationToken cancellationToken) =>

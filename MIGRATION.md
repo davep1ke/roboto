@@ -37,7 +37,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.10 `mod_xyzzy`: multi-answer ("Pick 2"+) question support | Done, verified | `4a6b1d8` |
 | 8.11 `mod_xyzzy`: settings-menu completeness (Re-deal/Reset/Extend/Force Question/Change Packs), catalog lookup performance, bot top-up re-check | Done, verified | `e73d4ec` |
 | 13. Dormant-chat purge (`ChatPurgeReconciler`) | Done, verified | `e73d4ec` |
-| 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
+| 14.1 Pack default-semantics reversal (`XyzzyPackFilter`) | Done, verified | — |
+| 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
 "Verified" means actually exercised for real (build + run + real Telegram round-trip, sometimes
@@ -850,6 +851,56 @@ CLAUDE.md's caution around risky actions.
 Verified: 6 new tests in `ChatPurgeReconcilerTests` (full purge, quotes-blocks, birthdays-blocks-
 even-when-empty, recently-active-chat-skipped, xyzzy's-own-inactivity-window, steam-always-purged) -
 each confirmed to actually catch a deliberately-reintroduced regression before being trusted.
+
+## 14: full xyzzy parity pass (2026-08-20, in progress)
+
+Follow-up to a real dry run against `chat_against_humanity_bot.xml`: rather than trust memory of
+what 8.4/8.11 covered, three research passes read the entire legacy `mod_xyzzy` implementation
+(every prompt/keyboard/menu item), every module's background-processing loop, and the whole legacy
+stats engine, cross-referenced against the rewrite's actual current state - published as a
+[parity audit](https://claude.ai/code/artifact/62a67bff-83a3-43b2-a2e7-6a42e9c3b419) the user then
+went through item by item to confirm scope. Corrected one wrong finding from that audit before
+starting: quote auto-posting and Steam achievement polling are already fully built
+(`QuotesReconciler`/`SteamReconciler`, since phase 9) - the audit's own research missed both.
+Full decision list and phase breakdown captured in the approved plan (now executed phase by phase,
+each with its own build+test+break-something verification pass, matching every prior phase here).
+
+### 14.1: pack default-semantics reversal - done, verified
+
+`XyzzyGameState.EnabledPackIds`' "empty = all packs" convention (built in phase 11) was inverted
+from legacy's real behavior and has been reverted. New `Xyzzy/XyzzyPackFilter.cs` is now the single
+source of truth: `AllPacksId = "*"` is an explicit sentinel (legacy's `AllPacksEnabledID`/
+`Guid.Empty`) that must be *present in* the list to mean "all packs" - a brand-new chat instead
+defaults to exactly one pack (`XyzzyPackFilter.DefaultSelection()`, matching legacy's
+`packFilterIDs = [primaryPackID]`), resolved via `CardCatalog.DefaultPackId` (`XyzzyPack.IsDefault`,
+computed once per catalog load/override). The default is applied in `XyzzyGameRepository.GetAsync`'s
+`?? new` fallback - the one funnel every code path goes through, evaluated after `CardCatalog.
+LoadOverrideAsync` has already run; `XyzzyStartCommand` deliberately doesn't touch `EnabledPackIds`,
+since a chat's pack selection should persist across games, same as legacy.
+
+The "Change Packs" picker (`XyzzySettingsCallbackHandler.cs`) now matches legacy's actual UI more
+closely: packs sorted enabled-first-then-name (a real win once a catalog runs to hundreds of packs),
+an "Active Packs"/"Inactive Packs" breakdown with ✅/❌ in the message body (plain text, not
+markdown-bold - `DmOutbox` doesn't carry a `ParseMode` through to the real send yet, a gap noted for
+whenever that's needed), "All Packs" (adds the sentinel) and "Reset to Base Pack" (restores the
+default) instead of a "None" button - a genuine empty selection has no coherent outcome (it's what
+legacy's own broken "None" button produces), so the UI structurally can't reach it: toggling off the
+last enabled pack is rejected with a clear message instead. Legacy's pack-picker pagination
+off-by-one (`(count / perPage) + 1` always shows one trailing empty page on an exact multiple) was
+**not** reproduced - confirmed with the user as a bug worth just fixing, not parity-worthy.
+
+`Roboto.Migrator`'s `XyzzyImportMapper` updated to match: `BuildCatalog` identifies the primary pack
+(exact legacy GUID match → `packCode == "CAHBS"` → first pack, in that order) and flags it
+`IsDefault`; `MapEnabledPackIds` maps the `AllPacksEnabledID` sentinel onto `XyzzyPackFilter.
+AllPacksId` and a genuinely-empty legacy `packFilterIDs` (only reachable via legacy's own broken
+"None") onto the imported default pack rather than leaving a resumed chat unable to draw a card.
+
+Verified: `tests/Roboto.Bot.Tests/Xyzzy/XyzzyPackFilteringTests.cs` (rewritten/expanded - default
+selection, the all-packs sentinel, toggle-on-then-off, materializing the full list on first toggle
+against the sentinel, the last-pack guard, Reset to Base Pack) and `tests/Roboto.Migrator.Tests/`
+(primary-pack detection, sentinel mapping) - every new/changed assertion confirmed to actually catch
+a deliberately-reintroduced regression, not just green-on-first-try. Full suite (143 `Roboto.Bot.
+Tests` + 12 `Roboto.Migrator.Tests`) stable across repeated runs.
 
 ## Explicitly deferred / blocked work
 
