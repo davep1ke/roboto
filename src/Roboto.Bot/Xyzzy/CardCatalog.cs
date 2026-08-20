@@ -13,8 +13,10 @@ public sealed record XyzzyCard(string Id, string Text, int AnswerCount = 1, stri
 /// <summary>A pack a card can belong to (legacy's cardcast_pack, Roboto/Helpers/cardCast.cs) - just
 /// enough to show a name in the "Change Packs" picker and filter a deck by selection. IsDefault
 /// marks the one pack a brand-new chat starts enabled on (legacy's primaryPackID, the base CAH
-/// set) - see XyzzyPackFilter.DefaultSelection.</summary>
-public sealed record XyzzyPack(string Id, string Name, bool IsDefault = false);
+/// set) - see XyzzyPackFilter.DefaultSelection. PackCode/NextSyncUtc are only set for a
+/// crcast-imported pack (CrCastPackImportService) - null for the hardcoded placeholder set and for
+/// anything imported via the XML migration importer, neither of which are crcast-sourced.</summary>
+public sealed record XyzzyPack(string Id, string Name, bool IsDefault = false, string? PackCode = null, DateTime? NextSyncUtc = null);
 
 /// <summary>
 /// The default card pack: a modest hardcoded sample of the public Cards Against Humanity base set

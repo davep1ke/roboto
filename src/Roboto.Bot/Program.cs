@@ -50,6 +50,7 @@ builder.Services.AddHostedService<BirthdaysSchedulerService>();
 builder.Services.AddHostedService<QuotesSchedulerService>();
 builder.Services.AddHostedService<SteamSchedulerService>();
 builder.Services.AddHostedService<ChatPurgeSchedulerService>();
+builder.Services.AddHostedService<CrCastSyncSchedulerService>();
 
 using var host = builder.Build();
 

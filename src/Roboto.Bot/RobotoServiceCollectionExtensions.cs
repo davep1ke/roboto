@@ -54,6 +54,11 @@ public static class RobotoServiceCollectionExtensions
         services.AddSingleton<XyzzyGameRepository>();
         services.AddSingleton<XyzzyRoundService>();
         services.AddSingleton<XyzzyRoundReconciler>();
+        // Same lightweight-direct-construction preference as SteamApiClient below - no
+        // AddHttpClient/factory needed for one shared client.
+        services.AddSingleton(_ => new CrCastClient(new HttpClient()));
+        services.AddSingleton<CrCastPackImportService>();
+        services.AddSingleton<CrCastSyncReconciler>();
         services.AddSingleton<QuietHoursQuery>();
         services.AddSingleton<WordcraftStore>();
         services.AddSingleton<BirthdaysRepository>();

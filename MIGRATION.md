@@ -40,7 +40,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.1 Pack default-semantics reversal (`XyzzyPackFilter`) | Done, verified | `d24a007` |
 | 14.2 Stats engine dual-track (`StatBucket`), `/stats`/`/statgraph` rebuild | Done, verified | `c74bec5` |
 | 14.3 Settings menu: fixed Abandon confirm, Extend on a running game, Mess With | Done, verified | `1b5f24e` |
-| 14.4 `/xyzzy_leave` DM picker, `/xyzzy_get_settings` real content | Done, verified | — |
+| 14.4 `/xyzzy_leave` DM picker, `/xyzzy_get_settings` real content | Done, verified | `691b1ad` |
+| 14.5 Live crcast pack import/sync (`CrCastPackImportService`) | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1005,6 +1006,40 @@ lists every active game, picking one only removes you from that one, Cancel leav
 unchanged) - the game-filter fix confirmed to actually catch a deliberately-reintroduced regression
 before being trusted. `docker compose build` clean.
 
+### 14.5: live crcast pack import/sync - done, verified
+
+Ports legacy's `Helpers/cardCast.cs`/`mod_xyzzy_coredata.importCardCastPack` - a real HTTP client
+(`CrCastClient`, `System.Net.Http.Json` + `System.Text.Json`, not Newtonsoft per the user's explicit
+ask) hitting `api.crcast.cc`'s two endpoints (pack info, then cards), reached only through Change
+Packs → **Import Pack** (no separate slash command, matching legacy), routed through `ReplyRouter`
+for the free-text pack code the same way Timeout/Throttle already are.
+
+`CrCastPackImportService` distinguishes a fresh import (adds every card + the pack to the live
+catalog, persists via `IStateStore` then reloads in-process via `CardCatalog.LoadOverrideAsync`)
+from a re-sync of an already-known pack code: cards are matched by exact text - unchanged text keeps
+its ID, new text gets a new sequential one, and text that's gone is "removed" and mapped onto a
+surviving card of the same kind (question/answer), preferring one from the same pack. The genuinely
+tricky part - **every active game's live state referencing a removed card gets remapped**, not left
+dangling: hands, submissions, remaining decks, and the current question all get walked and patched.
+Mirrors legacy's own replacement-GUID remap in spirit, adapted to the rewrite's short sequential IDs
+and per-game state instead of a single global reference table.
+
+A new `CrCastSyncReconciler`/`CrCastSyncSchedulerService` pair (hourly tick - legacy's own 1-minute
+tick is unnecessarily frequent given each pack's sync window is 3-9 days) re-syncs crcast-sourced
+packs whose `NextSyncUtc` has passed, capped at 3 per tick (legacy's `maxPacksToSyncInOneGo`). A
+failed fetch still reschedules `NextSyncUtc` forward (legacy's `syncFailed()` does the same) so a
+persistently-broken pack code doesn't get hammered every tick forever.
+
+**Dormant-pack removal deliberately not built** - `CrCastPackImportService.RemoveDormantPacksAsync`
+exists as an explicit no-op, never called from anywhere, matching legacy's own current disablement
+(`//TODO DISABLE AS CARDCAST DEAD`) rather than reviving logic legacy itself has turned off.
+
+Verified: `CrCastPackImportServiceTests.cs` against a fake HTTP backend (`FakeCrCastHttpHandler`,
+same pattern as Steam's `FakeSteamHttpHandler` - no real network call) - fresh import, invalid pack
+code rejected without a network call, a failed fetch changes nothing, re-sync adds/keeps/removes
+cards correctly, and the card-remapping test specifically confirmed to catch a deliberately-
+reintroduced regression before being trusted. `docker compose build` clean.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back) -
@@ -1012,7 +1047,8 @@ before being trusted. `docker compose build` clean.
   (phase 14) actually checked: ~~multi-blank ("Pick 2") questions~~ built in phase 8.10;
   ~~"Mess With"~~ built in phase 14.3; ~~cross-chat DM `/xyzzy_leave`~~ built in phase 14.4;
   ~~stats/metrics~~ built out across phases 10a/10b/14.2; ~~pack-filter selection~~ built in phase
-  14.1. CardCast/CRCast pack import specifically is in progress (phase 14.5). The elaborate
+  14.1. ~~CardCast/CRCast pack import~~ built in phase 14.5 (dormant-pack removal specifically
+  stays an unwired placeholder, matching legacy's own current disablement). The elaborate
   multi-step setup wizard (defaults-vs-custom chain, question-limit/timeout/throttle prompts before
   the game starts) was cut here too but got built out in phase 8.5.
 - **XML→SQLite migration importer** — first-class, must-be-safe deliverable, see the live-production

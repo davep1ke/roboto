@@ -51,6 +51,7 @@ public sealed class XyzzySettingsCallbackHandler(
             "packtoggle" => await HandlePackToggleAsync(bot, game, userId, value, cancellationToken),
             "packsall" => await HandlePackEnableAllAsync(bot, game, userId, value, cancellationToken),
             "packsreset" => await HandlePackResetAsync(bot, game, userId, value, cancellationToken),
+            "packsimport" => await HandlePackImportPromptAsync(bot, game, userId, value, cancellationToken),
             "abandonconfirm" => await HandleAbandonConfirmAsync(bot, game, userId, value, cancellationToken),
             _ => "Not a valid choice.",
         };
@@ -225,6 +226,20 @@ public sealed class XyzzySettingsCallbackHandler(
         return "Reset to the base pack.";
     }
 
+    /// <summary>Ports legacy's "Import Pack" prompt exactly (boilerplate text + free-text pack
+    /// code) - routed through ReplyRouter/XyzzySettingsCommand.HandleReplyAsync since it needs
+    /// arbitrary typed text, not a button tap. The page number rides along as pending.Data so the
+    /// picker can return to the same page once the import/sync finishes.</summary>
+    private async Task<string> HandlePackImportPromptAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string pageText, CancellationToken cancellationToken)
+    {
+        await services.GetRequiredService<ReplyRouter>().AskAsync(bot, game.ChatId, userId, "xyzzy_settings", XyzzySettingsCommand.AwaitPackCode,
+            data: pageText,
+            "Custom packs are grabbed from cast.clrtd.com - you should search for new deck codes (or create your own) there.\n\n" +
+            "To import a pack, enter the pack code. To cancel, type 'Cancel'",
+            cancellationToken);
+        return "Let's import a pack.";
+    }
+
     private Task SendPacksPageAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, int page, CancellationToken cancellationToken) =>
         outbox.EnqueueButtonQuestionAsync(bot, userId, BuildPacksMessage(game, page, out var clampedPage), BuildPacksKeyboard(game, clampedPage), cancellationToken);
 
@@ -282,6 +297,7 @@ public sealed class XyzzySettingsCallbackHandler(
             keyboard.Add(navRow);
         }
 
+        keyboard.Add([new DmButton("Import Pack", $"xy:se:{game.ChatId}:packsimport:{clampedPage}")]);
         keyboard.Add([new DmButton("All Packs", $"xy:se:{game.ChatId}:packsall:{clampedPage}")]);
         keyboard.Add([new DmButton("Reset to Base Pack", $"xy:se:{game.ChatId}:packsreset:{clampedPage}")]);
         keyboard.Add([new DmButton("Continue", $"xy:se:{game.ChatId}:menu:cancel")]);

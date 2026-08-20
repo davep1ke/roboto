@@ -26,12 +26,14 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// Resolves ReplyRouter lazily via IServiceProvider rather than as a constructor dependency - see
 /// the warning in ReplyRouter's own doc comment for why a direct dependency here would be circular.
 /// </summary>
-public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRepository games, ChatRepository chats, DmOutbox outbox) : IReplyHandler
+public sealed class XyzzySettingsCommand(
+    IServiceProvider services, XyzzyGameRepository games, ChatRepository chats, DmOutbox outbox, CrCastPackImportService crCastImports) : IReplyHandler
 {
     public const string AwaitTimeout = "timeout";
     public const string AwaitThrottle = "throttle";
     public const string AwaitScorePoints = "score-points";
     public const string AwaitQuestionLimit = "question-limit";
+    public const string AwaitPackCode = "pack-code";
 
     public string Name => "xyzzy_settings";
     public string Description => "Admin menu for the Cards Against Humanity game in this chat.";
@@ -153,6 +155,33 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
                 target.Wins = points;
                 await games.SaveAsync(game, cancellationToken);
                 await bot.SendMessage(pending.UserId, $"{target.DisplayName}'s score is now {points}.", cancellationToken: cancellationToken);
+                break;
+
+            case AwaitPackCode:
+                if (text.Equals("Cancel", StringComparison.OrdinalIgnoreCase))
+                {
+                    await bot.SendMessage(pending.UserId, "Cancelled.", cancellationToken: cancellationToken);
+                    break;
+                }
+
+                var outcome = await crCastImports.ImportOrSyncAsync(text, cancellationToken);
+                if (!outcome.Success)
+                {
+                    await replies.AskAsync(bot, game.ChatId, pending.UserId, Name, AwaitPackCode, data: pending.Data,
+                        $"Couldn't add the pack. {outcome.Message}. To import a pack, enter the pack code. To cancel, type 'Cancel'", cancellationToken);
+                    return;
+                }
+
+                // Auto-enable the imported/synced pack, matching legacy's own behavior - unless
+                // "all packs" is already set, in which case it's implicitly enabled already.
+                if (outcome.PackId is not null && !XyzzyPackFilter.AllEnabled(game) && !game.EnabledPackIds.Contains(outcome.PackId))
+                {
+                    game.EnabledPackIds.Add(outcome.PackId);
+                    await games.SaveAsync(game, cancellationToken);
+                }
+
+                await bot.SendMessage(pending.UserId,
+                    $"{outcome.Message}\n\nUse Change Packs in /xyzzy_settings to review or toggle it.", cancellationToken: cancellationToken);
                 break;
         }
     }
