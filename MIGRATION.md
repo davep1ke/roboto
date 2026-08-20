@@ -38,7 +38,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.11 `mod_xyzzy`: settings-menu completeness (Re-deal/Reset/Extend/Force Question/Change Packs), catalog lookup performance, bot top-up re-check | Done, verified | `e73d4ec` |
 | 13. Dormant-chat purge (`ChatPurgeReconciler`) | Done, verified | `e73d4ec` |
 | 14.1 Pack default-semantics reversal (`XyzzyPackFilter`) | Done, verified | `d24a007` |
-| 14.2 Stats engine dual-track (`StatBucket`), `/stats`/`/statgraph` rebuild | Done, verified | — |
+| 14.2 Stats engine dual-track (`StatBucket`), `/stats`/`/statgraph` rebuild | Done, verified | `c74bec5` |
+| 14.3 Settings menu: fixed Abandon confirm, Extend on a running game, Mess With | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -949,6 +950,35 @@ updated to match the new `/stats` phrasing; `StatGraphTests.cs` unchanged (its "
 history" substrings were deliberately preserved in the rebuild). Bucket-pruning test confirmed to
 actually catch a deliberately-reintroduced regression before being trusted. `docker compose build`
 clean.
+
+### 14.3: settings menu completions - Abandon confirm, Extend, Mess With - done, verified
+
+- **Abandon**: legacy's own Yes/No confirm is cosmetic-only (its reply handler never checks which
+  button was tapped - any reply abandons). Fixed rather than reproduced: a real confirm
+  (`xy:se:{chatId}:abandonconfirm:{yes|no}`) that only abandons on "Yes".
+- **Extend**: previously only worked on a Stopped game (`TryExtendAsync` returned false/no-op for
+  anything in progress). Now matches legacy's actual scope - legacy's `extend()` always adds more
+  cards to the deck (`addQuestions()`/`addAllAnswers()`) regardless of status, only *additionally*
+  resuming play when coming from Stopped. On a running game, clears `RemainingQuestionCardIds`/
+  `RemainingAnswerCardIds` so the next natural draw reshuffles fresh from the current pack filter
+  (picking up anything enabled since the piles were last built) without touching hands, the current
+  question, or the round in progress - that's Re-deal's job, a deliberately more disruptive action.
+- **Mess With**: new `XyzzyPlayer.MessedWith` bool + settings-menu picker (same shape as Kick/
+  Score), toggled per player. A new `XyzzyRoundService.ScoreDisplayText` helper (legacy's
+  `getPointsMessage()`) substitutes a randomized number and nonsense unit when set - real multiplier
+  range and unit list ported verbatim from legacy - used by `/xyzzy_status` and the round-win
+  announcement, but deliberately *not* `TryEndGameAsync`'s final game-over scoreboard, preserving a
+  legacy asymmetry (ambiguous in the source whether deliberate) rather than "fixing" something
+  nobody asked to change.
+- Wording pass: the "Throttle" button renamed to "Delay" to match legacy exactly (pure label, no
+  behavior change) - the broader wording-parity pass is being done incrementally as each area gets
+  touched (per the parity audit's own note) rather than as one separate sweep.
+
+Verified: new/updated tests in `XyzzySettingsTests.cs` (confirm-then-abandon, decline-leaves-
+running, Extend-on-a-running-game leaves hands/round untouched, Mess With toggles the flag without
+touching real `Wins`) and `XyzzyStatsTests.cs` (Abandon's stat now requires the confirm tap) - the
+Abandon-confirm fix confirmed to actually catch a deliberately-reintroduced regression before being
+trusted. `docker compose build` clean.
 
 ## Explicitly deferred / blocked work
 

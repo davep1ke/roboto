@@ -46,10 +46,12 @@ public sealed class XyzzySettingsCallbackHandler(
             "menu" => await HandleMenuAsync(bot, game, userId, value, cancellationToken),
             "kick" => await HandleKickAsync(bot, game, userId, value, cancellationToken),
             "score" => await HandleScoreTargetAsync(bot, game, userId, value, cancellationToken),
+            "messwith" => await HandleMessWithTargetAsync(bot, game, userId, value, cancellationToken),
             "packs" => await HandlePackPageAsync(bot, game, userId, value, cancellationToken),
             "packtoggle" => await HandlePackToggleAsync(bot, game, userId, value, cancellationToken),
             "packsall" => await HandlePackEnableAllAsync(bot, game, userId, value, cancellationToken),
             "packsreset" => await HandlePackResetAsync(bot, game, userId, value, cancellationToken),
+            "abandonconfirm" => await HandleAbandonConfirmAsync(bot, game, userId, value, cancellationToken),
             _ => "Not a valid choice.",
         };
     }
@@ -63,13 +65,13 @@ public sealed class XyzzySettingsCallbackHandler(
                 return "Cancelled.";
 
             case "abandon":
-                game.Status = XyzzyStatus.Stopped;
-                await games.SaveAsync(game, cancellationToken);
-                logger.LogInformation("Admin {UserId} abandoned the mod_xyzzy game in chat {ChatId}", userId, game.ChatId);
-                await bot.SendMessage(userId, "Game abandoned.", cancellationToken: cancellationToken);
-                await bot.SendMessage(game.ChatId, "The game was abandoned by an admin.", cancellationToken: cancellationToken);
-                await stats.RecordAsync(XyzzyStatNames.GamesEnded, 1, StatMode.Cumulative, cancellationToken);
-                return "Game abandoned.";
+                // Legacy's own Yes/No confirm here is cosmetic-only - its reply handler never
+                // actually checks which button was tapped, so any reply abandons the game. Fixed
+                // here rather than reproduced: a real confirm that only abandons on "Yes".
+                await outbox.EnqueueButtonQuestionAsync(bot, userId, "Are you sure you want to abandon the game?",
+                    [[new DmButton("Yes", $"xy:se:{game.ChatId}:abandonconfirm:yes")], [new DmButton("No", $"xy:se:{game.ChatId}:abandonconfirm:no")]],
+                    cancellationToken);
+                return "Are you sure?";
 
             case "timeout":
                 await services.GetRequiredService<ReplyRouter>().AskAsync(bot, game.ChatId, userId, "xyzzy_settings", XyzzySettingsCommand.AwaitTimeout,
@@ -95,6 +97,14 @@ public sealed class XyzzySettingsCallbackHandler(
                     return "No players to score.";
                 }
                 await outbox.EnqueueButtonQuestionAsync(bot, userId, "Whose score do you want to change?", BuildPlayerKeyboard(game, "score"), cancellationToken);
+                return "Pick a player.";
+
+            case "messwith":
+                if (game.Players.Count == 0)
+                {
+                    return "No players to mess with.";
+                }
+                await outbox.EnqueueButtonQuestionAsync(bot, userId, "Pick a player to toggle the Mess-With flag", BuildPlayerKeyboard(game, "messwith"), cancellationToken);
                 return "Pick a player.";
 
             case "reset":
@@ -292,6 +302,23 @@ public sealed class XyzzySettingsCallbackHandler(
         return (ordered.Skip(clampedPage * PacksPerPage).Take(PacksPerPage).ToList(), totalPages);
     }
 
+    private async Task<string> HandleAbandonConfirmAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string value, CancellationToken cancellationToken)
+    {
+        if (value != "yes")
+        {
+            await bot.SendMessage(userId, "Not abandoned.", cancellationToken: cancellationToken);
+            return "Not abandoned.";
+        }
+
+        game.Status = XyzzyStatus.Stopped;
+        await games.SaveAsync(game, cancellationToken);
+        logger.LogInformation("Admin {UserId} abandoned the mod_xyzzy game in chat {ChatId}", userId, game.ChatId);
+        await bot.SendMessage(userId, "Game abandoned.", cancellationToken: cancellationToken);
+        await bot.SendMessage(game.ChatId, "The game was abandoned by an admin.", cancellationToken: cancellationToken);
+        await stats.RecordAsync(XyzzyStatNames.GamesEnded, 1, StatMode.Cumulative, cancellationToken);
+        return "Game abandoned.";
+    }
+
     private async Task<string> HandleKickAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string targetIdText, CancellationToken cancellationToken)
     {
         if (!long.TryParse(targetIdText, out var targetId) || game.FindPlayer(targetId) is not { } target)
@@ -309,6 +336,21 @@ public sealed class XyzzySettingsCallbackHandler(
 
         await bot.SendMessage(game.ChatId, $"{target.DisplayName} was kicked from the game.", cancellationToken: cancellationToken);
         return $"Kicked {target.DisplayName}.";
+    }
+
+    private async Task<string> HandleMessWithTargetAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string targetIdText, CancellationToken cancellationToken)
+    {
+        if (!long.TryParse(targetIdText, out var targetId) || game.FindPlayer(targetId) is not { } target)
+        {
+            return "That player isn't in the game any more.";
+        }
+
+        target.MessedWith = !target.MessedWith;
+        await games.SaveAsync(game, cancellationToken);
+
+        var state = target.MessedWith ? "now" : "no longer";
+        await bot.SendMessage(userId, $"{target.DisplayName}'s score is {state} being messed with.", cancellationToken: cancellationToken);
+        return $"Toggled {target.DisplayName}.";
     }
 
     private async Task<string> HandleScoreTargetAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string targetIdText, CancellationToken cancellationToken)

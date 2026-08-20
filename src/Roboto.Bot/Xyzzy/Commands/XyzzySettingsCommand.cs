@@ -66,9 +66,10 @@ public sealed class XyzzySettingsCommand(IServiceProvider services, XyzzyGameRep
         [
             [new DmButton("Abandon", $"xy:se:{chatId}:menu:abandon")],
             [new DmButton("Timeout", $"xy:se:{chatId}:menu:timeout")],
-            [new DmButton("Throttle", $"xy:se:{chatId}:menu:throttle")],
+            [new DmButton("Delay", $"xy:se:{chatId}:menu:throttle")],
             [new DmButton("Kick", $"xy:se:{chatId}:menu:kick")],
             [new DmButton("Score", $"xy:se:{chatId}:menu:score")],
+            [new DmButton("Mess With", $"xy:se:{chatId}:menu:messwith")],
             [new DmButton("Reset Scores", $"xy:se:{chatId}:menu:reset")],
             [new DmButton("Game Length", $"xy:se:{chatId}:menu:gamelength")],
             [new DmButton("Re-deal", $"xy:se:{chatId}:menu:redeal")],

@@ -12,4 +12,9 @@ public sealed class XyzzyPlayer
     /// (PlayerId is a synthetic negative value, not a real chat to message). See MIGRATION.md for
     /// why: manual testing kept needing "force" to start with too few real players.</summary>
     public bool IsBot { get; set; }
+
+    /// <summary>Legacy's mod_xyzzy_player.fuckedWith - a purely cosmetic per-player toggle
+    /// (/xyzzy_settings' "Mess With") that randomizes this player's *displayed* score everywhere
+    /// XyzzyRoundService.ScoreDisplayText is used, without ever touching the real Wins value.</summary>
+    public bool MessedWith { get; set; }
 }

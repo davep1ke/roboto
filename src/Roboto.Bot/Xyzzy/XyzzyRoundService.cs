@@ -221,7 +221,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         }
 
         await bot.SendMessage(game.ChatId,
-            $"{winner.DisplayName} wins the round with: {filled}\n({winner.DisplayName} now has {winner.Wins} win(s))",
+            $"{winner.DisplayName} wins the round with: {filled}\n({winner.DisplayName} now has {ScoreDisplayText(winner)})",
             cancellationToken: cancellationToken);
 
         await stats.RecordAsync(XyzzyStatNames.HandsPlayed, 1, StatMode.Cumulative, cancellationToken);
@@ -321,21 +321,35 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         await BeginQuestionAsync(bot, game, cancellationToken);
     }
 
-    /// <summary>Ports legacy's /xyzzy_settings "Extend" - resumes a Stopped game with the same
-    /// roster/scores rather than requiring a brand new /xyzzy_start from scratch. Only meaningful
-    /// once a game has actually ended with players still on its roster - TryEndGameAsync leaves
-    /// Players intact when it stops a game (only the explicit setup-time "Cancel" path clears it).
-    /// Returns false (does nothing) if there's nothing to extend, so the caller can report that
-    /// back rather than silently no-op.</summary>
+    /// <summary>Ports legacy's /xyzzy_settings "Extend" in full, not just its Stopped-game path:
+    /// legacy's extend() always adds more cards to the deck (addQuestions/addAllAnswers) regardless
+    /// of status, and *additionally* resumes play if the game was Stopped. On a Stopped game with
+    /// players still on the roster (TryEndGameAsync leaves Players intact when it stops a game -
+    /// only the explicit setup-time "Cancel" path clears it), resumes with the same roster/scores.
+    /// On a game still in progress, tops up the draw piles instead - clearing
+    /// RemainingQuestionCardIds/RemainingAnswerCardIds so the next natural draw reshuffles fresh
+    /// from FilteredQuestions/FilteredAnswers, picking up any packs enabled since the piles were
+    /// last built - without touching hands, the current question, or the round in progress (that's
+    /// Re-deal's job, a deliberately more disruptive action). Returns false only when there's
+    /// nothing to extend (a Stopped game with too few players to resume).</summary>
     public async Task<bool> TryExtendAsync(ITelegramBotClient bot, XyzzyGameState game, CancellationToken cancellationToken)
     {
-        if (game.Status is not XyzzyStatus.Stopped || game.Players.Count < 2)
+        if (game.Status is XyzzyStatus.Stopped)
         {
-            return false;
+            if (game.Players.Count < 2)
+            {
+                return false;
+            }
+
+            await bot.SendMessage(game.ChatId, "Extending the game with the same players and scores!", cancellationToken: cancellationToken);
+            await BeginQuestionAsync(bot, game, cancellationToken);
+            return true;
         }
 
-        await bot.SendMessage(game.ChatId, "Extending the game with the same players and scores!", cancellationToken: cancellationToken);
-        await BeginQuestionAsync(bot, game, cancellationToken);
+        game.RemainingQuestionCardIds = [];
+        game.RemainingAnswerCardIds = [];
+        await games.SaveAsync(game, cancellationToken);
+        await bot.SendMessage(game.ChatId, "Added additional cards to the game!", cancellationToken: cancellationToken);
         return true;
     }
 
@@ -504,4 +518,29 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
     /// one card's text, unaffected.</summary>
     internal static string CombinedAnswerText(IReadOnlyList<string> cardIds) =>
         string.Join(" >> ", cardIds.Select(id => CardCatalog.FindAnswer(id)!.Text));
+
+    private static readonly string[] MessedWithUnits =
+    [
+        "INT", "XP", "Points", "Sq. Ft.", "ft", "6 inches", "mm", "out of 10. Must try harder.", "Buzzards", "Buzzards/m/s²", "m/s²",
+    ];
+
+    /// <summary>Legacy's mod_xyzzy_player.getPointsMessage() - normally just "{wins} win(s)", but
+    /// once a player's MessedWith flag is set (the /xyzzy_settings "Mess With" toggle), substitutes
+    /// a randomized number and nonsense unit instead, re-randomized on every call - purely cosmetic,
+    /// the real Wins value is never touched. Used by /xyzzy_status and the round-win announcement;
+    /// deliberately NOT used by TryEndGameAsync's final game-over scoreboard, which always shows the
+    /// real score - preserving a legacy asymmetry (ambiguous in the source whether it was
+    /// deliberate) rather than "fixing" something nobody asked to change.</summary>
+    public static string ScoreDisplayText(XyzzyPlayer player)
+    {
+        if (!player.MessedWith)
+        {
+            return $"{player.Wins} win(s)";
+        }
+
+        var multiplier = (50 - Random.Shared.Next(150)) / 100.0;
+        var messedScore = (int)(player.Wins * multiplier);
+        var unit = MessedWithUnits[Random.Shared.Next(MessedWithUnits.Length)];
+        return $"{messedScore} {unit}";
+    }
 }

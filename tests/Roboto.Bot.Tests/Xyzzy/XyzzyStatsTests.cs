@@ -73,6 +73,8 @@ public class XyzzyStatsTests
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
         var menuMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
         await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Abandon"));
+        var confirm = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, confirm.Buttons!.First(b => b.Text == "Yes"));
 
         var series = await stats.GetAsync("xyzzy.games-ended", CancellationToken.None);
         Assert.Equal(1, series!.Total);

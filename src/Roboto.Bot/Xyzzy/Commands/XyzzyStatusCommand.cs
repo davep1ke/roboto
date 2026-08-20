@@ -70,7 +70,7 @@ public sealed class XyzzyStatusCommand(XyzzyGameRepository games) : IBotCommand
         foreach (var player in game.Players.OrderByDescending(p => p.Wins))
         {
             var tags = (player.IsBot ? " (bot)" : "") + (game.JudgePlayerId == player.PlayerId ? " (judge)" : "");
-            sb.AppendLine($"- {player.DisplayName}: {player.Wins} win(s){tags}");
+            sb.AppendLine($"- {player.DisplayName}: {XyzzyRoundService.ScoreDisplayText(player)}{tags}");
         }
 
         await context.Bot.SendMessage(chatId, sb.ToString().TrimEnd(), cancellationToken: cancellationToken);

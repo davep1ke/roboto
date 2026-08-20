@@ -33,7 +33,7 @@ public class XyzzySettingsTests
         await bot.Services.GetRequiredService<XyzzyGameRepository>().GetAsync(ChatId, CancellationToken.None);
 
     /// <summary>Opens the settings menu and taps the named top-level button ("Abandon" / "Timeout" /
-    /// "Throttle" / "Kick" / "Score" / "Cancel"). Assumes the caller's DmOutbox queue is currently
+    /// "Delay" / "Kick" / "Score" / "Cancel"). Assumes the caller's DmOutbox queue is currently
     /// clear (see ThreePlayerGameAsync) - if it isn't, the menu won't be there to find at all, which
     /// is exactly the behavior StillWaitingOnACardBlocksTheSettingsMenu below is testing for.</summary>
     private static async Task<string> OpenSettingsAndTapAsync(TestBot bot, long userId, string buttonText)
@@ -55,12 +55,46 @@ public class XyzzySettingsTests
         Assert.Contains("Only a chat admin", bot.BotClient.SentMessages[^1].Text);
     }
 
+    /// <summary>Taps Abandon then confirms Yes - Abandon's own confirm is a real working Yes/No
+    /// (fixed from legacy, whose own confirm never actually checked the reply), so tests need both
+    /// taps to actually abandon the game.</summary>
+    private static async Task ConfirmAbandonAsync(TestBot bot, long userId)
+    {
+        await OpenSettingsAndTapAsync(bot, userId, "Abandon");
+        var confirm = bot.BotClient.SentMessages.Last(m => m.ChatId == userId && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(userId, confirm.Buttons!.First(b => b.Text == "Yes"));
+    }
+
+    [Fact]
+    public async Task AbandonAsksForConfirmationFirst()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        var result = await OpenSettingsAndTapAsync(bot, Alice, "Abandon");
+
+        Assert.Equal("Are you sure?", result);
+        Assert.NotEqual(XyzzyStatus.Stopped, (await GameAsync(bot)).Status);
+    }
+
+    [Fact]
+    public async Task DecliningTheAbandonConfirmationLeavesTheGameRunning()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Abandon");
+        var confirm = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, confirm.Buttons!.First(b => b.Text == "No"));
+
+        Assert.Contains("Not abandoned", bot.BotClient.SentMessages[^1].Text);
+        Assert.NotEqual(XyzzyStatus.Stopped, (await GameAsync(bot)).Status);
+    }
+
     [Fact]
     public async Task AbandonStopsTheGame()
     {
         using var bot = await ThreePlayerGameAsync();
 
-        await OpenSettingsAndTapAsync(bot, Alice, "Abandon");
+        await ConfirmAbandonAsync(bot, Alice);
 
         Assert.Contains("abandoned", bot.BotClient.SentMessages[^1].Text);
         Assert.Equal(XyzzyStatus.Stopped, (await GameAsync(bot)).Status);
@@ -75,7 +109,7 @@ public class XyzzySettingsTests
         await bot.SendAsync(TestBot.PrivateMessage(Alice, "4"));
         Assert.Equal(4, (await GameAsync(bot)).MaxWaitHours);
 
-        await OpenSettingsAndTapAsync(bot, Alice, "Throttle");
+        await OpenSettingsAndTapAsync(bot, Alice, "Delay");
         await bot.SendAsync(TestBot.PrivateMessage(Alice, "1.5"));
         Assert.Equal(1.5, (await GameAsync(bot)).MinWaitHours);
     }
@@ -272,7 +306,7 @@ public class XyzzySettingsTests
         await bot.SendCallbackAsync(Alice, scoreMessage.Buttons!.First(b => b.Text == "Bob"));
         await bot.SendAsync(TestBot.PrivateMessage(Alice, "7"));
 
-        await OpenSettingsAndTapAsync(bot, Alice, "Abandon");
+        await ConfirmAbandonAsync(bot, Alice);
         Assert.Equal(XyzzyStatus.Stopped, (await GameAsync(bot)).Status);
 
         var result = await OpenSettingsAndTapAsync(bot, Alice, "Extend");
@@ -283,5 +317,56 @@ public class XyzzySettingsTests
         Assert.Equal(XyzzyStatus.Question, game.Status);
         Assert.Equal(3, game.Players.Count);
         Assert.Equal(7, game.Players.First(p => p.DisplayName == "Bob").Wins);
+    }
+
+    [Fact]
+    public async Task ExtendOnARunningGameTopsUpTheDeckWithoutTouchingHandsOrTheRound()
+    {
+        using var bot = await ThreePlayerGameAsync();
+        var before = await GameAsync(bot);
+        var beforeQuestion = before.CurrentQuestionCardId;
+        var beforeHands = before.Players.ToDictionary(p => p.PlayerId, p => p.Hand.ToList());
+
+        var result = await OpenSettingsAndTapAsync(bot, Alice, "Extend");
+
+        Assert.Equal("Extended!", result);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Added additional cards"));
+
+        var after = await GameAsync(bot);
+        Assert.Equal(XyzzyStatus.Question, after.Status); // unchanged - still the same round
+        Assert.Equal(beforeQuestion, after.CurrentQuestionCardId);
+        foreach (var player in after.Players)
+        {
+            Assert.Equal(beforeHands[player.PlayerId], player.Hand);
+        }
+        Assert.Empty(after.RemainingQuestionCardIds); // cleared - next draw reshuffles fresh
+        Assert.Empty(after.RemainingAnswerCardIds);
+    }
+
+    [Fact]
+    public async Task MessWithTogglesACosmeticScoreDisplayWithoutChangingRealWins()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Mess With");
+        var picker = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        Assert.Contains(picker.Buttons!, b => b.Text == "Bob");
+        await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "Bob"));
+
+        var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+        var game = await games.GetAsync(ChatId, CancellationToken.None);
+        var bob = game.Players.First(p => p.DisplayName == "Bob");
+        Assert.True(bob.MessedWith);
+        Assert.Equal(0, bob.Wins); // the real score is untouched
+
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_status"));
+        Assert.Contains("Bob", bot.BotClient.SentMessages[^1].Text); // still renders, just with a randomized number
+
+        // Toggle back off.
+        await OpenSettingsAndTapAsync(bot, Alice, "Mess With");
+        var picker2 = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, picker2.Buttons!.First(b => b.Text == "Bob"));
+
+        Assert.False((await games.GetAsync(ChatId, CancellationToken.None)).Players.First(p => p.DisplayName == "Bob").MessedWith);
     }
 }
