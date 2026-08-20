@@ -19,7 +19,13 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Configuration.AddEnvironmentVariables(prefix: "ROBOTO_");
 builder.Services.Configure<BotOptions>(builder.Configuration);
 
-var instance = builder.Configuration["Instance"] ?? "default";
+// Instance identity now has one real source, not two that have to be kept in sync by hand: the
+// container's own hostname (Docker sets this to container_name/hostname: from compose
+// automatically) - ROBOTO_INSTANCE remains available as an explicit override for the rare case
+// that needs the two to differ (e.g. local dev without touching the container name), but a normal
+// deploy only needs to name the container once. Merges what used to be three separate identity
+// concepts (ROBOTO_INSTANCE, docker container_name, legacy's -context flag) into one.
+var instance = builder.Configuration["Instance"] ?? Environment.MachineName;
 var dataDir = builder.Configuration["DataDir"] ?? "/data";
 
 if (!InstanceBootstrapper.TryLoad(dataDir, instance, out var telegramToken, out var botUsername, out var steamApiKey, out var message))

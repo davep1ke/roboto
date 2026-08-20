@@ -43,7 +43,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.4 `/xyzzy_leave` DM picker, `/xyzzy_get_settings` real content | Done, verified | `691b1ad` |
 | 14.5 Live crcast pack import/sync (`CrCastPackImportService`) | Done, verified | `12e7d1b` |
 | 14.6 Pack selection in the `/xyzzy_start` setup wizard | Done, verified | `4cc6087` |
-| 14.7 Fix the "infinite timeout" bug (input + reconciler) | Done, verified | — |
+| 14.7 Fix the "infinite timeout" bug (input + reconciler) | Done, verified | `012ab89` |
+| 14.8 Instance identity merge (hostname-derived `ROBOTO_INSTANCE`) | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1099,6 +1100,24 @@ wording), `XyzzyStartWizardTests.cs` (the pre-existing "invalid values reprompt"
 case was actually testing the bug - `0` was its "invalid" example - swapped for a genuinely invalid
 value now that `0` is correct). `docker compose build` clean.
 
+### 14.8: instance identity merge - done, verified
+
+Merges what were three separate names for the same concept (`ROBOTO_INSTANCE` env var, Docker's
+`container_name`/`hostname`, legacy's `-context` CLI flag) into one: `Program.cs` now falls back to
+`Environment.MachineName` - which Docker sets to the container's own hostname automatically - when
+`ROBOTO_INSTANCE` isn't explicitly set, instead of the literal string `"default"`. A real
+single-purpose deployment (e.g. one TrueNAS app per bot) only has to name the container once;
+`ROBOTO_INSTANCE` remains available as an explicit override for the rare case that needs the two to
+differ (kept as the primary lever in this repo's own local dev `docker-compose.yml`, which is
+shared across several test instances picked at invocation time, not one fixed identity).
+
+No automated test covers this directly - it's a startup-configuration concern `Program.cs` owns,
+and the existing test suite bypasses `Program.cs` entirely (`TestBot` builds its own `BotOptions`
+directly). Verified instead with a real, non-mocked smoke test against the built image: `docker run
+--hostname mytest-instance` with no `ROBOTO_INSTANCE` set correctly created `/data/mytest-instance/
+bot.env`; a second run with both `--hostname` and `ROBOTO_INSTANCE` set confirmed the env var still
+wins as an explicit override. `docker compose build` clean.
+
 ## Explicitly deferred / blocked work
 
 - **`mod_xyzzy` v1 scope cuts** (deliberately dropped for size, not structurally hard to add back) -
@@ -1117,9 +1136,9 @@ value now that `0` is correct). `docker compose build` clean.
 - **JSON library for code that reads legacy-shaped data** (e.g. the migration importer) — the new
   SQLite layer uses `System.Text.Json`; whether the importer wants `Newtonsoft.Json` instead (to
   match the legacy code's looser `JObject`-style parsing) is still open, not urgent.
-- **`ROBOTO_INSTANCE` vs legacy `-context`** — functionally the same concept (which bot identity to
-  run as). Worth a deliberate naming/consistency pass later rather than carrying two names for one
-  idea indefinitely; not urgent.
+- ~~**`ROBOTO_INSTANCE` vs legacy `-context`**~~ merged in phase 14.8 - instance identity now
+  derives from the container's own hostname by default, `ROBOTO_INSTANCE` staying as an explicit
+  override rather than the only lever.
 - **`/save`, `/background`** — legacy mod_standard commands with no equivalent need any more
   (SQLite already writes incrementally; no periodic background-processing loop exists yet to
   manually trigger). Not planned to be ported as-is; revisit only if a real need shows up.

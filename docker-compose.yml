@@ -14,6 +14,13 @@ services:
       # run if missing) and future SQLite state both live under data/<instance>/ - same shared
       # /data mount for every instance, no per-instance volume path to get wrong.
       #   ROBOTO_INSTANCE=beefy docker compose up --build
+      #
+      # This is an explicit override, not the only way to set identity any more (phase 14.8):
+      # Program.cs falls back to the container's own hostname when ROBOTO_INSTANCE isn't set, so a
+      # real single-purpose deployment (e.g. a TrueNAS app per bot) only needs to name the
+      # container once - `hostname: beefy` alone is enough there, no env var needed. Kept explicit
+      # here since this compose file is shared across several local test instances picked at
+      # invocation time, not one fixed identity.
       ROBOTO_INSTANCE: ${ROBOTO_INSTANCE:-default}
     volumes:
       - ./data:/data
