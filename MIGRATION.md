@@ -41,7 +41,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.2 Stats engine dual-track (`StatBucket`), `/stats`/`/statgraph` rebuild | Done, verified | `c74bec5` |
 | 14.3 Settings menu: fixed Abandon confirm, Extend on a running game, Mess With | Done, verified | `1b5f24e` |
 | 14.4 `/xyzzy_leave` DM picker, `/xyzzy_get_settings` real content | Done, verified | `691b1ad` |
-| 14.5 Live crcast pack import/sync (`CrCastPackImportService`) | Done, verified | — |
+| 14.5 Live crcast pack import/sync (`CrCastPackImportService`) | Done, verified | `12e7d1b` |
+| 14.6 Pack selection in the `/xyzzy_start` setup wizard | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1039,6 +1040,33 @@ same pattern as Steam's `FakeSteamHttpHandler` - no real network call) - fresh i
 code rejected without a network call, a failed fetch changes nothing, re-sync adds/keeps/removes
 cards correctly, and the card-remapping test specifically confirmed to catch a deliberately-
 reintroduced regression before being trusted. `docker compose build` clean.
+
+### 14.6: pack selection in the setup wizard - done, verified
+
+Legacy's real order is Game Length → Pack Filter → Timeout → Throttle → Invites; the rewrite's
+wizard skipped straight from Game Length to Timeout with no pack step at all. Rather than duplicate
+a second picker implementation, the "Change Packs" message/keyboard building was pulled out of
+`XyzzySettingsCallbackHandler` into a shared `XyzzyPackPickerUi` (internal static class) that both
+it and `XyzzyStartCommand`'s "Configure Game" chain now call - every pack-picker button still routes
+through the same `xy:se:...` callback data and `XyzzySettingsCallbackHandler` regardless of which
+caller opened it, since the underlying game/pack state is identical either way. Only the exit
+differs: the picker's "Continue" button now dispatches to a new `HandlePackDoneAsync`, which checks
+`game.Status` - `SettingUp` advances straight into the setup chain's Timeout step (referencing
+`XyzzyStartCommand.AskTimeout`'s public constant, not a runtime dependency), anything else just
+closes the menu. If no real catalog is loaded (the hardcoded placeholder dev/test set), the wizard
+skips the pack step entirely, matching `XyzzySettingsCallbackHandler`'s own "Change Packs" gate.
+
+Caught a small pre-existing bug while wiring this up: the picker's "Continue" button previously
+reused the standalone menu's `menu:cancel` action, so finishing a pack review said "Cancelled." even
+though every toggle had already been saved as it happened - fixed as part of the same change
+(`HandlePackDoneAsync` now says "Done." outside the wizard).
+
+Verified: `XyzzyPackFilteringTests.cs` - the setup chain shows the picker with Game Length's answer
+already applied, toggling and continuing lands on Timeout with the right `EnabledPackIds` and the
+rest of the wizard still reaches Invites cleanly; the no-catalog-loaded case still skips straight to
+Timeout (matching every pre-existing wizard test's own assumption); "Continue" from a normal
+`/xyzzy_settings` session says "Done.", not "Cancelled." - the pack-step gate confirmed to actually
+catch a deliberately-reintroduced regression before being trusted. `docker compose build` clean.
 
 ## Explicitly deferred / blocked work
 

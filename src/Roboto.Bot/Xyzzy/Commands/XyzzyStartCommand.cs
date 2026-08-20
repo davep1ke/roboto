@@ -11,10 +11,12 @@ namespace Roboto.Bot.Xyzzy.Commands;
 /// Ports legacy mod_xyzzy's /xyzzy_start, including the setup wizard (phase 8.5, keyboard-ified in
 /// 8.6 per user feedback): the initial "use defaults / configure / cancel" choice is an inline
 /// keyboard (XyzzySetupCallbackHandler owns the taps), matching legacy's own keyboard for that exact
-/// decision. The three "configure" follow-ups (question limit/timeout/throttle) stay free-text DM
+/// decision. The "configure" follow-ups (question limit/timeout/throttle) stay free-text DM
 /// questions through ReplyRouter, same as legacy - those were always plain number prompts even in
-/// the original app, not keyboard-driven. Pack-filter selection specifically stays cut - v1 only has
-/// the one hardcoded pack (CardCatalog), nothing to filter yet.
+/// the original app, not keyboard-driven. Pack selection (phase 14.6) is the one step in between
+/// that's button-driven - it reuses XyzzyPackPickerUi/XyzzySettingsCallbackHandler's own picker
+/// rather than a separate implementation, matching legacy's own identical UI for both entry points.
+/// Skipped entirely if no real catalog is loaded (the hardcoded placeholder dev/test set).
 ///
 /// The game exists (status SettingUp, starter already added as a player) for the whole setup
 /// conversation, not just once it's finished - matches legacy adding the starter and setting a setup
@@ -125,8 +127,19 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
 
         game.QuestionLimit = limit;
         await games.SaveAsync(game, cancellationToken);
-        await replies.AskAsync(bot, game.ChatId, userId, Name, AskTimeout, data: null,
-            "How many hours should I wait for answers/judging before auto-advancing?", cancellationToken);
+
+        // Legacy's own setup order: Game Length -> Pack Filter -> Timeout -> Throttle -> Invites.
+        // Skip straight to Timeout if there's no real catalog loaded (the hardcoded placeholder
+        // dev/test set) - nothing to filter yet, same gate XyzzySettingsCallbackHandler's own
+        // "Change Packs" menu entry uses.
+        if (CardCatalog.Packs.Count == 0)
+        {
+            await replies.AskAsync(bot, game.ChatId, userId, Name, AskTimeout, data: null,
+                "How many hours should I wait for answers/judging before auto-advancing?", cancellationToken);
+            return;
+        }
+
+        await XyzzyPackPickerUi.SendPageAsync(outbox, bot, game, userId, 0, cancellationToken);
     }
 
     private async Task HandleTimeoutAsync(ITelegramBotClient bot, ReplyRouter replies, XyzzyGameState game, long userId, string text, CancellationToken cancellationToken)

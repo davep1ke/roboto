@@ -52,6 +52,7 @@ public sealed class XyzzySettingsCallbackHandler(
             "packsall" => await HandlePackEnableAllAsync(bot, game, userId, value, cancellationToken),
             "packsreset" => await HandlePackResetAsync(bot, game, userId, value, cancellationToken),
             "packsimport" => await HandlePackImportPromptAsync(bot, game, userId, value, cancellationToken),
+            "packsdone" => await HandlePackDoneAsync(bot, game, userId, cancellationToken),
             "abandonconfirm" => await HandleAbandonConfirmAsync(bot, game, userId, value, cancellationToken),
             _ => "Not a valid choice.",
         };
@@ -147,7 +148,7 @@ public sealed class XyzzySettingsCallbackHandler(
                 {
                     return "No card packs are loaded - nothing to filter.";
                 }
-                await SendPacksPageAsync(bot, game, userId, 0, cancellationToken);
+                await XyzzyPackPickerUi.SendPageAsync(outbox, bot, game, userId, 0, cancellationToken);
                 return "Let's pick packs.";
 
             default:
@@ -156,21 +157,13 @@ public sealed class XyzzySettingsCallbackHandler(
     }
 
     /// <summary>Ports legacy's /xyzzy_settings pack filter (sendPackFilterMessage/
-    /// processPackFilterMessage) - the message body groups the current page's packs into "Active
-    /// Packs"/"Inactive Packs" with checkmark/cross emoji exactly as legacy did, while the keyboard
-    /// lets you toggle each one plus All/Reset/paging. PacksPerPage=30 matches legacy's own
-    /// maxPacksPerPage - real catalogs run up to ~1,285 packs, so pagination is load-bearing, not
-    /// decorative. Unlike legacy, page count here is a plain ceiling division - legacy's own
-    /// `(count / perPage) + 1` always shows one trailing empty page on an exact multiple, a bug not
-    /// worth reproducing.</summary>
-    private const int PacksPerPage = 30;
-    private const string PackFiltersHeader = "The following packs (and their current status) are available. " +
-        "You can toggle the packs using the keyboard below, or click 'Continue' to carry on.";
-
+    /// processPackFilterMessage). Message/keyboard building lives in XyzzyPackPickerUi, shared with
+    /// XyzzyStartCommand's setup-wizard pack step - only the "packsdone" exit differs per caller
+    /// (see HandlePackDoneAsync).</summary>
     private async Task<string> HandlePackPageAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string pageText, CancellationToken cancellationToken)
     {
         var page = int.TryParse(pageText, out var parsed) ? parsed : 0;
-        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
+        await XyzzyPackPickerUi.SendPageAsync(outbox, bot, game, userId, page, cancellationToken);
         return "Page updated.";
     }
 
@@ -204,7 +197,7 @@ public sealed class XyzzySettingsCallbackHandler(
         }
 
         await games.SaveAsync(game, cancellationToken);
-        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
+        await XyzzyPackPickerUi.SendPageAsync(outbox, bot, game, userId, page, cancellationToken);
         return "Updated.";
     }
 
@@ -213,7 +206,7 @@ public sealed class XyzzySettingsCallbackHandler(
         game.EnabledPackIds = [XyzzyPackFilter.AllPacksId];
         await games.SaveAsync(game, cancellationToken);
         var page = int.TryParse(pageText, out var parsed) ? parsed : 0;
-        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
+        await XyzzyPackPickerUi.SendPageAsync(outbox, bot, game, userId, page, cancellationToken);
         return "All packs enabled.";
     }
 
@@ -222,7 +215,7 @@ public sealed class XyzzySettingsCallbackHandler(
         game.EnabledPackIds = XyzzyPackFilter.DefaultSelection();
         await games.SaveAsync(game, cancellationToken);
         var page = int.TryParse(pageText, out var parsed) ? parsed : 0;
-        await SendPacksPageAsync(bot, game, userId, page, cancellationToken);
+        await XyzzyPackPickerUi.SendPageAsync(outbox, bot, game, userId, page, cancellationToken);
         return "Reset to the base pack.";
     }
 
@@ -240,82 +233,21 @@ public sealed class XyzzySettingsCallbackHandler(
         return "Let's import a pack.";
     }
 
-    private Task SendPacksPageAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, int page, CancellationToken cancellationToken) =>
-        outbox.EnqueueButtonQuestionAsync(bot, userId, BuildPacksMessage(game, page, out var clampedPage), BuildPacksKeyboard(game, clampedPage), cancellationToken);
-
-    private static string BuildPacksMessage(XyzzyGameState game, int page, out int clampedPage)
+    /// <summary>The picker's "Continue" button. During the setup wizard's own pack step
+    /// (game.Status == SettingUp), advances straight into the next setup step (Timeout) rather than
+    /// just closing the menu - XyzzyStartCommand's setup chain owns that step, referenced here only
+    /// by its public step-name constant, no runtime dependency on that class.</summary>
+    private async Task<string> HandlePackDoneAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, CancellationToken cancellationToken)
     {
-        var (pagePacks, totalPages) = PagePacks(game, page, out clampedPage);
-
-        var active = pagePacks.Where(p => XyzzyPackFilter.IsEnabled(game, p.Id)).ToList();
-        var inactive = pagePacks.Where(p => !XyzzyPackFilter.IsEnabled(game, p.Id)).ToList();
-
-        // Plain text, not markdown-bold - DmOutbox doesn't carry a ParseMode through to the actual
-        // send today (nothing in this codebase does yet), so "*Active Packs:*" would show up as
-        // literal asterisks rather than bold.
-        var message = PackFiltersHeader;
-        if (active.Count > 0)
+        if (game.Status is XyzzyStatus.SettingUp)
         {
-            message += "\n\nActive Packs:\n" + string.Join('\n', active.Select(p => $"✅ {p.Name}"));
-        }
-        if (inactive.Count > 0)
-        {
-            message += "\n\nInactive Packs:\n" + string.Join('\n', inactive.Select(p => $"❌ {p.Name}"));
-        }
-        if (totalPages > 1)
-        {
-            message += $"\n\n(Page {clampedPage + 1} of {totalPages})";
+            await services.GetRequiredService<ReplyRouter>().AskAsync(bot, game.ChatId, userId, "xyzzy_start", XyzzyStartCommand.AskTimeout,
+                data: null, "How many hours should I wait for answers/judging before auto-advancing?", cancellationToken);
+            return "Let's set the timeout.";
         }
 
-        return message;
-    }
-
-    private static List<List<DmButton>> BuildPacksKeyboard(XyzzyGameState game, int page)
-    {
-        var (pagePacks, _) = PagePacks(game, page, out var clampedPage);
-
-        var keyboard = new List<List<DmButton>>();
-        foreach (var pack in pagePacks)
-        {
-            var enabled = XyzzyPackFilter.IsEnabled(game, pack.Id);
-            var label = (enabled ? "✓ " : "") + pack.Name;
-            keyboard.Add([new DmButton(label, $"xy:se:{game.ChatId}:packtoggle:{clampedPage}|{pack.Id}")]);
-        }
-
-        var totalPages = Math.Max(1, (CardCatalog.Packs.Count + PacksPerPage - 1) / PacksPerPage);
-        var navRow = new List<DmButton>();
-        if (clampedPage > 0)
-        {
-            navRow.Add(new DmButton("< Prev", $"xy:se:{game.ChatId}:packs:{clampedPage - 1}"));
-        }
-        if (clampedPage < totalPages - 1)
-        {
-            navRow.Add(new DmButton("Next >", $"xy:se:{game.ChatId}:packs:{clampedPage + 1}"));
-        }
-        if (navRow.Count > 0)
-        {
-            keyboard.Add(navRow);
-        }
-
-        keyboard.Add([new DmButton("Import Pack", $"xy:se:{game.ChatId}:packsimport:{clampedPage}")]);
-        keyboard.Add([new DmButton("All Packs", $"xy:se:{game.ChatId}:packsall:{clampedPage}")]);
-        keyboard.Add([new DmButton("Reset to Base Pack", $"xy:se:{game.ChatId}:packsreset:{clampedPage}")]);
-        keyboard.Add([new DmButton("Continue", $"xy:se:{game.ChatId}:menu:cancel")]);
-        return keyboard;
-    }
-
-    /// <summary>Packs sorted enabled-first-then-name (legacy's own ordering - a real win once a chat
-    /// has hundreds/thousands of packs and only a handful enabled), sliced to one page.</summary>
-    private static (List<XyzzyPack> PagePacks, int TotalPages) PagePacks(XyzzyGameState game, int page, out int clampedPage)
-    {
-        var ordered = CardCatalog.Packs
-            .OrderByDescending(p => XyzzyPackFilter.IsEnabled(game, p.Id))
-            .ThenBy(p => p.Name, StringComparer.Ordinal)
-            .ToList();
-
-        var totalPages = Math.Max(1, (ordered.Count + PacksPerPage - 1) / PacksPerPage);
-        clampedPage = Math.Clamp(page, 0, totalPages - 1);
-        return (ordered.Skip(clampedPage * PacksPerPage).Take(PacksPerPage).ToList(), totalPages);
+        await bot.SendMessage(userId, "Done.", cancellationToken: cancellationToken);
+        return "Done.";
     }
 
     private async Task<string> HandleAbandonConfirmAsync(ITelegramBotClient bot, XyzzyGameState game, long userId, string value, CancellationToken cancellationToken)

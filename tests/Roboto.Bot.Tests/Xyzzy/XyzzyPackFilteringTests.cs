@@ -245,6 +245,36 @@ public class XyzzyPackFilteringTests
     }
 
     [Fact]
+    public async Task ContinueFromTheChangePacksMenuJustClosesRatherThanClaimingCancelled()
+    {
+        // Toggles are already saved as they happen - "Continue" here isn't the same kind of
+        // discard-if-you-don't-confirm action Timeout/Throttle are, so it shouldn't say "Cancelled."
+        var originalQuestions = CardCatalog.Questions;
+        var originalAnswers = CardCatalog.Answers;
+        try
+        {
+            using var bot = new TestBot();
+            var store = bot.Services.GetRequiredService<IStateStore>();
+            await SeedTwoPackCatalogAsync(store);
+            await StartThreePlayerGameAsync(bot);
+
+            await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
+            var menuMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            await bot.SendCallbackAsync(Alice, menuMessage.Buttons!.First(b => b.Text == "Change Packs"));
+            var picker = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+
+            await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "Continue"));
+
+            Assert.Equal("Done.", bot.BotClient.AnsweredCallbacks[^1].Text);
+            Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == Alice && m.Text == "Done.");
+        }
+        finally
+        {
+            await RestoreCatalogAsync(originalQuestions, originalAnswers);
+        }
+    }
+
+    [Fact]
     public async Task TogglingAPackOffWhileAllPacksIsSetMaterializesTheRest()
     {
         var originalQuestions = CardCatalog.Questions;
@@ -302,6 +332,65 @@ public class XyzzyPackFilteringTests
         {
             await RestoreCatalogAsync(originalQuestions, originalAnswers);
         }
+    }
+
+    [Fact]
+    public async Task ConfigureGameSetupChainIncludesAPackSelectionStepBetweenGameLengthAndTimeout()
+    {
+        var originalQuestions = CardCatalog.Questions;
+        var originalAnswers = CardCatalog.Answers;
+        try
+        {
+            using var bot = new TestBot();
+            var store = bot.Services.GetRequiredService<IStateStore>();
+            await SeedTwoPackCatalogAsync(store);
+
+            await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
+            var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            await bot.SendCallbackAsync(Alice, choiceMessage.Buttons!.First(b => b.Text == "Configure Game"));
+            await bot.SendAsync(TestBot.PrivateMessage(Alice, "10")); // game length
+
+            var picker = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            Assert.Contains("following packs", picker.Text);
+            Assert.Contains(picker.Buttons!, b => b.Text == "✓ Pack One");
+
+            // Toggle Pack Two on, then tap Continue - should advance straight into Timeout, not
+            // just close the menu (the setup wizard's own exit branch of "packsdone").
+            await bot.SendCallbackAsync(Alice, picker.Buttons!.First(b => b.Text == "Pack Two"));
+            var afterToggle = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+            await bot.SendCallbackAsync(Alice, afterToggle.Buttons!.First(b => b.Text == "Continue"));
+
+            Assert.Contains("How many hours should I wait", bot.BotClient.SentMessages[^1].Text);
+
+            var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+            var game = await games.GetAsync(ChatId, CancellationToken.None);
+            Assert.Equal(["p1", "p2"], game.EnabledPackIds.OrderBy(id => id));
+            Assert.Equal(10, game.QuestionLimit);
+
+            // Finish the rest of the wizard to confirm it still reaches Invites cleanly.
+            await bot.SendAsync(TestBot.PrivateMessage(Alice, "1")); // timeout
+            await bot.SendAsync(TestBot.PrivateMessage(Alice, "0")); // throttle
+            Assert.Contains("Start", bot.BotClient.SentMessages[^1].Buttons!.Select(b => b.Text));
+        }
+        finally
+        {
+            await RestoreCatalogAsync(originalQuestions, originalAnswers);
+        }
+    }
+
+    [Fact]
+    public async Task ConfigureGameSkipsThePackStepWhenNoRealCatalogIsLoaded()
+    {
+        // The hardcoded placeholder dev/test catalog has zero packs - the wizard should go straight
+        // from Game Length to Timeout, matching every existing setup-wizard test's assumption.
+        using var bot = new TestBot();
+        await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_start", firstName: "Alice"));
+        var choiceMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        await bot.SendCallbackAsync(Alice, choiceMessage.Buttons!.First(b => b.Text == "Configure Game"));
+
+        await bot.SendAsync(TestBot.PrivateMessage(Alice, "10"));
+
+        Assert.Contains("How many hours should I wait", bot.BotClient.SentMessages[^1].Text);
     }
 
     [Fact]
