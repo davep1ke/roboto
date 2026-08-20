@@ -98,16 +98,18 @@ public sealed class XyzzySettingsCommand(
         switch (pending.Step)
         {
             case AwaitTimeout:
-                if (!double.TryParse(text, out var maxHours) || maxHours <= 0)
+                if (!double.TryParse(text, out var maxHours) || maxHours < 0)
                 {
                     await replies.AskAsync(bot, game.ChatId, pending.UserId, Name, AwaitTimeout, data: null,
-                        "Not a valid number. How many hours should I wait before auto-advancing an answer/judging round?", cancellationToken);
+                        $"Not a valid number. {XyzzyStartCommand.TimeoutPrompt}", cancellationToken);
                     return;
                 }
 
                 game.MaxWaitHours = maxHours;
                 await games.SaveAsync(game, cancellationToken);
-                await bot.SendMessage(pending.UserId, $"Timeout set to {maxHours}h.", cancellationToken: cancellationToken);
+                await bot.SendMessage(pending.UserId,
+                    maxHours == 0 ? "Timeout disabled - I'll never auto-advance a slow round." : $"Timeout set to {maxHours}h.",
+                    cancellationToken: cancellationToken);
                 break;
 
             case AwaitThrottle:

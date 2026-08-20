@@ -134,20 +134,27 @@ public sealed class XyzzyStartCommand(IServiceProvider services, XyzzyGameReposi
         // "Change Packs" menu entry uses.
         if (CardCatalog.Packs.Count == 0)
         {
-            await replies.AskAsync(bot, game.ChatId, userId, Name, AskTimeout, data: null,
-                "How many hours should I wait for answers/judging before auto-advancing?", cancellationToken);
+            await replies.AskAsync(bot, game.ChatId, userId, Name, AskTimeout, data: null, TimeoutPrompt, cancellationToken);
             return;
         }
 
         await XyzzyPackPickerUi.SendPageAsync(outbox, bot, game, userId, 0, cancellationToken);
     }
 
+    /// <summary>0 is legacy's own "No Timeout" sentinel (its own quick-pick keyboard - Continue/No
+    /// Timeout/1/2/6/12/24/48 - offered a dedicated button for it, but this rewrite doesn't support
+    /// a hybrid button-or-free-text DmOutbox entry today: DmOutbox.TryGetHeadTextQuestionAsync only
+    /// matches a free-text reply against an entry with no Keyboard set, by design (phase 8.9) - so
+    /// "0 means never" is conveyed by wording alone here instead of also offering a tappable
+    /// shortcut for it.</summary>
+    internal const string TimeoutPrompt = "How many hours should I wait for answers/judging before auto-advancing? Enter 0 for no timeout (never auto-advance).";
+
     private async Task HandleTimeoutAsync(ITelegramBotClient bot, ReplyRouter replies, XyzzyGameState game, long userId, string text, CancellationToken cancellationToken)
     {
-        if (!double.TryParse(text, out var hours) || hours <= 0)
+        if (!double.TryParse(text, out var hours) || hours < 0)
         {
             await replies.AskAsync(bot, game.ChatId, userId, Name, AskTimeout, data: null,
-                "Not a valid number. How many hours should I wait for answers/judging before auto-advancing?", cancellationToken);
+                $"Not a valid number. {TimeoutPrompt}", cancellationToken);
             return;
         }
 

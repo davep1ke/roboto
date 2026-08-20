@@ -111,6 +111,25 @@ public class XyzzyRoundReconcilerTests
     }
 
     [Fact]
+    public async Task ZeroMaxWaitHoursMeansNeverTimeOutNotInstantly()
+    {
+        // MaxWaitHours == 0 is the "No Timeout" sentinel - naively computing TimeSpan.FromHours(0)
+        // and comparing elapsed >= that would force-advance every round instantly, the opposite of
+        // "never". This has to be an explicit skip in the reconciler, not just accepted input.
+        using var bot = await ThreePlayerGameInProgressAsync();
+        var games = bot.Services.GetRequiredService<XyzzyGameRepository>();
+        var game = await games.GetAsync(ChatId, CancellationToken.None);
+        game.MaxWaitHours = 0;
+        await games.SaveAsync(game, CancellationToken.None);
+
+        await BackdateAsync(bot, TimeSpan.FromDays(365)); // absurdly overdue by any normal threshold
+        await ReconcileAsync(bot);
+
+        Assert.DoesNotContain(bot.BotClient.SentMessages, m => m.Text.Contains("Nobody answered in time") || m.Text.Contains("Judging with whoever"));
+        Assert.Equal(XyzzyStatus.Question, (await games.GetAsync(ChatId, CancellationToken.None)).Status);
+    }
+
+    [Fact]
     public async Task JudgingTimeoutAutoPicksAWinner()
     {
         using var bot = await ThreePlayerGameInProgressAsync();

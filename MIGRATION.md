@@ -42,7 +42,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.3 Settings menu: fixed Abandon confirm, Extend on a running game, Mess With | Done, verified | `1b5f24e` |
 | 14.4 `/xyzzy_leave` DM picker, `/xyzzy_get_settings` real content | Done, verified | `691b1ad` |
 | 14.5 Live crcast pack import/sync (`CrCastPackImportService`) | Done, verified | `12e7d1b` |
-| 14.6 Pack selection in the `/xyzzy_start` setup wizard | Done, verified | — |
+| 14.6 Pack selection in the `/xyzzy_start` setup wizard | Done, verified | `4cc6087` |
+| 14.7 Fix the "infinite timeout" bug (input + reconciler) | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1067,6 +1068,36 @@ rest of the wizard still reaches Invites cleanly; the no-catalog-loaded case sti
 Timeout (matching every pre-existing wizard test's own assumption); "Continue" from a normal
 `/xyzzy_settings` session says "Done.", not "Cancelled." - the pack-step gate confirmed to actually
 catch a deliberately-reintroduced regression before being trusted. `docker compose build` clean.
+
+### 14.7: fix the "infinite timeout" bug - done, verified
+
+Legacy's sentinel for "never auto-skip a slow player" is `0` hours (its own quick-pick keyboard had
+a dedicated "No Timeout" button for it, or you could just type `0`). The rewrite's `XyzzyStartCommand.
+HandleTimeoutAsync`/`XyzzySettingsCommand`'s equivalent both rejected `hours <= 0` outright, so "no
+timeout" was simply impossible to express. Fixed on both sides, since fixing only the input would
+have been actively worse: `XyzzyRoundReconciler.ReconcileTimeoutAsync`'s own check
+(`elapsed >= TimeSpan.FromHours(game.MaxWaitHours)`) would force-advance every round *instantly*
+once `0` was accepted as input, since `elapsed >= TimeSpan.Zero` is always true - the exact opposite
+of "never". Added an explicit `if (game.MaxWaitHours <= 0) return;` skip ahead of that check instead.
+
+**Quick-pick keyboard not built** - deliberately scoped down from the original plan after checking
+the architecture: `DmOutbox.TryGetHeadTextQuestionAsync` only matches an incoming free-text reply
+against a queue entry that has no `Keyboard` set - a real, deliberate phase 8.9 design choice (one
+outstanding thing per user, unambiguous). Legacy's Timeout/Throttle prompts want *both* a tappable
+shortcut *and* free-text input on the same message, which would need a real change to that matching
+logic to support a hybrid entry - not something to take on as a side effect of a wording fix. "0
+means never" is instead conveyed by wording alone (`XyzzyStartCommand.TimeoutPrompt`, shared across
+every place the prompt is asked from, rather than four copies of similar-but-drifting text): "How
+many hours should I wait for answers/judging before auto-advancing? Enter 0 for no timeout (never
+auto-advance)." The confirmation message on the /xyzzy_settings path also now says "Timeout disabled
+- I'll never auto-advance a slow round." instead of the slightly odd "Timeout set to 0h."
+
+Verified: `XyzzyRoundReconcilerTests.cs` (`MaxWaitHours = 0` backdated a full year still never force-
+advances - the reconciler-side fix specifically confirmed to catch a deliberately-reintroduced
+regression before being trusted), `XyzzySettingsTests.cs` (`0` accepted, disabled-confirmation
+wording), `XyzzyStartWizardTests.cs` (the pre-existing "invalid values reprompt" test's own timeout
+case was actually testing the bug - `0` was its "invalid" example - swapped for a genuinely invalid
+value now that `0` is correct). `docker compose build` clean.
 
 ## Explicitly deferred / blocked work
 

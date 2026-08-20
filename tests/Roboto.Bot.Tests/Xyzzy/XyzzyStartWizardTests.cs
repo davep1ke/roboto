@@ -72,7 +72,7 @@ public class XyzzyStartWizardTests
         Assert.Contains("How many questions", bot.BotClient.SentMessages[^1].Text);
 
         await bot.SendAsync(TestBot.PrivateMessage(Alice, "3", firstName: "Alice"));
-        await bot.SendAsync(TestBot.PrivateMessage(Alice, "0", firstName: "Alice")); // timeout must be > 0
+        await bot.SendAsync(TestBot.PrivateMessage(Alice, "-1", firstName: "Alice")); // timeout can't be negative (0 is valid - "no timeout")
         Assert.Contains("Not a valid number", bot.BotClient.SentMessages[^1].Text);
         Assert.Contains("wait for answers", bot.BotClient.SentMessages[^1].Text);
 

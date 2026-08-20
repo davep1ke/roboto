@@ -115,6 +115,18 @@ public class XyzzySettingsTests
     }
 
     [Fact]
+    public async Task ZeroIsAcceptedAsTheNoTimeoutSentinel()
+    {
+        using var bot = await ThreePlayerGameAsync();
+
+        await OpenSettingsAndTapAsync(bot, Alice, "Timeout");
+        await bot.SendAsync(TestBot.PrivateMessage(Alice, "0"));
+
+        Assert.Equal(0, (await GameAsync(bot)).MaxWaitHours);
+        Assert.Contains("Timeout disabled", bot.BotClient.SentMessages[^1].Text);
+    }
+
+    [Fact]
     public async Task InvalidTimeoutIsRejectedWithoutChangingAnything()
     {
         using var bot = await ThreePlayerGameAsync();

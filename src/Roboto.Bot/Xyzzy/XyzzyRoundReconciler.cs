@@ -62,6 +62,16 @@ public sealed class XyzzyRoundReconciler(XyzzyGameRepository games, XyzzyRoundSe
             return;
         }
 
+        // MaxWaitHours == 0 is the "No Timeout" sentinel (legacy's own - selected via the quick-pick
+        // button or by literally typing 0) meaning never auto-advance a slow round. Naively computing
+        // TimeSpan.FromHours(0) and comparing elapsed >= that would force-advance every round
+        // instantly - the opposite of "never" - so this has to be its own explicit skip, not just an
+        // input-validation fix on the prompt side.
+        if (game.MaxWaitHours <= 0)
+        {
+            return;
+        }
+
         var elapsed = DateTime.UtcNow - game.StatusChangedUtc;
         var maxWait = TimeSpan.FromHours(game.MaxWaitHours);
 

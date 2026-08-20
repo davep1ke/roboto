@@ -77,7 +77,7 @@ public sealed class XyzzySettingsCallbackHandler(
 
             case "timeout":
                 await services.GetRequiredService<ReplyRouter>().AskAsync(bot, game.ChatId, userId, "xyzzy_settings", XyzzySettingsCommand.AwaitTimeout,
-                    data: null, "How many hours should I wait before auto-advancing an answer/judging round?", cancellationToken);
+                    data: null, XyzzyStartCommand.TimeoutPrompt, cancellationToken);
                 return "Let's set the timeout.";
 
             case "throttle":
@@ -242,7 +242,7 @@ public sealed class XyzzySettingsCallbackHandler(
         if (game.Status is XyzzyStatus.SettingUp)
         {
             await services.GetRequiredService<ReplyRouter>().AskAsync(bot, game.ChatId, userId, "xyzzy_start", XyzzyStartCommand.AskTimeout,
-                data: null, "How many hours should I wait for answers/judging before auto-advancing?", cancellationToken);
+                data: null, XyzzyStartCommand.TimeoutPrompt, cancellationToken);
             return "Let's set the timeout.";
         }
 
