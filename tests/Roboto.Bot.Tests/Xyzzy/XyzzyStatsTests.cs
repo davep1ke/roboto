@@ -108,6 +108,7 @@ public class XyzzyStatsTests
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/stats"));
 
         var text = bot.BotClient.SentMessages[^1].Text;
-        Assert.Contains("xyzzy.games-started", text);
+        Assert.Contains("active games", text);
+        Assert.Contains("mod_xyzzy", text);
     }
 }

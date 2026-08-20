@@ -40,6 +40,13 @@ public static class RobotoServiceCollectionExtensions
             services.AddSingleton(typeof(ICallbackQueryHandler), callbackType);
         }
 
+        // Same reflection-discovery pattern, for /stats' per-module contributions.
+        foreach (var statsProviderType in typeof(IModuleStatsProvider).Assembly.GetTypes()
+                     .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IModuleStatsProvider).IsAssignableFrom(t)))
+        {
+            services.AddSingleton(typeof(IModuleStatsProvider), statsProviderType);
+        }
+
         services.AddSingleton<IStateStore, SqliteStateStore>();
         services.AddSingleton<StatsRecorder>();
         services.AddSingleton<ChatRepository>();

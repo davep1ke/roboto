@@ -37,7 +37,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 8.10 `mod_xyzzy`: multi-answer ("Pick 2"+) question support | Done, verified | `4a6b1d8` |
 | 8.11 `mod_xyzzy`: settings-menu completeness (Re-deal/Reset/Extend/Force Question/Change Packs), catalog lookup performance, bot top-up re-check | Done, verified | `e73d4ec` |
 | 13. Dormant-chat purge (`ChatPurgeReconciler`) | Done, verified | `e73d4ec` |
-| 14.1 Pack default-semantics reversal (`XyzzyPackFilter`) | Done, verified | — |
+| 14.1 Pack default-semantics reversal (`XyzzyPackFilter`) | Done, verified | `d24a007` |
+| 14.2 Stats engine dual-track (`StatBucket`), `/stats`/`/statgraph` rebuild | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -901,6 +902,53 @@ against the sentinel, the last-pack guard, Reset to Base Pack) and `tests/Roboto
 (primary-pack detection, sentinel mapping) - every new/changed assertion confirmed to actually catch
 a deliberately-reintroduced regression, not just green-on-first-try. Full suite (143 `Roboto.Bot.
 Tests` + 12 `Roboto.Migrator.Tests`) stable across repeated runs.
+
+### 14.2: stats engine dual-track, `/stats`/`/statgraph` rebuild - done, verified
+
+Phase 10a's `StatSeries` only ever tracked an all-time `Total` plus the last 500 raw points
+(pruned by count, not time) - legacy's own stats engine is the opposite: a pure rolling 15-min-
+bucketed/48h window with no persisted all-time total at all. The user wanted both, as two parallel
+tracks on the same series rather than picking one: `StatSeries` now has `Total`/`Latest`/
+`FirstRecordedUtc`/`LastRecordedUtc`/`HasAllTimeTotal` (all-time, mode-dependent exactly as before -
+`Mode` governs how a value combines into the *current bucket*, not just `Total`, so a Snapshot
+gauge's `Total` still just mirrors the latest value rather than ticking up nonsensically every
+scheduler tick) alongside a new sparse `Buckets` list (`StatBucket`, 15-min granularity, 192-bucket/
+48h retention - legacy's exact numbers), pruned inline on every write rather than via a separate
+housekeeping sweep (every series is already loaded-and-rewritten per `RecordAsync` call, so pruning
+there is free). `RecordAsync` delegates to an `internal RecordAtAsync(..., DateTime nowUtc, ...)` so
+bucket-rollover/pruning is testable with synthetic timestamps instead of waiting on real 15-minute
+boundaries. `StatMode`'s enum member names were deliberately left untouched (`JsonStringEnumConverter`
+persists by name and throws on an unrecognised one) and so was `Total` (a silent rename would zero
+every persisted all-time counter instead of failing loudly).
+
+`/stats` no longer dumps the stat registry alphabetically - it's rebuilt to legacy's actual hybrid
+shape (bot name/uptime/chat count, then each module's own live-computed snapshot line), via a new
+`IModuleStatsProvider` interface discovered by the same reflection-registration loop `IBotCommand`/
+`ICallbackQueryHandler` already use. `XyzzyStatsProvider` (active players/games, packs+cards loaded,
+plus the two new lines the user asked for - total all-time games/hands, phrased "since {date}" since
+these counters start at zero at rewrite-deploy time, not truly all-time the way legacy never tracked
+any total at all), `SteamStatsProvider` (players tracked/achievements known), `StandardStatsProvider`
+(messages awaiting reply, via a new `DmOutbox.CountAwaitingReplyAsync`). Sent with `ParseMode.
+Markdown` for legacy's `*bold*` module headers - the first place anything in this codebase passes a
+parse mode to `SendMessage`. Kept the existing command-usage table as a "Top commands" tail.
+
+`/statgraph` restores legacy's multi-series regex matching (space/`|`-split args, each a regex
+against a series name, capped at 8 series) that 10b's first pass had dropped to a single exact-name
+lookup, and densifies the sparse bucket list into a continuous 48h window on read (zero-fill for
+Cumulative gaps, carry-forward for Snapshot gaps, `NaN` before a series' first-ever sample so
+ScottPlot renders a true gap rather than a fake baseline). Visual redesign taken with full creative
+freedom per the user's own go-ahead rather than porting legacy's WinForms `Chart` output (1200x600
+JPEG, one hardcoded pastel-blue plot area, default column/line styling) - Cumulative series render
+with a filled area (closer to a histogram than a gauge reading), Snapshot as a plain line, color a
+stable hash of the series name so a given stat stays the same color across renders.
+
+Verified: `StatsRecorderTests.cs` rewritten for the bucket model (accumulate-within-a-bucket,
+roll-over-to-a-new-bucket, retention-window pruning with an exact-boundary assertion, first/last-
+recorded tracking) plus the existing cumulative/snapshot/restart-survival tests; `XyzzyStatsTests.cs`
+updated to match the new `/stats` phrasing; `StatGraphTests.cs` unchanged (its "Usage:"/"No recorded
+history" substrings were deliberately preserved in the rebuild). Bucket-pruning test confirmed to
+actually catch a deliberately-reintroduced regression before being trusted. `docker compose build`
+clean.
 
 ## Explicitly deferred / blocked work
 

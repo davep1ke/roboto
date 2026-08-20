@@ -114,6 +114,21 @@ public sealed class DmOutbox(IStateStore store, ILogger<DmOutbox> logger)
         _resolvingInsertIndex[userId] = 0;
     }
 
+    /// <summary>For /stats' mod_standard line (legacy's "N messages awaiting reply", counting
+    /// Roboto.Settings.expectedReplies) - every entry across every user's queue that's actually
+    /// expecting a response, not just queue length (an EnqueueNoticeAsync entry never expects one).</summary>
+    public async Task<int> CountAwaitingReplyAsync(CancellationToken cancellationToken)
+    {
+        var count = 0;
+        foreach (var key in await store.LoadAllKeysAsync("dm-outbox:%", cancellationToken))
+        {
+            var queue = await store.LoadAsync<List<DmOutboxEntry>>(key, cancellationToken) ?? [];
+            count += queue.Count(e => e.ExpectsResponse);
+        }
+
+        return count;
+    }
+
     /// <summary>Startup safety net (Program.cs calls this once, right after IStateStore.
     /// InitializeAsync) - delivers any user's queue whose head is sitting undelivered. Covers two
     /// cases: a prior process crash/restart leaving a pump mid-flight (queues are normally only
