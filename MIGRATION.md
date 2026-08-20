@@ -46,7 +46,8 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.7 Fix the "infinite timeout" bug (input + reconciler) | Done, verified | `012ab89` |
 | 14.8 Instance identity merge (hostname-derived `ROBOTO_INSTANCE`) | Done, verified | `dca00bd` |
 | 14.9 Fix `DmOutbox` front-insert window preempting unrelated queued requests | Done, verified | `52042e5` |
-| 14.10 Round-flow message parity: judging/win-announcement wording, multi-game DM chat stamp | Done, verified | — |
+| 14.10 Round-flow message parity: judging/win-announcement wording, multi-game DM chat stamp | Done, verified | `9fe6481` |
+| 14.11 Real chat-name stamp (not chat ID), bolded winning answer, round-start wording | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1221,6 +1222,45 @@ question - a multi-answer "Pick 2"+ card landing on round 2 (possible depending 
 order) left the round incomplete and failed the test. Switched to `AnswerHandFullyAsync`, which
 answers however many cards the question actually needs, same as every other round-loop test already
 does.
+
+### 14.11: real chat-name stamp, bolded winning answer, round-start wording - done, verified
+
+Follow-up live feedback on 14.10, three small gaps:
+
+**Chat stamp showed a bare numeric chat ID, not a name.** `XyzzyRoundService.StampChatAsync`'s
+fallback (`ChatState.Title` empty → show `game.ChatId`) was firing far more than intended: `Title`
+was previously only ever set by `StartCommand`/`StopCommand` (i.e. only if someone had run
+`/start`/`/stop` in that specific chat), so most real groups - active game or not - had never had
+it captured at all. Fixed at the source instead of patching the fallback: `ChatRepository.
+TouchAsync` (already called on every incoming message/callback, `MessageDispatcher`) now also
+takes and stores the chat's title when the incoming update carries one, so it's captured from
+*any* ordinary interaction, not just `/start`/`/stop`, and stays fresh if a group renames itself.
+Every game start/join already goes through a group-typed slash command, so this self-heals for any
+currently-running game the moment anyone next types anything in it.
+
+**The winning answer wasn't bolded.** Present in legacy (`judgesResponse` wraps the winning
+card(s) in `*...*` and sends with `markDown=true`) but not reproduced when the win-announcement
+wording was ported in 14.10. `XyzzyRoundService.PickWinnerAsync` now bolds the winning answer(s) -
+both the single-answer substituted-into-the-blank case and the multi-answer "Answer: ..." fallback
+- and sends with `parseMode: ParseMode.Markdown`.
+
+**Round-start group message's quoting style was inconsistent.** `BeginQuestionAsync`'s "Round N!
+{judge} is judging." broadcast (a rewrite-only addition - legacy's `askQuestion` never announced a
+new round to the group at all, so there's no legacy string to port here) still quote-wrapped the
+question (`"{question}"`) after 14.10 switched the sibling judging-message to legacy's own
+unquoted "Question: {text}" style. Reworded to match: `Question: {text}`, no quotes.
+
+Also gave `TestBot.GroupMessage` an optional `title` parameter (defaulted to the existing "Test
+Group" so no other test needed touching) so the chat-stamp test could exercise two distinctly-named
+chats and assert on the real name, not just "a stamp is present."
+
+New/updated tests: `XyzzyMultiGameDmStampTests` now names its two chats ("Thursday Game Night" /
+"Work Chat") and asserts the stamp shows the real name; extended `XyzzyRoundLoopTests.
+FullRoundEndToEndDealAnswerJudgeAndAdvance` to assert the winning answer appears bolded
+(`*{text}*`) in the group win message. Both sabotaged and confirmed failing (title-check forced to
+always skip; bold wrapper stripped to plain text) before restoring - full suite (166
+Roboto.Bot.Tests + 12 Roboto.Migrator.Tests) green across 4 consecutive runs. `docker compose
+build` clean.
 
 ## Explicitly deferred / blocked work
 

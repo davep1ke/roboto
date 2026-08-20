@@ -2,6 +2,7 @@ using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Stats;
 using Telegram.Bot;
+using Telegram.Bot.Types.Enums;
 
 namespace Roboto.Bot.Xyzzy;
 
@@ -109,8 +110,12 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, ChatRepository 
             await outbox.EnqueueButtonQuestionAsync(bot, player.PlayerId, text, BuildHandKeyboard(game, player), cancellationToken, allowFrontInsert: false);
         }
 
+        // "Question: {text}" rather than quote-wrapping it - matches the style BeginJudgingAsync's
+        // own group message already uses (ported from legacy's beginJudging chatMsg), which this
+        // rewrite-only broadcast (legacy's askQuestion never announced a new round to the group at
+        // all) should read consistently with rather than inventing its own quoting convention.
         await bot.SendMessage(game.ChatId,
-            $"Round {game.RoundNumber}! {judge.DisplayName} is judging.\n\"{question.Text}\"\nCheck your DMs to play.",
+            $"Round {game.RoundNumber}! {judge.DisplayName} is judging.\nQuestion: {question.Text}\nCheck your DMs to play.",
             cancellationToken: cancellationToken);
 
         // Bots answer immediately rather than waiting on a callback that'll never come - "pick
@@ -218,16 +223,20 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, ChatRepository 
         // Single-answer questions substitute directly into the blank, unchanged from before
         // multi-answer support existed. A multi-answer submission falls back to showing the
         // question and the joined answer separately - see BuildJudgeKeyboard's doc comment on why
-        // per-blank interleaving isn't reproduced here.
+        // per-blank interleaving isn't reproduced here. Either way, the winning answer(s) are bolded
+        // (legacy's own judgesResponse wraps them in "*...*" and sends with markDown=true) so they
+        // stand out from the surrounding question text.
         string filled;
         if (winningCards.Count == 1)
         {
             var answer = CardCatalog.FindAnswer(winningCards[0])!;
-            filled = question.Text.Contains('_') ? question.Text.Replace("_", answer.Text) : $"{question.Text} {answer.Text}";
+            var bolded = $"*{answer.Text}*";
+            filled = question.Text.Contains('_') ? question.Text.Replace("_", bolded) : $"{question.Text} {bolded}";
         }
         else
         {
-            filled = $"{question.Text}\nAnswer: {CombinedAnswerText(winningCards)}";
+            var boldedAnswer = string.Join(" >> ", winningCards.Select(id => $"*{CardCatalog.FindAnswer(id)!.Text}*"));
+            filled = $"{question.Text}\nAnswer: {boldedAnswer}";
         }
 
         // Ports legacy's judgesResponse win message ("{name} wins a point!" + the filled-in
@@ -237,7 +246,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, ChatRepository 
         var scoreLines = string.Join("", orderedPlayers.Select(p => $"\n{p.DisplayName} - {ScoreDisplayText(p)}"));
         await bot.SendMessage(game.ChatId,
             $"{winner.DisplayName} wins a point!\n{filled}{scoreLines}",
-            cancellationToken: cancellationToken);
+            parseMode: ParseMode.Markdown, cancellationToken: cancellationToken);
 
         await stats.RecordAsync(XyzzyStatNames.HandsPlayed, 1, StatMode.Cumulative, cancellationToken);
 

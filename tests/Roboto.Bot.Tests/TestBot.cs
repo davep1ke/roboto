@@ -131,10 +131,10 @@ public sealed class TestBot : IDisposable
     /// tracking) rather than building a stub Message by hand just to carry its ID.</summary>
     public static Message ReplyTo(SentMessage question) => new() { Id = question.Id };
 
-    public static Message GroupMessage(long chatId, long userId, string text, string firstName = "Test", Message? replyTo = null) => new()
+    public static Message GroupMessage(long chatId, long userId, string text, string firstName = "Test", Message? replyTo = null, string title = "Test Group") => new()
     {
         Id = Random.Shared.Next(1, int.MaxValue),
-        Chat = new Chat { Id = chatId, Type = ChatType.Group, Title = "Test Group" },
+        Chat = new Chat { Id = chatId, Type = ChatType.Group, Title = title },
         From = new User { Id = userId, FirstName = firstName },
         Text = text,
         ReplyToMessage = replyTo,

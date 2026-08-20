@@ -42,7 +42,7 @@ public sealed class MessageDispatcher(
         }
 
         logger.LogInformation("Message from {User}: {Text}", message.From?.Username ?? message.From?.FirstName, text);
-        await chats.TouchAsync(message.Chat.Id, cancellationToken);
+        await chats.TouchAsync(message.Chat.Id, cancellationToken, message.Chat.Title);
 
         // Checked first: if this user has a pending question (e.g. mid-way through /setquiethours),
         // treat whatever they typed as the answer rather than trying to parse it as a fresh command
