@@ -91,7 +91,14 @@ public class XyzzyRoundReconcilerTests
         await ReconcileAsync(bot);
 
         Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Judging with whoever"));
-        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == judgeId && m.Text.Contains("Pick the winner"));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == judgeId && m.Text.Contains("Pick the best answer"));
+
+        // BeginJudgingAsync's own group message (legacy's beginJudging chatMsg) - the one player
+        // who did answer is listed, and the other non-judge player (never answered before the
+        // force-advance) is called out by name rather than silently omitted.
+        var judgingMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId && m.Text.Contains("All answers received!"));
+        Assert.Contains("The honourable", judgingMessage.Text);
+        Assert.Contains("Skipped these chumps:", judgingMessage.Text);
     }
 
     [Fact]
@@ -145,7 +152,7 @@ public class XyzzyRoundReconcilerTests
         await ReconcileAsync(bot);
 
         Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("auto-picking a winner"));
-        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins the round"));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins a point"));
     }
 
     [Fact]

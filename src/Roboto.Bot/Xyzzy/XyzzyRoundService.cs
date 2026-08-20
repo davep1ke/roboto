@@ -1,3 +1,4 @@
+using Roboto.Bot.Chats;
 using Roboto.Bot.Commands;
 using Roboto.Bot.Stats;
 using Telegram.Bot;
@@ -23,7 +24,7 @@ namespace Roboto.Bot.Xyzzy;
 /// once - that uniqueness is what lets a card ID alone (via XyzzyCallbackData) unambiguously
 /// identify "which submission is this" during judging, no extra bookkeeping needed.
 /// </summary>
-public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery quietHours, DmOutbox outbox, StatsRecorder stats)
+public sealed class XyzzyRoundService(XyzzyGameRepository games, ChatRepository chats, QuietHoursQuery quietHours, DmOutbox outbox, StatsRecorder stats)
 {
     public const int HandSize = 10;
 
@@ -44,9 +45,11 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         game.StatusChangedUtc = DateTime.UtcNow;
         await games.SaveAsync(game, cancellationToken);
 
-        await outbox.EnqueueButtonQuestionAsync(bot, starterId,
+        var starterText = await StampChatAsync(
             "Setup's done! Use /xyzzy_join in the group to gather players, then tap Start whenever you're ready " +
             $"- I'll fill any empty slots (below {MinPlayers} players) with bots.",
+            game, starterId, cancellationToken);
+        await outbox.EnqueueButtonQuestionAsync(bot, starterId, starterText,
             [[new DmButton("Start", $"xy:sb:{game.ChatId}")]], cancellationToken);
 
         await bot.SendMessage(game.ChatId,
@@ -93,15 +96,17 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             // flow's own continuation" for whoever's action happened to trigger it via a bot-cascade
             // (see DmOutbox.EnqueueButtonQuestionAsync's own doc comment) - it must never preempt
             // something that player already has queued, like an /xyzzy_settings menu.
-            await outbox.EnqueueNoticeAsync(bot, judge.PlayerId,
+            var judgeText = await StampChatAsync(
                 $"Round {game.RoundNumber}: you're judging! \"{question.Text}\"\nWaiting for everyone else to answer...",
-                cancellationToken, allowFrontInsert: false);
+                game, judge.PlayerId, cancellationToken);
+            await outbox.EnqueueNoticeAsync(bot, judge.PlayerId, judgeText, cancellationToken, allowFrontInsert: false);
         }
 
         foreach (var player in game.Players.Where(p => p.PlayerId != game.JudgePlayerId && !p.IsBot))
         {
-            await outbox.EnqueueButtonQuestionAsync(bot, player.PlayerId,
-                $"Round {game.RoundNumber}: \"{question.Text}\"\nPick a card:", BuildHandKeyboard(game, player), cancellationToken, allowFrontInsert: false);
+            var text = await StampChatAsync(
+                $"Round {game.RoundNumber}: \"{question.Text}\"\nPick a card:", game, player.PlayerId, cancellationToken);
+            await outbox.EnqueueButtonQuestionAsync(bot, player.PlayerId, text, BuildHandKeyboard(game, player), cancellationToken, allowFrontInsert: false);
         }
 
         await bot.SendMessage(game.ChatId,
@@ -166,8 +171,9 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         {
             if (!player.IsBot)
             {
-                await outbox.EnqueueButtonQuestionAsync(bot, playerId,
-                    $"Pick your next card ({picked.Count}/{question.AnswerCount}):", BuildHandKeyboard(game, player), cancellationToken);
+                var text = await StampChatAsync(
+                    $"Pick your next card ({picked.Count}/{question.AnswerCount}):", game, playerId, cancellationToken);
+                await outbox.EnqueueButtonQuestionAsync(bot, playerId, text, BuildHandKeyboard(game, player), cancellationToken);
             }
 
             return "Answer submitted! Pick your next card.";
@@ -224,8 +230,13 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             filled = $"{question.Text}\nAnswer: {CombinedAnswerText(winningCards)}";
         }
 
+        // Ports legacy's judgesResponse win message ("{name} wins a point!" + the filled-in
+        // question, then every player's score, highest first) - previously only showed the winner's
+        // own new score, not the whole table, which is what legacy actually did.
+        var orderedPlayers = game.Players.OrderByDescending(p => p.Wins).ToList();
+        var scoreLines = string.Join("", orderedPlayers.Select(p => $"\n{p.DisplayName} - {ScoreDisplayText(p)}"));
         await bot.SendMessage(game.ChatId,
-            $"{winner.DisplayName} wins the round with: {filled}\n({winner.DisplayName} now has {ScoreDisplayText(winner)})",
+            $"{winner.DisplayName} wins a point!\n{filled}{scoreLines}",
             cancellationToken: cancellationToken);
 
         await stats.RecordAsync(XyzzyStatNames.HandsPlayed, 1, StatMode.Cumulative, cancellationToken);
@@ -259,8 +270,18 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         {
             game.Status = XyzzyStatus.Stopped;
             await games.SaveAsync(game, cancellationToken);
-            var scoreboard = string.Join('\n', game.Players.OrderByDescending(p => p.Wins).Select(p => $"{p.DisplayName}: {p.Wins} win(s)"));
-            await bot.SendMessage(game.ChatId, $"That's the end of the game! Final scores:\n{scoreboard}", cancellationToken: cancellationToken);
+
+            // Ports legacy's wrapUp() message exactly, including the "real Wins, not messed-with"
+            // asymmetry this file's ScoreDisplayText doc comment already calls out for this path.
+            var message = "Game over!";
+            if (game.Players.Count > 1)
+            {
+                message += " You can continue this game with the same players by selecting Extend in /xyzzy_settings";
+            }
+            message += "\nScores are: ";
+            message += string.Join("", game.Players.OrderByDescending(p => p.Wins).Select(p => $"\n{p.DisplayName} - {p.Wins} points"));
+
+            await bot.SendMessage(game.ChatId, message, cancellationToken: cancellationToken);
             await stats.RecordAsync(XyzzyStatNames.GamesEnded, 1, StatMode.Cumulative, cancellationToken);
             return true;
         }
@@ -297,13 +318,43 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         }
 
         var question = CardCatalog.FindQuestion(game.CurrentQuestionCardId)!;
+
+        // Ports legacy's beginJudging chat message exactly: every non-judge player's combined
+        // answer, sorted (legacy's responses.Sort() - avoids the list order always matching player
+        // order, which would tip off the judge), plus anyone who didn't get a submission in at all
+        // called out by name. Under the normal "everyone answered" path (SubmitAnswerAsync) nobody's
+        // ever missing here - the missing-list only ever has entries when this was reached via
+        // XyzzyRoundReconciler's timeout force-advance with some players still unanswered.
+        var answered = new List<string>();
+        var missing = new List<string>();
+        foreach (var player in game.Players.Where(p => p.PlayerId != game.JudgePlayerId))
+        {
+            if (game.Submissions.TryGetValue(player.PlayerId, out var cards) && cards.Count > 0)
+            {
+                answered.Add(CombinedAnswerText(cards));
+            }
+            else
+            {
+                missing.Add(player.DisplayName);
+            }
+        }
+        answered.Sort(StringComparer.Ordinal);
+
+        var chatMsg = $"All answers received! The honourable {judge.DisplayName} presiding.\n" +
+            $"Question: {question.Text}\n\n" +
+            string.Join("", answered.Select(a => $"  - {a}\n"));
+        if (missing.Count > 0)
+        {
+            chatMsg += "Skipped these chumps: " + string.Join("", missing.Select(m => $"\n - {m}"));
+        }
+
         // allowFrontInsert: false - same reasoning as BeginQuestionAsync's own calls: judging a new
         // round is an independent event, not a continuation of whatever flow the judge might
         // currently be resolving of their own.
-        await outbox.EnqueueButtonQuestionAsync(bot, judge.PlayerId,
-            $"Everyone's answered! Pick the winner for: \"{question.Text}\"", BuildJudgeKeyboard(game), cancellationToken, allowFrontInsert: false);
+        var judgeText = await StampChatAsync($"Pick the best answer!\n{question.Text}", game, judge.PlayerId, cancellationToken);
+        await outbox.EnqueueButtonQuestionAsync(bot, judge.PlayerId, judgeText, BuildJudgeKeyboard(game), cancellationToken, allowFrontInsert: false);
 
-        await bot.SendMessage(game.ChatId, "All answers are in - the judge is picking a winner.", cancellationToken: cancellationToken);
+        await bot.SendMessage(game.ChatId, chatMsg, cancellationToken: cancellationToken);
     }
 
     /// <summary>Ports legacy's /xyzzy_settings "Re-deal" - clears every player's hand and this
@@ -384,6 +435,28 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
             ? "It's quiet hours here - I'll ask the next question once they're over."
             : $"Next question in at least {game.MinWaitHours}h.";
         await bot.SendMessage(game.ChatId, text, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>Legacy stamped a per-user DM with the originating chat's title whenever the recipient
+    /// was active in more than one chat at once (TelegramAPI.postExpectedReplyToPlayer's
+    /// Presence-based check) - exactly the case reported live: two simultaneous xyzzy games, no way
+    /// to tell which one a given "Pick a card" DM belonged to. Presence tracking itself was
+    /// explicitly dropped from this port (nothing else needed it), so this reuses "how many active
+    /// xyzzy games is this player currently in" as the equivalent signal - narrower than legacy's
+    /// general chat-presence count, but the concrete scenario that motivated the feature. Uses
+    /// legacy's own non-markdown fallback format ("=>{title}\r\n{text}") since DmOutbox doesn't
+    /// carry a ParseMode through to the actual send today (nothing in this codebase does yet).</summary>
+    private async Task<string> StampChatAsync(string text, XyzzyGameState game, long playerId, CancellationToken cancellationToken)
+    {
+        var active = await games.GetAllActiveAsync(cancellationToken);
+        if (active.Count(g => g.Players.Any(p => p.PlayerId == playerId)) <= 1)
+        {
+            return text;
+        }
+
+        var chat = await chats.GetAsync(game.ChatId, cancellationToken);
+        var title = string.IsNullOrEmpty(chat.Title) ? game.ChatId.ToString() : chat.Title;
+        return $"=> {title}\n{text}";
     }
 
     /// <summary>Tops the game up to MinPlayers with bots if it's short - replaces the earlier
@@ -531,7 +604,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
         "INT", "XP", "Points", "Sq. Ft.", "ft", "6 inches", "mm", "out of 10. Must try harder.", "Buzzards", "Buzzards/m/s²", "m/s²",
     ];
 
-    /// <summary>Legacy's mod_xyzzy_player.getPointsMessage() - normally just "{wins} win(s)", but
+    /// <summary>Legacy's mod_xyzzy_player.getPointsMessage() - normally just "{wins} points.", but
     /// once a player's MessedWith flag is set (the /xyzzy_settings "Mess With" toggle), substitutes
     /// a randomized number and nonsense unit instead, re-randomized on every call - purely cosmetic,
     /// the real Wins value is never touched. Used by /xyzzy_status and the round-win announcement;
@@ -542,7 +615,7 @@ public sealed class XyzzyRoundService(XyzzyGameRepository games, QuietHoursQuery
     {
         if (!player.MessedWith)
         {
-            return $"{player.Wins} win(s)";
+            return $"{player.Wins} points.";
         }
 
         var multiplier = (50 - Random.Shared.Next(150)) / 100.0;

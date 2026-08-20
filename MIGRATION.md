@@ -44,8 +44,9 @@ fixed" narratives for specific pieces of code live as **comments in that code**,
 | 14.5 Live crcast pack import/sync (`CrCastPackImportService`) | Done, verified | `12e7d1b` |
 | 14.6 Pack selection in the `/xyzzy_start` setup wizard | Done, verified | `4cc6087` |
 | 14.7 Fix the "infinite timeout" bug (input + reconciler) | Done, verified | `012ab89` |
-| 14.8 Instance identity merge (hostname-derived `ROBOTO_INSTANCE`) | Done, verified | — |
-| 14.9 Fix `DmOutbox` front-insert window preempting unrelated queued requests | Done, verified | — |
+| 14.8 Instance identity merge (hostname-derived `ROBOTO_INSTANCE`) | Done, verified | `dca00bd` |
+| 14.9 Fix `DmOutbox` front-insert window preempting unrelated queued requests | Done, verified | `52042e5` |
+| 14.10 Round-flow message parity: judging/win-announcement wording, multi-game DM chat stamp | Done, verified | — |
 | 11. XML→SQLite migration importer | In progress — stages A (8.10) and pack-filter import wiring (8.11/14.1) done; card/chat/reply mapping done and dry-run-verified against real production XML; real (non-dry-run) import not yet performed | — |
 | 12. Cutover | Not started | — |
 
@@ -1152,6 +1153,74 @@ Verified failing without the fix (temporarily reverted the `allowFrontInsert: fa
 confirmed the test failed with round 3's hand delivered instead of settings) and passing with it,
 run 4x for stability. Full suite (165 Roboto.Bot.Tests + 12 Roboto.Migrator.Tests) green throughout.
 `docker compose build` clean.
+
+### 14.10: round-flow message parity, multi-game DM chat stamp - done, verified
+
+Live feedback after 14.9 shipped: legacy's actual round-flow wording never got ported during the
+14.1-14.8 parity pass (only the settings menu, packs, stats and a handful of other areas got a
+wording pass) - the two most visible group-chat messages, the "everyone's answered" judging notice
+and the "someone won" announcement, were still rewrite-only placeholder text. Also reported live: no
+way to tell which of two simultaneous games a DM question belonged to (legacy had this, via a
+Presence-based chat-title stamp explicitly dropped from this port back in the original parity
+scoping - see `CLAUDE.md`/this file's own phase-11 notes on presence).
+
+**Judging message** (`XyzzyRoundService.BeginJudgingAsync`) now matches legacy's `beginJudging`
+chat message exactly: "All answers received! The honourable {judge} presiding." + the question +
+every non-judge player's answer, sorted (not player-ordered, so the list doesn't tip off the judge)
++ anyone who never got a submission in called out by name under "Skipped these chumps:" - only ever
+populated via `XyzzyRoundReconciler`'s timeout force-advance path, since the normal
+`SubmitAnswerAsync`-triggered path requires everyone present to have already answered.
+
+**Win announcement** (`XyzzyRoundService.PickWinnerAsync`) now matches legacy's `judgesResponse`
+message: "{winner} wins a point!" + the filled-in question + **every** player's score
+highest-first (previously only showed the winner's own new tally, not the whole table). Fixed
+`ScoreDisplayText`'s real-score wording to legacy's exact "{wins} points." (was "{wins} win(s)",
+this rewrite's own wording) - shared by `/xyzzy_status` and this message, so both now read
+identically to before. `TryEndGameAsync`'s final scoreboard also ported to legacy's `wrapUp()`
+wording ("Game over!" + the Extend hint + "Scores are:" + real (non-messed-with) per-player
+scores - preserving the existing, deliberate real-vs-messed-with asymmetry documented on
+`ScoreDisplayText` itself).
+
+**Multi-game DM chat stamp** (`XyzzyRoundService.StampChatAsync`, new): legacy's
+`TelegramAPI.postExpectedReplyToPlayer` stamped a per-user DM with the originating chat's title
+whenever Presence tracking showed the recipient active in more than one chat at once. Presence
+itself stays out of scope (explicitly dropped, nothing else needs it), but the concrete case it
+enabled - two simultaneous xyzzy games, no way to tell which one a "Pick a card" DM belongs to -
+is real and was reported live. Substitutes "how many active xyzzy games is this player currently
+in" (`XyzzyGameRepository.GetAllActiveAsync`) as the narrower equivalent signal, stamping with
+legacy's own non-markdown fallback format ("=>{title}\n{text}", since DmOutbox doesn't carry a
+ParseMode through to the send). Applied to every per-round DM a player can receive while a second
+game might be active: the round-start hand keyboard and judge notice, the multi-answer "pick your
+next card" reprompt, the judge's "pick the best answer" keyboard, and the setup wizard's "tap
+Start" DM.
+
+**Setup-wizard "ask immediately, don't drop to the back of the queue" behaviour** - also raised in
+the same feedback - was checked and found already correct: every setup-wizard follow-up
+(`ReplyRouter.AskAsync`/`DmOutbox.EnqueueButtonQuestionAsync`, all still defaulting to
+`allowFrontInsert: true`) runs inside the same resolving window opened by `RemoveCurrentHeadAsync`
+before the answering handler runs and closed by `PumpNextAsync` right after - so it's delivered as
+the very next message regardless of anything else already sitting in that user's queue. 14.9 only
+changed this for `XyzzyRoundService`'s own *new-round broadcast* calls (an independent event, not a
+continuation of the answering user's own flow); no setup-wizard call site was touched, and none
+needed to be.
+
+New/extended tests: `XyzzyMultiGameDmStampTests.cs` (new - a player in two active games gets a
+stamped hand-keyboard DM for the second one; a player in only one does not), extended
+`XyzzyRoundReconcilerTests.TimeoutWithPartialAnswersForceAdvancesToJudging` (asserts the missing
+player is named under "Skipped these chumps:"), extended
+`XyzzyRoundLoopTests.FullRoundEndToEndDealAnswerJudgeAndAdvance` (asserts every player, not just
+the winner, appears in the win message). Every "Pick the winner"/"wins the round" test substring
+matcher across the suite updated to the new "Pick the best answer"/"wins a point" wording. Both new
+assertions verified failing when deliberately sabotaged (stamp condition forced to always skip;
+missing-player branch forced off) and passing once restored - full suite (166 Roboto.Bot.Tests + 12
+Roboto.Migrator.Tests) green across 4 consecutive runs. `docker compose build` clean.
+
+Also hardened `DmOutboxQueueOrderingTests` (14.9's own regression test) while working in this same
+area: it answered round 2's card with a single button tap, silently assuming a single-answer
+question - a multi-answer "Pick 2"+ card landing on round 2 (possible depending on catalog draw
+order) left the round incomplete and failed the test. Switched to `AnswerHandFullyAsync`, which
+answers however many cards the question actually needs, same as every other round-loop test already
+does.
 
 ## Explicitly deferred / blocked work
 

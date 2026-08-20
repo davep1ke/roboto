@@ -37,21 +37,22 @@ public class DmOutboxQueueOrderingTests
         await bot.SendCallbackAsync(Alice, startMessage.Buttons!.First(b => b.Text == "Start"));
 
         // Round 1: Alice judges (both bots already auto-answered) - pick a winner to reach round 2.
-        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the best answer"));
         await bot.SendCallbackAsync(Alice, judgeMessage.Buttons![0]);
 
         // Round 2: a bot judges; Alice is a non-judge answerer with an outstanding hand keyboard.
-        var round2Hand = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Buttons is { Count: > 0 });
+        // (Round 2's question is not necessarily her only outstanding one below - a multi-answer
+        // "Pick 2"+ question needs more than one tap, see AnswerHandFullyAsync.)
 
         // Alice asks for settings while her round-2 card is still outstanding - queues behind it,
         // not delivered yet.
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_settings"));
         Assert.DoesNotContain("Cards Against Humanity settings", bot.BotClient.SentMessages.Last(m => m.ChatId == Alice).Text);
 
-        // Answering her round-2 card is the last submission needed - completes the round, and since
-        // the judge is a bot, judging and dealing round 3 both cascade synchronously within this one
-        // callback, all before DmOutbox.PumpNextAsync ever runs for Alice.
-        await bot.SendCallbackAsync(Alice, round2Hand.Buttons![0]);
+        // Fully answering her round-2 card(s) is the last submission needed - completes the round,
+        // and since the judge is a bot, judging and dealing round 3 both cascade synchronously
+        // within the final callback, all before DmOutbox.PumpNextAsync ever runs for Alice.
+        await bot.AnswerHandFullyAsync(Alice);
 
         // The settings menu - queued first - must win, not round 3's freshly-dealt hand.
         Assert.Contains("Cards Against Humanity settings", bot.BotClient.SentMessages.Last(m => m.ChatId == Alice).Text);

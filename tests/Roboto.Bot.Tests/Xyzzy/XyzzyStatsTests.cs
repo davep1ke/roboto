@@ -46,7 +46,7 @@ public class XyzzyStatsTests
         await BeginRoundAsync(bot, Alice); // fills bots since Alice is alone
 
         // Alice judges round 1 (deterministic - Players[0]); bots auto-answer instantly.
-        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the best answer"));
         await bot.SendCallbackAsync(Alice, judgeMessage.Buttons![0]);
 
         var series = await stats.GetAsync("xyzzy.hands-played", CancellationToken.None);

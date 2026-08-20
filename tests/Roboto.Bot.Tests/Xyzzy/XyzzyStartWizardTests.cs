@@ -170,7 +170,7 @@ public class XyzzyStartWizardTests
         var judgeButton = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Buttons is { Count: > 0 }).Buttons![0];
         await bot.SendCallbackAsync(judgeId, judgeButton);
 
-        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("end of the game"));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Game over!"));
         Assert.Equal(XyzzyStatus.Stopped, (await GameAsync(bot)).Status);
     }
 

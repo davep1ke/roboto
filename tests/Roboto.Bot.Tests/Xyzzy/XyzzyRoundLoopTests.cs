@@ -82,7 +82,7 @@ public class XyzzyRoundLoopTests
 
         // Finish round 1 (Bob's the only remaining non-judge answerer) so it advances to round 2.
         await bot.AnswerHandFullyAsync(Bob);
-        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the best answer"));
         await bot.SendCallbackAsync(Alice, judgeMessage.Buttons![0]);
 
         var game = await games.GetAsync(ChatId, CancellationToken.None);
@@ -107,10 +107,10 @@ public class XyzzyRoundLoopTests
         // Round 1: Alice (the starter) is first in judge rotation - both bots should already have
         // auto-submitted an answer with no callback from anyone, so her judging keyboard should be
         // waiting immediately.
-        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the best answer"));
         Assert.Equal(2, judgeMessage.Buttons!.Count);
         await bot.SendCallbackAsync(Alice, judgeMessage.Buttons[0]);
-        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins the round"));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins a point"));
 
         // Round 2: judge rotates to Bot1 (index 1) - Alice just needs to answer, and since the
         // other non-judge player is also a bot (already auto-submitted), her tap alone should
@@ -166,7 +166,7 @@ public class XyzzyRoundLoopTests
         // with a keyboard of the submitted answers.
         var judgeKeyboardMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Buttons is { Count: > 0 });
         Assert.Equal(2, judgeKeyboardMessage.Buttons!.Count);
-        Assert.Contains("Pick the winner", bot.BotClient.SentMessages.First(m => m.ChatId == judgeId && m.Text.Contains("Pick the winner")).Text);
+        Assert.Contains("Pick the best answer", bot.BotClient.SentMessages.First(m => m.ChatId == judgeId && m.Text.Contains("Pick the best answer")).Text);
 
         // Judge picks a winner.
         var winningButton = judgeKeyboardMessage.Buttons[0];
@@ -176,12 +176,19 @@ public class XyzzyRoundLoopTests
         // (round 2) - everyone (including the old judge, now presumably answering) got a fresh
         // hand-selection DM or a "you're judging" DM.
         var groupMessages = bot.BotClient.SentMessages.Where(m => m.ChatId == ChatId).ToList();
-        Assert.Contains(groupMessages, m => m.Text.Contains("wins the round"));
+        Assert.Contains(groupMessages, m => m.Text.Contains("wins a point"));
+
+        // Ports legacy's judgesResponse win message: every player's score, not just the winner's -
+        // previously this only showed the winner's own new tally.
+        var winMessage = groupMessages.Last(m => m.Text.Contains("wins a point"));
+        Assert.Contains("Alice", winMessage.Text);
+        Assert.Contains("Bob", winMessage.Text);
+        Assert.Contains("Carol", winMessage.Text);
 
         await bot.SendAsync(TestBot.GroupMessage(ChatId, Alice, "/xyzzy_status"));
         var status = bot.BotClient.SentMessages[^1].Text;
         Assert.Contains("Round 2", status);
-        Assert.Contains("1 win(s)", status);
+        Assert.Contains("1 points.", status);
     }
 
     [Fact]
@@ -247,7 +254,7 @@ public class XyzzyRoundLoopTests
         var firstButton = bot.BotClient.SentMessages.Last(m => m.ChatId == firstAnswerer && m.Buttons is { Count: > 0 }).Buttons![0];
         await bot.SendCallbackAsync(firstAnswerer, firstButton);
         Assert.Contains("Pick your next card", bot.BotClient.AnsweredCallbacks[^1].Text!);
-        Assert.DoesNotContain(bot.BotClient.SentMessages, m => m.ChatId == judgeId && m.Text.Contains("Pick the winner"));
+        Assert.DoesNotContain(bot.BotClient.SentMessages, m => m.ChatId == judgeId && m.Text.Contains("Pick the best answer"));
 
         var secondHandMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == firstAnswerer && m.Buttons is { Count: > 0 });
         Assert.DoesNotContain(secondHandMessage.Buttons!, b => b.CallbackData == firstButton.CallbackData);
@@ -257,12 +264,12 @@ public class XyzzyRoundLoopTests
         await bot.AnswerHandFullyAsync(firstAnswerer);
         await bot.AnswerHandFullyAsync(answerers[1]);
 
-        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Text.Contains("Pick the winner"));
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == judgeId && m.Text.Contains("Pick the best answer"));
         Assert.Equal(2, judgeMessage.Buttons!.Count);
         Assert.Contains(judgeMessage.Buttons!, b => b.Text.Contains(">>", StringComparison.Ordinal));
 
         await bot.SendCallbackAsync(judgeId, judgeMessage.Buttons![0]);
-        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins the round"));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins a point"));
 
         var finalGame = await games.GetAsync(ChatId, CancellationToken.None);
         Assert.Equal(2, finalGame.RoundNumber);

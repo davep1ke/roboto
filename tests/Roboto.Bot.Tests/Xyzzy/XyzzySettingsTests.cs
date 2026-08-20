@@ -226,7 +226,7 @@ public class XyzzySettingsTests
             await bot.AnswerHandFullyAsync(playerId);
         }
 
-        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the winner"));
+        var judgeMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == Alice && m.Text.Contains("Pick the best answer"));
         await bot.SendCallbackAsync(Alice, judgeMessage.Buttons![0]);
 
         // Round 2: Alice is now a non-judge answerer with a fresh, unactioned hand keyboard - the
