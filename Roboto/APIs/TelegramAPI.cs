@@ -23,7 +23,14 @@ namespace RobotoChatBot
     /// </summary>
     public static class TelegramAPI
     {
-        private static TelegramBotClient _client;
+        private static ITelegramBotClient _client;
+
+        /// <summary>Test-only hook: swaps in a fake ITelegramBotClient (Telegram.Bot's own
+        /// SendMessage/GetUpdates/etc are extension methods on this interface, calling through to
+        /// SendRequest - faking that one method covers everything built on top of it) so tests never
+        /// make a real network call. Production code never calls this; Client's own getter lazily
+        /// constructs the real TelegramBotClient exactly as before.</summary>
+        internal static void SetClientForTesting(ITelegramBotClient client) => _client = client;
 
         /// <summary>Lazily built, cached for the process lifetime - Roboto.Settings.telegramAPIKey
         /// is only ever set once at startup (from the XML config), never reassigned live, so there's
@@ -31,7 +38,7 @@ namespace RobotoChatBot
         /// every single request. Internal rather than private so Messaging.SendPhoto (the only other
         /// caller that needs the raw client, for the multipart photo upload) can reuse the same
         /// cached instance instead of constructing its own.</summary>
-        internal static TelegramBotClient Client => _client ??= new TelegramBotClient(Roboto.Settings.telegramAPIKey);
+        internal static ITelegramBotClient Client => _client ??= new TelegramBotClient(Roboto.Settings.telegramAPIKey);
 
         /// <summary>
         /// Send the message in the expected reply. Should only be called from the expectedReply Class. May or may not expect a reply.
@@ -157,73 +164,7 @@ namespace RobotoChatBot
 
                 foreach (Update update in updates)
                 {
-                    //Flag the update ID as processed.
-                    Roboto.Settings.lastUpdate = update.Id;
-
-                    // Legacy generically resolved chat.id/chat.title off whatever the update's
-                    // single top-level payload object happened to be (it never explicitly requested
-                    // non-message update types, and its own TODO comment - "leave / kicked / chat
-                    // deleted" - shows it knew it didn't really handle them). The typed client
-                    // separates update kinds into distinct nullable properties instead of one
-                    // generically-shaped token, so the equivalent here is simply: only Update.Message
-                    // carries a chat this bot ever acted on.
-                    if (update.Message == null || update.Message.Text == null)
-                    {
-                        Roboto.log.log("No text in update", logging.loglevel.verbose);
-                        continue;
-                    }
-
-                    long chatID = update.Message.Chat.Id;
-
-                    // Locks this chat (or, for a private message, this user - chatID equals the
-                    // user's own ID for a 1:1 DM, and Telegram's own ID namespace guarantees the two
-                    // never collide, see ChatKeyedLock's comment) for the whole "process one incoming
-                    // message" span - the same chokepoint the phase-4 background scheduler's own
-                    // per-chat work locks against, so the two threads can never mutate the same
-                    // chat's data at the same time.
-                    using (ChatKeyedLock.Acquire(chatID))
-                    {
-                        chat chatData = null;
-                        if (chatID < 0)
-                        {
-                            //find the chat
-                            chatData = Chats.getChat(chatID);
-                            string chatTitle = update.Message.Chat.Title;
-                            //new chat, add
-                            if (chatData == null)
-                            {
-                                chatData = Chats.addChat(chatID, chatTitle);
-                            }
-                            if (chatData == null)
-                            {
-                                throw new InvalidOperationException("Something went wrong creating the new chat data");
-                            }
-                            chatData.setTitle(chatTitle);
-                        }
-
-                        //prevent delays - its sent something valid back to us so we are probably OK.
-                        if (chatData != null) { chatData.resetLastUpdateTime(); }
-
-                        message m = new message(update.Message);
-
-                        //now decide what to do with this stuff.
-                        bool processed = false;
-
-                        //check if this is an expected reply, and if so route it to the
-                        Messaging.parseExpectedReplies(m);
-
-                        foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
-                        {
-                            //Skip this message if the chat is muted.
-                            if (plugin.chatHook && (chatData == null || (chatData.muted == false || plugin.chatIfMuted)))
-                            {
-                                if (!processed || plugin.chatEvenIfAlreadyMatched)
-                                {
-                                    processed = plugin.chatEvent(m, chatData);
-                                }
-                            }
-                        }
-                    }
+                    DispatchUpdate(update);
                 }
             }
             catch (ApiRequestException e)
@@ -254,6 +195,82 @@ namespace RobotoChatBot
         public static int getUpdateID()
         {
             return Roboto.Settings.lastUpdate + 1;
+        }
+
+        /// <summary>
+        /// The actual "what do we do with an incoming update" logic - pulled out of getUpdates()'s
+        /// polling loop (phase 7) so it's directly callable/testable without a real network long-poll
+        /// in the way: feed it a synthetic Update built by hand and assert on what the fake client
+        /// recorded as "sent". No behavior change from the extraction itself - getUpdates() still
+        /// calls this once per update it fetches, in the same order, under the same per-chat lock.
+        /// </summary>
+        public static void DispatchUpdate(Update update)
+        {
+            //Flag the update ID as processed.
+            Roboto.Settings.lastUpdate = update.Id;
+
+            // Legacy generically resolved chat.id/chat.title off whatever the update's single
+            // top-level payload object happened to be (it never explicitly requested non-message
+            // update types, and its own TODO comment - "leave / kicked / chat deleted" - shows it
+            // knew it didn't really handle them). The typed client separates update kinds into
+            // distinct nullable properties instead of one generically-shaped token, so the
+            // equivalent here is simply: only Update.Message carries a chat this bot ever acted on.
+            if (update.Message == null || update.Message.Text == null)
+            {
+                Roboto.log.log("No text in update", logging.loglevel.verbose);
+                return;
+            }
+
+            long chatID = update.Message.Chat.Id;
+
+            // Locks this chat (or, for a private message, this user - chatID equals the user's own
+            // ID for a 1:1 DM, and Telegram's own ID namespace guarantees the two never collide, see
+            // ChatKeyedLock's comment) for the whole "process one incoming message" span - the same
+            // chokepoint the phase-4 background scheduler's own per-chat work locks against, so the
+            // two threads can never mutate the same chat's data at the same time.
+            using (ChatKeyedLock.Acquire(chatID))
+            {
+                chat chatData = null;
+                if (chatID < 0)
+                {
+                    //find the chat
+                    chatData = Chats.getChat(chatID);
+                    string chatTitle = update.Message.Chat.Title;
+                    //new chat, add
+                    if (chatData == null)
+                    {
+                        chatData = Chats.addChat(chatID, chatTitle);
+                    }
+                    if (chatData == null)
+                    {
+                        throw new InvalidOperationException("Something went wrong creating the new chat data");
+                    }
+                    chatData.setTitle(chatTitle);
+                }
+
+                //prevent delays - its sent something valid back to us so we are probably OK.
+                if (chatData != null) { chatData.resetLastUpdateTime(); }
+
+                message m = new message(update.Message);
+
+                //now decide what to do with this stuff.
+                bool processed = false;
+
+                //check if this is an expected reply, and if so route it to the
+                Messaging.parseExpectedReplies(m);
+
+                foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
+                {
+                    //Skip this message if the chat is muted.
+                    if (plugin.chatHook && (chatData == null || (chatData.muted == false || plugin.chatIfMuted)))
+                    {
+                        if (!processed || plugin.chatEvenIfAlreadyMatched)
+                        {
+                            processed = plugin.chatEvent(m, chatData);
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>

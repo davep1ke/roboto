@@ -16,6 +16,27 @@ namespace RobotoChatBot
         //module list. Static, as dont want to serialise the plugins, just the data.
         public static List<Modules.RobotoModuleTemplate> plugins = new List<Modules.RobotoModuleTemplate>();
 
+        /// <summary>
+        /// Test-only: clears every registered plugin's cached localData so the next initPluginData()
+        /// call re-caches against whatever Roboto.Settings/Roboto.Store a test just pointed at,
+        /// instead of silently reusing a previous test's data. Doesn't touch the `plugins` list
+        /// itself or re-scan assemblies - initPluginAssemblies() should only ever run once per
+        /// process: found (not fixed, no observed production impact - flagged in MIGRATION.md)
+        /// while building this that both pluginExists(Type) and typeDataExists(Type) below compare
+        /// `t.GetType()` to a stored type instead of `t` itself - t.GetType() returns
+        /// System.RuntimeType (the type of the Type object), never the type t represents, so both
+        /// checks always return false. Harmless today only because initPluginAssemblies() and
+        /// registerData() each only ever run once per module per process in production - re-scanning
+        /// or re-registering would silently duplicate entries with this bug in place.
+        /// </summary>
+        internal static void ResetPluginDataForTesting()
+        {
+            foreach (var plugin in plugins)
+            {
+                plugin.localData = null;
+            }
+        }
+
         //TODO - add PluginData & ChatPluginData data here, migrate & add load/save
         /// <summary>
         /// Load all the plugins BEFORE loading the settings file. We need to be able to enumerate the extra types when loading the XML. 

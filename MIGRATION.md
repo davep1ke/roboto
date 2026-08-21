@@ -28,7 +28,7 @@ is arbitrary.
 | 4. Real periodic background scheduler + `ChatKeyedLock` | Done, verified | — |
 | 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Not started | — |
 | 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Not started | — |
-| 7. Test harness + business-logic test suite | Not started | — |
+| 7. Test harness + business-logic test suite | Done, verified (partial coverage - see notes) | — |
 | 8. Migrator retarget (`XmlImporter` → new decomposed store) | Not started | — |
 | 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Not started | — |
 | 10. Cutover prep | Not started | — |
@@ -261,11 +261,88 @@ handling the real 409-Conflict round trip from phase 2 concurrently - genuine co
 serialized-behind-a-big-lock. The `ChatKeyedLock` standalone test above gives direct evidence for the
 mechanism itself, not just "the live run didn't crash."
 
+## Phase 7 notes (test harness + business-logic test suite)
+
+Explicitly scoped by the user as a partial-coverage "yardstick," not a re-derivation of the abandoned
+branch's full ~198-test suite: "get as many of those tests working as makes sense - obviously some
+will fail as elements haven't been implemented." 12 tests added, all green, stable across repeated
+runs.
+
+**`tests/Roboto.Tests/TestHarness.cs`**: this codebase is 100% static-global state by design
+(`Roboto.Settings`/`Roboto.Store`/`Roboto.Options`/`Plugins.plugins`/`TelegramAPI`'s cached client) -
+no DI, so there's no way to give each test its own isolated instance the way the abandoned rewrite
+branch's DI-per-test `TestBot` could. `TestHarness`'s constructor instead repoints every static at
+fresh state before each test (new temp SQLite file, fresh in-memory `settings.load()`, a fresh
+`FakeTelegramBotClient`) and disables xUnit parallelization assembly-wide (`AssemblyInfo.cs`) since
+shared statics can't tolerate concurrent tests. `Plugins.plugins` itself (the module *objects*, not
+their data) is scanned once per process, not once per test - see the `pluginExists` bug below.
+
+**`Roboto/APIs/TelegramAPI.cs`**: `Client`'s declared type changed from concrete `TelegramBotClient`
+to the `ITelegramBotClient` interface it already implements (Telegram.Bot's own extension methods are
+defined against the interface anyway), plus a test-only `SetClientForTesting` hook - this is the only
+production-code change this phase needed. The per-update dispatch body that lived inline in
+`getUpdates()`'s foreach loop was extracted verbatim into a new public `DispatchUpdate(Update)` method
+so tests can drive one update through the exact same logic without a real long-poll; `getUpdates()`
+now just calls it per update. Pure code-motion, no behavior change.
+
+**`tests/Roboto.Tests/FakeTelegramBotClient.cs`**: single `SendRequest<TResponse>` chokepoint
+(matches how `ITelegramBotClient`'s own extension methods work), adapted from the abandoned rewrite
+branch's fake of the same name. Deliberately keeps full per-row keyboard structure rather than
+flattening it - "tapping a button" here means sending the button's exact label as a new message
+(legacy's actual `ReplyKeyboardMarkup` behavior; hybrid inline keyboards are phase 5, not built yet),
+so a test needs the real row/label shape to find the right button to tap.
+`TestHarness.TapButton(userId, text)` is literally `SendPrivateMessage(userId, text)` - validated as
+sufficient because `ExpectedReply`'s match predicate for DM-based flows (`m.chatID == e.userID`) is
+satisfied by any private message from that user, no reply-to-message-id wiring needed.
+
+**Bug found, not fixed (flagged in-code, not production-critical)**: `Plugins.pluginExists`/
+`typeDataExists` both compare `t.GetType() == existing.GetType()` where `t` is already a `Type`
+object - `t.GetType()` returns `System.RuntimeType` (the type of the `Type` object itself), never
+`t`, so the comparison is always `false`. Harmless in production only because
+`initPluginAssemblies()`/`registerData()` each run exactly once per process there; would silently
+duplicate entries if that invariant ever broke. `Plugins.ResetPluginDataForTesting()` (new, test-only)
+works around it by never re-scanning plugins after the first `TestHarness`, only clearing each
+plugin's cached `localData` between tests.
+
+**Namespace collision hit while setting up the test project**: `namespace Roboto.Tests;` made C#
+resolve `Roboto.Options`/`Roboto.Store`/`Roboto.Settings` as a namespace-path lookup (treating
+`Roboto` as an enclosing-namespace prefix) instead of the `RobotoChatBot.Roboto` class's static
+members, throwing `CS0234`. Fixed by using `namespace RobotoTests;` (no dot) for the C# namespace,
+while keeping the project/folder/assembly name as `Roboto.Tests` (unrelated, no conflict there).
+
+**Coverage added**: `AdminCommandsTests` (mute/unmute, mute suppresses non-exempt modules, first-
+admin bootstrap), `XyzzyGameFlowTests` (full round: start → "Use Defaults" → join → "Start" → deal
+hands → both non-judge players answer → judging triggers automatically → judge picks a winner → point
+awarded and next round auto-starts; plus under-`MinPlayers` rejection and idempotent re-join) -
+seeded via synthetic cards written directly into `mod_xyzzy_coredata.questions`/`.answers` under
+`mod_xyzzy.primaryPackID`, since the real catalog only populates via a live CardCast/CrCast network
+import. `QuoteTests` (add → retrieve, cancel-aborts-cleanly), `BirthdayTests` (add → list data,
+remove), `SteamTests` (the two network-free commands only - see below).
+
+**Sanity-checked by breaking something** (matching this project's established convention): commented
+out `winner.wins++` in `judgesResponse` and confirmed `XyzzyGameFlowTests.
+FullRoundAwardsAPointAndStartsTheNextRound` failed as expected, then reverted and confirmed all tests
+passed again.
+
+**Deliberately not covered this phase** (the "some will fail/some are left out" part of the ask):
+- `mod_steam`'s `/steam_addplayer` and `/steam_check` flows - both call the real Steam Web API
+  synchronously (`mod_steam_steamapi.cs`'s `WebClient` calls), no fake HTTP client exists yet. Only
+  the two network-free commands (`/steam_help`, `/steam_stats` with no players) are tested.
+- `mod_wordcraft` - not touched at all this pass, purely a time/priority call (breadth across the
+  four other modules was judged more valuable than five-module completeness).
+- Anything depending on not-yet-built phases: hybrid inline keyboards/`CallbackQuery` (phase 5),
+  ScottPlot charting (phase 6), migrator retarget (phase 8).
+- `ChatKeyedLockTests` re-derivation (flagged in the original plan as still worth porting from the
+  abandoned branch) - not done this pass; phase 4's own live-bot verification already gave direct
+  evidence the mechanism works, so this was judged lower priority than breadth across modules.
+
 ## What's still open
 
-Everything from phase 3 onward - see the phase table above and the full plan file for what each phase
-actually involves, the four explicitly-confirmed architecture decisions (hybrid keyboards, real
-background scheduler, decomposed persistence + relational tables for whole-bot lists, carry-forward
-deltas), and the resolved/open sub-decisions (chatPriority sort - decided, implement; card/pack ID
-scheme - open, needs a decision during phase 5; daily XML backup - decided, not needed, TrueNAS
-snapshots instead; background-scheduler batching caps - decided, keep as legacy has them).
+Phases 5, 6, 8, 9, 10 - see the phase table above and the full plan file for what each phase actually
+involves, the four explicitly-confirmed architecture decisions (hybrid keyboards, real background
+scheduler, decomposed persistence + relational tables for whole-bot lists, carry-forward deltas), and
+the resolved/open sub-decisions (chatPriority sort - decided, implement; card/pack ID scheme - open,
+needs a decision during phase 5; daily XML backup - decided, not needed, TrueNAS snapshots instead;
+background-scheduler batching caps - decided, keep as legacy has them). Phase 7's own deferred items
+(above) are additional, narrower follow-ups within phases 5/6/8's own scope, not separately tracked
+here.
