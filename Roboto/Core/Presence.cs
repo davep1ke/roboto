@@ -13,28 +13,35 @@ namespace RobotoChatBot
 
         public static void backgroundProcessing()
         {
+            // RecentChatMembers is another shared list touched by both the message thread
+            // (markPresence, on every incoming group message) and the background scheduler thread -
+            // same GlobalListsKey convention as expectedReplies, see Messaging.cs's own comment.
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                Roboto.Settings.RecentChatMembers.RemoveAll(x => x.chatID == x.userID); //TODO <- this should be a startup housekeeping check only.
 
-
-            Roboto.Settings.RecentChatMembers.RemoveAll(x => x.chatID == x.userID); //TODO <- this should be a startup housekeeping check only. 
-
-            //Remove any stale presence info
-            Roboto.Settings.RecentChatMembers.RemoveAll(x => x.lastSeen < DateTime.Now.Subtract(new TimeSpan(Roboto.Settings.chatPresenceExpiresAfterHours, 0, 0)));
+                //Remove any stale presence info
+                Roboto.Settings.RecentChatMembers.RemoveAll(x => x.lastSeen < DateTime.Now.Subtract(new TimeSpan(Roboto.Settings.chatPresenceExpiresAfterHours, 0, 0)));
+            }
         }
 
         /// <summary>
-        /// Mark someone as having participated in a chat in some way. Used for determining wether to stamp outgoing messages or not, and for building up a recent picture of the chat members 
+        /// Mark someone as having participated in a chat in some way. Used for determining wether to stamp outgoing messages or not, and for building up a recent picture of the chat members
         /// </summary>
         /// <param name="userID"></param>
         /// <param name="chatID"></param>
         public static void markPresence(long userID, long chatID, string userName)
         {
-            if (chatID < 0) //only mark group chats, not private chats. 
+            if (chatID < 0) //only mark group chats, not private chats.
             {
-                foreach (chatPresence p in Roboto.Settings.RecentChatMembers)
+                using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
                 {
-                    if (p.userID == userID && p.chatID == chatID) { p.touch(userName); return; }
+                    foreach (chatPresence p in Roboto.Settings.RecentChatMembers)
+                    {
+                        if (p.userID == userID && p.chatID == chatID) { p.touch(userName); return; }
+                    }
+                    Roboto.Settings.RecentChatMembers.Add(new chatPresence(userID, chatID, userName));
                 }
-                Roboto.Settings.RecentChatMembers.Add(new chatPresence(userID, chatID, userName));
             }
         }
 
@@ -45,13 +52,18 @@ namespace RobotoChatBot
         /// <returns></returns>
         public static List<chatPresence> getChatPresence(long userID)
         {
-            return Roboto.Settings.RecentChatMembers.Where(x => x.userID == userID).ToList();
-
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                return Roboto.Settings.RecentChatMembers.Where(x => x.userID == userID).ToList();
+            }
         }
 
         public static List<chatPresence> getChatRecentMembers(long chatID)
         {
-            return Roboto.Settings.RecentChatMembers.Where(x => x.chatID == chatID).ToList();
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                return Roboto.Settings.RecentChatMembers.Where(x => x.chatID == chatID).ToList();
+            }
         }
 
 

@@ -25,7 +25,7 @@ is arbitrary.
 | 3. Persistence swap (`IStateStore` blob rows + relational tables), `.env`/`ROBOTO_INSTANCE` config | Done, verified | — |
 | 3b. Split the xyzzy card/pack catalog out of its blob into the `xyzzy_cards`/`xyzzy_packs` tables | Done, verified | — |
 | 3c. `logs` table + custom Serilog DB sink + 30-day purge task | Done, verified | — |
-| 4. Real periodic background scheduler + `ChatKeyedLock` | Not started | — |
+| 4. Real periodic background scheduler + `ChatKeyedLock` | Done, verified | — |
 | 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Not started | — |
 | 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Not started | — |
 | 7. Test harness + business-logic test suite | Not started | — |
@@ -188,6 +188,78 @@ confirmed by direct SQLite inspection. The purge path itself (correct SQL, follo
 delete-with-cutoff pattern already verified for `expected_replies`/`chat_presence`/`stats`) wasn't yet
 exercised for real, since `Plugins.backgroundProcessing()` doesn't fire on a live timer until phase 4 -
 flagged to confirm once phase 4's scheduler is running and actually driving it repeatedly.
+
+## Phase 4 notes (real background scheduler + `ChatKeyedLock`)
+
+**`Core/BackgroundScheduler.cs`**: a genuine dedicated `Thread`, not a timer embedded in the message
+loop - calls `Plugins.backgroundProcessing(false)` every 60s (matching `mod_xyzzy`'s own already-
+declared `backgroundMins=1`), started from `Roboto.cs`'s `startBackground()` right before
+`Messaging.processUpdates()`. This is genuinely new behavior, not a faithful port of anything: tracing
+`Roboto.cs`/`Core/Plugins.cs`/`Core/Messaging.cs` confirmed `Plugins.backgroundProcessing()` was only
+ever invoked once, after the message loop had already exited, or manually via `/background` - legacy
+never actually ran this live on a timer in any version checked. The batching caps in
+`mod_xyzzy_coredata` (5 full-checks + 50 mini-checks per pass) are kept exactly as legacy had them, not
+simplified now that a live timer exists - confirmed still load-bearing (a real background pass
+genuinely takes measurable time even across a small number of games).
+
+**`Core/ChatKeyedLock.cs`**: per-key (chat/user ID) mutual exclusion, needed because a second thread
+now genuinely runs concurrently with live message dispatch for the first time in this codebase's
+history - legacy was safe with zero locking anywhere specifically because it was structurally single-
+threaded (confirmed by the same trace above). Deliberately **not** the AsyncLocal-based reentrant
+design an equivalent primitive needed on the abandoned rewrite branch - that complexity was specific
+to async code (a continuation can resume on a different thread, breaking simple thread-based
+reentrancy). This codebase is fully synchronous throughout, so a plain `lock` (`Monitor.Enter`/`Exit`)
+gives correct per-thread reentrancy for free, with no extra machinery - confirmed directly (not just
+reasoned about) with a standalone 3-part test: (1) two different threads acquiring the *same* key
+genuinely serialize (one measurably waits for the other), (2) two threads acquiring *different* keys
+run genuinely concurrently rather than contending on one global lock (proving this actually delivers
+concurrent throughput, not just "on a separate thread but still fully blocking"), (3) the same thread
+re-acquiring the same key it already holds doesn't deadlock.
+
+`GlobalListsKey` (reserved as `0`, never a real chat/user ID under Telegram's own ID namespace rules)
+protects `Roboto.Settings`' own top-level lists (`chatData`, `pluginData`, `expectedReplies`,
+`RecentChatMembers`, `stats.statsList`) - **every** direct read/write of these across the whole
+codebase was audited and locked: `Core/Messaging.cs` (`expectedReplies` - the highest-traffic one,
+touched on every message), `Core/Presence.cs` (`RecentChatMembers`), `Core/Plugins.cs` (`pluginData`),
+`Core/stats.cs` (`statsList`), `Core/Chats.cs` (`chatData`), `settings.cs`'s own `save()` (snapshots
+every list under the lock before the actual - potentially slow - DB writes, then holds the lock again
+specifically around the three real-table writes since those touch each item's own nested fields, not
+just the outer list), and every module's own `backgroundProcessing()` that iterates `chatData`
+directly (`mod_xyzzy`, `mod_quote`, `mod_birthdays`, `mod_steam` - `mod_wordcraft`/`mod_standard` don't
+touch it directly). One direct unlocked mutation was also found and fixed outside these
+(`mod_xyzzy_chatdata.cs`'s player-removal cleanup was calling `Roboto.Settings.expectedReplies.Remove`
+directly instead of the now-locked `Messaging.removeReply`). Two methods in
+`mod_xyzzy_coredata.cs` (`removeACard`/`removeQCard`, reachable from a live pack import/sync, which
+touch *every* chat's game state to remap removed-card references) got the same snapshot-then-per-chat-
+lock treatment `mod_xyzzy.backgroundProcessing` uses. `removeDormantPacks`/`removePack` were left
+unlocked with a comment - confirmed genuinely dead code (legacy's own call site is commented out) -
+and `removeDupeCards`/`replaceCardReferences` needed no changes at all, turning out to already be
+entirely inside a `/* ... */` block comment, not real compiled code.
+
+**Lock granularity, deliberately**: never held across a Telegram/network API call - every fix above
+locks only the actual in-memory list touch (a snapshot, an Add/Remove, or - for the three real-table
+saves in `settings.save()`, and `stats.cs`'s in-memory-only methods - a bounded, fast, purely-local
+operation), releasing before any `sendMessage()`-shaped call. Holding `GlobalListsKey` across a slow
+network call would have meant one chat's slow outbound message blocking every other chat's live
+dispatch - exactly the "background processing blocks everything" problem this whole phase exists to
+avoid, just relocated to a different call site.
+
+**Known, deliberately accepted limitation, not solved by this pass**: locking makes the shared list
+*structures* safe (no more concurrent-modification exceptions/corruption), but doesn't make every
+check-then-act sequence built on top of them fully atomic - e.g. `Messaging.processNewExpectedReply`'s
+"does this user already have an outstanding message" check and its subsequent decision to send-or-
+queue are two separate lock acquisitions, so a genuinely concurrent add for the same user landing in
+between is a real, narrow, deliberately-accepted residual race (worst case: a queueing-order hiccup,
+not data corruption or a crash). Fully closing this would need either a bigger queueing-algorithm
+redesign or holding a lock across the send call itself (ruled out above) - flagged rather than silently
+assumed away.
+
+**Verified**: build clean; a real 75-second live run against the `beefy` test bot showed the scheduler
+firing exactly on its 60s interval (`Messaging.backgroundProcessing`, `Dormant Chat Check`, and
+`XYZZY - background` all completing with zero exceptions) *while* the message loop kept polling and
+handling the real 409-Conflict round trip from phase 2 concurrently - genuine concurrent execution, not
+serialized-behind-a-big-lock. The `ChatKeyedLock` standalone test above gives direct evidence for the
+mechanism itself, not just "the live run didn't crash."
 
 ## What's still open
 

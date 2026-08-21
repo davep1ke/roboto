@@ -20,24 +20,42 @@ namespace RobotoChatBot
         /// </summary>
         public static void removeDormantChats()
         {
-            logging.longOp lo_s = new logging.longOp("Dormant Chat Check", Roboto.Settings.chatData.Count());
+            // Snapshot-then-release, not held for the whole pass: tryPurgeData()/logStat() below
+            // don't touch the top-level chatData list itself, only each chat's own data - so the
+            // lock only needs to cover the two things that actually do (the initial snapshot, and
+            // each Remove) rather than this whole potentially-long dormant-chat sweep, which would
+            // otherwise block live message dispatch for its entire duration.
+            List<chat> dormant;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                dormant = Roboto.Settings.chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(Roboto.Settings.purgeInactiveChatsAfterXDays, 0, 0, 0))).ToList();
+            }
+
+            logging.longOp lo_s = new logging.longOp("Dormant Chat Check", dormant.Count);
 
             Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, false, true);
-            foreach (chat c in Roboto.Settings.chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(Roboto.Settings.purgeInactiveChatsAfterXDays, 0, 0, 0))).ToList())
+            foreach (chat c in dormant)
             {
-                //check all plugins and remove data if no longer reqd
-                bool isPurgable = c.tryPurgeData();
+                //check all plugins and remove data if no longer reqd - locked per-chat, same
+                //chokepoint live message dispatch for this chat locks against.
+                using (ChatKeyedLock.Acquire(c.chatID))
+                {
+                    bool isPurgable = c.tryPurgeData();
 
-                //if all plugins are purged, delete the chat
-                if (isPurgable)
-                {
-                    Roboto.log.log("Purging all data for chat " + c.chatID);
-                    Roboto.Settings.stats.logStat(new statItem("Chats Purged", typeof(Roboto)));
-                    Roboto.Settings.chatData.Remove(c);
-                }
-                else
-                {
-                    Roboto.log.log("Skipping purge of chat " + c.chatID + " as one or more plugins reported they shouldn't be purged");
+                    //if all plugins are purged, delete the chat
+                    if (isPurgable)
+                    {
+                        Roboto.log.log("Purging all data for chat " + c.chatID);
+                        Roboto.Settings.stats.logStat(new statItem("Chats Purged", typeof(Roboto)));
+                        using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+                        {
+                            Roboto.Settings.chatData.Remove(c);
+                        }
+                    }
+                    else
+                    {
+                        Roboto.log.log("Skipping purge of chat " + c.chatID + " as one or more plugins reported they shouldn't be purged");
+                    }
                 }
                 lo_s.addone();
             }
@@ -54,32 +72,38 @@ namespace RobotoChatBot
         /// <returns></returns>
         public static chat getChat(long chat_id)
         {
-            foreach (chat c in Roboto.Settings.chatData)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                if (c.chatID == chat_id)
+                foreach (chat c in Roboto.Settings.chatData)
                 {
-                    return c;
+                    if (c.chatID == chat_id)
+                    {
+                        return c;
+                    }
                 }
+                return null;
             }
-            return null;
         }
 
         /// <summary>
-        /// Add data about a chat to the store. 
+        /// Add data about a chat to the store.
         /// </summary>
         /// <param name="chat_id"></param>
         public static chat addChat(long chat_id, string chatTitle)
         {
-            if (getChat(chat_id) == null)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                Console.WriteLine("Creating data for chat " + chat_id.ToString());
-                chat chatObj = new chat(chat_id, chatTitle);
-                Roboto.Settings.chatData.Add(chatObj);
-                return chatObj;
-            }
-            else
-            {
-                throw new InvalidDataException("Chat already exists!");
+                if (getChat(chat_id) == null)
+                {
+                    Console.WriteLine("Creating data for chat " + chat_id.ToString());
+                    chat chatObj = new chat(chat_id, chatTitle);
+                    Roboto.Settings.chatData.Add(chatObj);
+                    return chatObj;
+                }
+                else
+                {
+                    throw new InvalidDataException("Chat already exists!");
+                }
             }
         }
 

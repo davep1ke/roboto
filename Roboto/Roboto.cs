@@ -150,11 +150,19 @@ namespace RobotoChatBot
 
             Settings.save();
 
+            //Real periodic background processing on its own thread, genuinely concurrent with the
+            //message loop below - see BackgroundScheduler's own comment for why (legacy only ever
+            //ran this at shutdown/via /background, not live).
+            log.log("Starting background scheduler thread", logging.loglevel.high);
+            BackgroundScheduler.Start();
+
             log.log("Starting main thread", logging.loglevel.high);
 
             Messaging.processUpdates();
 
-            //Perform all background processing, syncing etc..
+            BackgroundScheduler.Stop();
+
+            //Perform one final background processing pass on the way out.
             Plugins.backgroundProcessing(false);
 
 

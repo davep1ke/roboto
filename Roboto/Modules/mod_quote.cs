@@ -243,19 +243,32 @@ namespace RobotoChatBot.Modules
 
         protected override void backgroundProcessing()
         {
-            foreach (chat c in Roboto.Settings.chatData)
+            // Snapshot the shared chatData list under GlobalListsKey (see mod_xyzzy.
+            // backgroundProcessing's own comment for the full reasoning), then lock each chat
+            // individually while touching its own data / sending its auto-quote - same chokepoint
+            // live message dispatch for that chat locks against.
+            List<chat> chatsSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                mod_quote_data localChatData = c.getPluginData<mod_quote_data>();
-                
-                if (localChatData != null && localChatData.autoQuoteEnabled && DateTime.Now > localChatData.nextAutoQuoteAfter && localChatData.multiquotes.Count > 0)
+                chatsSnapshot = Roboto.Settings.chatData.ToList();
+            }
+
+            foreach (chat c in chatsSnapshot)
+            {
+                using (ChatKeyedLock.Acquire(c.chatID))
                 {
-                    Messaging.SendMessage(c.chatID, getQuote(c), null, true);
-                    int maxMins = localChatData.autoQuoteHours * 60;
-                    //go back 1/8, then add rand 1/4 on
-                    int randomMins = settings.getRandom((localChatData.autoQuoteHours * 60) /4);
-                    maxMins = maxMins - ( maxMins / 8) + randomMins;
-                    localChatData.nextAutoQuoteAfter = DateTime.Now.AddMinutes(maxMins);
-                    
+                    mod_quote_data localChatData = c.getPluginData<mod_quote_data>();
+
+                    if (localChatData != null && localChatData.autoQuoteEnabled && DateTime.Now > localChatData.nextAutoQuoteAfter && localChatData.multiquotes.Count > 0)
+                    {
+                        Messaging.SendMessage(c.chatID, getQuote(c), null, true);
+                        int maxMins = localChatData.autoQuoteHours * 60;
+                        //go back 1/8, then add rand 1/4 on
+                        int randomMins = settings.getRandom((localChatData.autoQuoteHours * 60) /4);
+                        maxMins = maxMins - ( maxMins / 8) + randomMins;
+                        localChatData.nextAutoQuoteAfter = DateTime.Now.AddMinutes(maxMins);
+
+                    }
                 }
 
             }

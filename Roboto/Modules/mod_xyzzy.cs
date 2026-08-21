@@ -305,21 +305,37 @@ namespace RobotoChatBot.Modules
             mod_xyzzy_coredata localdata = (mod_xyzzy_coredata)getPluginData();
             logging.longOp lo_bg = new logging.longOp("XYZZY - background", 5);
 
+            // Roboto.Settings.chatData is the shared top-level list - snapshot it under
+            // GlobalListsKey (same convention as everywhere else this pass touches that list) rather
+            // than enumerating it live, since the message thread can concurrently add a new chat to
+            // it at any time. The actual per-chat work below (chatData.check(...)) is locked by that
+            // chat's own ID instead - the same chokepoint live message dispatch for that chat locks
+            // against - not the global lock, so this background pass never blocks unrelated chats'
+            // live message processing while it works through the list.
+            List<chat> chatsSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                chatsSnapshot = Roboto.Settings.chatData.ToList();
+            }
+
             //update stats
             int activeGames = 0;
             int activePlayers = 0;
-            foreach (chat c in Roboto.Settings.chatData)
+            foreach (chat c in chatsSnapshot)
             {
-                mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
-                if (chatData != null && chatData.status != xyzzy_Statuses.Stopped)
+                using (ChatKeyedLock.Acquire(c.chatID))
                 {
-                    activeGames++;
-                    activePlayers += chatData.players.Count;
+                    mod_xyzzy_chatdata chatData = c.getPluginData<mod_xyzzy_chatdata>();
+                    if (chatData != null && chatData.status != xyzzy_Statuses.Stopped)
+                    {
+                        activeGames++;
+                        activePlayers += chatData.players.Count;
+                    }
                 }
             }
             Roboto.Settings.stats.logStat(new statItem("Active Games", this.GetType(), activeGames));
             Roboto.Settings.stats.logStat(new statItem("Active Players", this.GetType(), activePlayers));
-            
+
             //sync packs where needed
             localdata.packSyncCheck();
             lo_bg.addone();
@@ -329,40 +345,46 @@ namespace RobotoChatBot.Modules
             List<mod_xyzzy_chatdata> dataToCheck = new List<mod_xyzzy_chatdata>();
             List<mod_xyzzy_chatdata> dataToMiniCheck = new List<mod_xyzzy_chatdata>();
 
-            foreach (chat c in Roboto.Settings.chatData)
+            foreach (chat c in chatsSnapshot)
             {
-                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
-                if (chatData != null)
-                { 
-                    //do a full check (incl. getting group count to check access) at most once per day. Dont full check stopped games
-                    if (chatData.statusCheckedTime < DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0)) && chatData.status != xyzzy_Statuses.Stopped)
+                using (ChatKeyedLock.Acquire(c.chatID))
+                {
+                    mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData<mod_xyzzy_chatdata>();
+                    if (chatData != null)
                     {
-                        dataToCheck.Add(chatData);
-                    }
-                    //do a mini check on active games at most every 15 mins
-                    else if (chatData.statusMiniCheckedTime < DateTime.Now.Subtract(new TimeSpan(0,0,15,0)))
-                    {
-                        dataToMiniCheck.Add(chatData);
+                        //do a full check (incl. getting group count to check access) at most once per day. Dont full check stopped games
+                        if (chatData.statusCheckedTime < DateTime.Now.Subtract(new TimeSpan(1, 0, 0, 0)) && chatData.status != xyzzy_Statuses.Stopped)
+                        {
+                            dataToCheck.Add(chatData);
+                        }
+                        //do a mini check on active games at most every 15 mins
+                        else if (chatData.statusMiniCheckedTime < DateTime.Now.Subtract(new TimeSpan(0,0,15,0)))
+                        {
+                            dataToMiniCheck.Add(chatData);
+                        }
                     }
                 }
             }
-            
+
 
             log("There are " + dataToCheck.Count() + " games to check. Checking oldest " + localdata.backgroundChatsToProcess , logging.loglevel.normal);
             lo_bg.totalLength = 5 + localdata.backgroundChatsToProcess + localdata.backgroundChatsToMiniProcess;
 
-            //do a full check on the oldest n records. Dont check more than once per day. 
+            //do a full check on the oldest n records. Dont check more than once per day.
             bool firstrec = true;
             foreach (mod_xyzzy_chatdata chatData in dataToCheck.OrderBy(x => x.statusCheckedTime).Take(localdata.backgroundChatsToProcess))
             {
-                if (firstrec)
+                using (ChatKeyedLock.Acquire(chatData.chatID))
                 {
-                    log("Oldest chat was last checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low);
-                    Roboto.Settings.stats.logStat(new statItem("Background Wait", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes)));
+                    if (firstrec)
+                    {
+                        log("Oldest chat was last checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low);
+                        Roboto.Settings.stats.logStat(new statItem("Background Wait", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusCheckedTime).TotalMinutes)));
+                    }
+                    chatData.check(true);
+                    firstrec = false;
+                    lo_bg.addone();
                 }
-                chatData.check(true);
-                firstrec = false;
-                lo_bg.addone();
             }
             lo_bg.updateLongOp(localdata.backgroundChatsToProcess + 5);
 
@@ -371,14 +393,17 @@ namespace RobotoChatBot.Modules
             firstrec = true;
             foreach (mod_xyzzy_chatdata chatData in dataToMiniCheck.OrderBy(x => x.statusMiniCheckedTime).Take(localdata.backgroundChatsToMiniProcess))
             {
-                if (firstrec)
+                using (ChatKeyedLock.Acquire(chatData.chatID))
                 {
-                    log("Oldest chat was last quick-checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusMiniCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low);
-                    Roboto.Settings.stats.logStat(new statItem("Background Wait (Quickcheck)", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusMiniCheckedTime).TotalMinutes)));
+                    if (firstrec)
+                    {
+                        log("Oldest chat was last quick-checked " + Convert.ToInt32(DateTime.Now.Subtract(chatData.statusMiniCheckedTime).TotalMinutes) + " minute(s) ago", logging.loglevel.low);
+                        Roboto.Settings.stats.logStat(new statItem("Background Wait (Quickcheck)", this.GetType(), Convert.ToInt32(DateTime.Now.Subtract(chatData.statusMiniCheckedTime).TotalMinutes)));
+                    }
+                    chatData.check();
+                    firstrec = false;
+                    lo_bg.addone();
                 }
-                chatData.check();
-                firstrec = false;
-                lo_bg.addone();
             }
 
             //check if we need to remove any dormant packs

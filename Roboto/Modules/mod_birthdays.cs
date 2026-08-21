@@ -175,22 +175,33 @@ namespace RobotoChatBot.Modules
 
         protected override void backgroundProcessing()
         {
-            foreach (chat c in Roboto.Settings.chatData)
+            // Same snapshot-then-per-chat-lock pattern as mod_xyzzy.backgroundProcessing/
+            // mod_quote.backgroundProcessing - see mod_xyzzy's own comment for the full reasoning.
+            List<chat> chatsSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                mod_birthday_data localData = c.getPluginData<mod_birthday_data>();
+                chatsSnapshot = Roboto.Settings.chatData.ToList();
+            }
 
-                //have we already processed today? 
-                if (localData.lastDayProcessed.Month != DateTime.Now.Month || localData.lastDayProcessed.Day != DateTime.Now.Day)
+            foreach (chat c in chatsSnapshot)
+            {
+                using (ChatKeyedLock.Acquire(c.chatID))
                 {
-                    localData.lastDayProcessed = DateTime.Now;
-                    foreach (mod_birthday_birthday b in localData.birthdays)
-                    {
-                        if (b.birthday.Day == DateTime.Now.Day && b.birthday.Month == DateTime.Now.Month)
-                        {
-                            Messaging.SendMessage(c.chatID, "Happy Birthday to " + b.name + "!");
-                        }
-                    }
+                    mod_birthday_data localData = c.getPluginData<mod_birthday_data>();
 
+                    //have we already processed today?
+                    if (localData.lastDayProcessed.Month != DateTime.Now.Month || localData.lastDayProcessed.Day != DateTime.Now.Day)
+                    {
+                        localData.lastDayProcessed = DateTime.Now;
+                        foreach (mod_birthday_birthday b in localData.birthdays)
+                        {
+                            if (b.birthday.Day == DateTime.Now.Day && b.birthday.Month == DateTime.Now.Month)
+                            {
+                                Messaging.SendMessage(c.chatID, "Happy Birthday to " + b.name + "!");
+                            }
+                        }
+
+                    }
                 }
             }
         }

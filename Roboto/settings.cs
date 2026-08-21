@@ -168,31 +168,65 @@ namespace RobotoChatBot
 
             store.Save(ConfigKey, this);
 
-            foreach (var data in pluginData)
+            // Snapshot the shared top-level lists under GlobalListsKey (see ChatKeyedLock's own
+            // comment - this is the same phase-4 concurrency concern as everywhere else in this
+            // pass), then do the actual (many small, potentially slow) DB writes below outside that
+            // lock so a save() running on the background scheduler thread can't block live message
+            // dispatch on unrelated chats for its whole duration. Each chat's own data is still
+            // locked individually (by that chat's own ID) while being written, the same chokepoint
+            // live dispatch for that chat locks against.
+            List<Modules.RobotoModuleDataTemplate> pluginDataSnapshot;
+            List<chat> chatDataSnapshot;
+            List<ExpectedReply> expectedRepliesSnapshot;
+            List<chatPresence> recentChatMembersSnapshot;
+            List<statType> statsListSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                pluginDataSnapshot = pluginData.ToList();
+                chatDataSnapshot = chatData.ToList();
+                expectedRepliesSnapshot = expectedReplies.ToList();
+                recentChatMembersSnapshot = RecentChatMembers.ToList();
+                statsListSnapshot = stats.statsList.ToList();
+            }
+
+            foreach (var data in pluginDataSnapshot)
             {
                 store.Save(data.GetType(), ModuleDataKey(data.GetType()), data);
             }
 
-            if (pluginData.OfType<mod_xyzzy_coredata>().FirstOrDefault() is { } xyzzyData)
+            if (pluginDataSnapshot.OfType<mod_xyzzy_coredata>().FirstOrDefault() is { } xyzzyData)
             {
                 store.SaveXyzzyCards("question", xyzzyData.questions);
                 store.SaveXyzzyCards("answer", xyzzyData.answers);
                 store.SaveXyzzyPacks(xyzzyData.packs);
             }
 
-            foreach (var c in chatData)
+            foreach (var c in chatDataSnapshot)
             {
-                store.Save(ChatCoreKey(c.chatID), c);
-                foreach (var cd in c.chatData)
+                using (ChatKeyedLock.Acquire(c.chatID))
                 {
-                    store.Save(cd.GetType(), ChatModuleKey(c.chatID, cd.GetType()), cd);
+                    store.Save(ChatCoreKey(c.chatID), c);
+                    foreach (var cd in c.chatData)
+                    {
+                        store.Save(cd.GetType(), ChatModuleKey(c.chatID, cd.GetType()), cd);
+                    }
                 }
             }
-            store.Save(ChatsIndexKey, chatData.Select(c => c.chatID).ToList());
+            store.Save(ChatsIndexKey, chatDataSnapshot.Select(c => c.chatID).ToList());
 
-            store.SaveExpectedReplies(expectedReplies);
-            store.SaveChatPresence(RecentChatMembers);
-            store.SaveStats(stats.statsList);
+            // These three writes touch each ExpectedReply/chatPresence/statType's own fields (not
+            // just the outer list) while iterating - held under GlobalListsKey for their whole
+            // duration, unlike everything else in this method, since a shallow .ToList() snapshot of
+            // the outer list alone doesn't protect e.g. a statType's own nested statSlices list from
+            // a concurrent logStat() call elsewhere. Acceptable here specifically because these are
+            // fast local SQLite writes, not network calls - a bounded, brief hold, not the "block
+            // everything for an arbitrarily long call" case this pass otherwise avoids.
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                store.SaveExpectedReplies(expectedRepliesSnapshot);
+                store.SaveChatPresence(recentChatMembersSnapshot);
+                store.SaveStats(statsListSnapshot);
+            }
         }
 
         private static string ModuleDataKey(Type moduleDataType) => $"module:{moduleDataType.Name}";

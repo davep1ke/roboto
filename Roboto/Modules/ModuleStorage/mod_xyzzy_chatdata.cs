@@ -242,7 +242,9 @@ namespace RobotoChatBot.Modules
                 List<ExpectedReply> matchedReplies = Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID, existing.playerID);
                 foreach (ExpectedReply exr in matchedReplies)
                 {
-                    Roboto.Settings.expectedReplies.Remove(exr);
+                    // Messaging.removeReply, not a direct list .Remove() - expectedReplies is shared
+                    // with the phase-4 background scheduler thread, see ChatKeyedLock's own comment.
+                    Messaging.removeReply(exr);
                     log("Removed expectedReply: " + exr.messageData);
                 }
 

@@ -121,11 +121,22 @@ namespace RobotoChatBot
         /// <returns></returns>
         public static bool userHasOutstandingMessages(long playerID)
         {
-            foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
+            // expectedReplies is one shared list touched by both the message thread and the phase-4
+            // background scheduler thread - every direct read/mutation of it in this file is under
+            // GlobalListsKey to keep the list structure itself safe (no more concurrent-modification
+            // exceptions/corruption). This does NOT make the surrounding check-then-act queueing
+            // logic (e.g. processNewExpectedReply below) fully atomic against a genuinely
+            // concurrent add for the same user landing between a check and its decision - a real,
+            // deliberately-accepted, narrow residual race, not solved by this pass. See
+            // MIGRATION.md's phase 4 notes.
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                if (e.userID == playerID) { return true; }
+                foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
+                {
+                    if (e.userID == playerID) { return true; }
+                }
+                return false;
             }
-            return false;
         }
 
         /// <summary>
@@ -135,11 +146,14 @@ namespace RobotoChatBot
         /// <returns></returns>
         public static bool userHasOutstandingQuestions(long playerID)
         {
-            foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                if (e.userID == playerID && e.isSent()) { return true; }
+                foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
+                {
+                    if (e.userID == playerID && e.isSent()) { return true; }
+                }
+                return false;
             }
-            return false;
         }
 
 
@@ -150,17 +164,20 @@ namespace RobotoChatBot
         /// <param name="pluginType"></param>
         public static void clearExpectedReplies(long chat_id, Type pluginType)
         {
-            //find replies for this chat, and add them to a temp list
-            List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
-            foreach (ExpectedReply reply in Roboto.Settings.expectedReplies)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                if (reply.chatID == chat_id && reply.isOfType(pluginType)) { repliesToRemove.Add(reply); }
-            }
-            //now remove them
-            foreach (ExpectedReply reply in repliesToRemove)
-            {
-                Roboto.Settings.expectedReplies.Remove(reply);
-                Roboto.log.log("Removed " + reply.text + " from expected replies", logging.loglevel.high);
+                //find replies for this chat, and add them to a temp list
+                List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
+                foreach (ExpectedReply reply in Roboto.Settings.expectedReplies)
+                {
+                    if (reply.chatID == chat_id && reply.isOfType(pluginType)) { repliesToRemove.Add(reply); }
+                }
+                //now remove them
+                foreach (ExpectedReply reply in repliesToRemove)
+                {
+                    Roboto.Settings.expectedReplies.Remove(reply);
+                    Roboto.log.log("Removed " + reply.text + " from expected replies", logging.loglevel.high);
+                }
             }
 
         }
@@ -243,13 +260,18 @@ namespace RobotoChatBot
                     return messageID;
                 }
 
-                //queue if it was a question
-                if (e.expectsReply) { Roboto.Settings.expectedReplies.Add(e); }
+                //queue if it was a question - lock scoped to just the Add, not sendMessage() above
+                //(a real network call - never hold GlobalListsKey across one of those, it would
+                //block every other chat's message processing for the call's whole duration).
+                if (e.expectsReply)
+                {
+                    using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Add(e); }
+                }
             }
             else
             {
                 //chuck it on the queue
-                Roboto.Settings.expectedReplies.Add(e);
+                using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Add(e); }
             }
 
             //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. Potentially recursive.
@@ -269,20 +291,25 @@ namespace RobotoChatBot
             bool retry = true;
             while (retry)
             {
-                //for each user, check if a message has been sent, and track the oldest message
+                //for each user, check if a message has been sent, and track the oldest message -
+                //snapshot under the lock, but released before oldest.sendMessage() below (a real
+                //network call) so it never blocks other chats' message processing.
                 ExpectedReply oldest = null;
-                List<ExpectedReply> userReplies = Roboto.Settings.expectedReplies.Where(e => e.userID == userID).ToList();
-
-                //try find a message to send. Drop out if we already have a sent message on the stack (waiting for a reply)
                 bool sent = false;
-                foreach (ExpectedReply e in userReplies)
+                using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
                 {
-                    if (e.isSent()) { sent = true; } //message is waiting
-                    else
+                    List<ExpectedReply> userReplies = Roboto.Settings.expectedReplies.Where(e => e.userID == userID).ToList();
+
+                    //try find a message to send. Drop out if we already have a sent message on the stack (waiting for a reply)
+                    foreach (ExpectedReply e in userReplies)
                     {
-                        if (oldest == null || e.timeLogged < oldest.timeLogged)
+                        if (e.isSent()) { sent = true; } //message is waiting
+                        else
                         {
-                            oldest = e;
+                            if (oldest == null || e.timeLogged < oldest.timeLogged)
+                            {
+                                oldest = e;
+                            }
                         }
                     }
                 }
@@ -293,9 +320,12 @@ namespace RobotoChatBot
                     oldest.sendMessage();
                     if (!oldest.expectsReply)
                     {
-                        Roboto.Settings.expectedReplies.Remove(oldest);
+                        using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+                        {
+                            Roboto.Settings.expectedReplies.Remove(oldest);
+                        }
                     }
-                    //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. 
+                    //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed.
                 }
 
                 //what do we do next? 
@@ -313,43 +343,52 @@ namespace RobotoChatBot
         {
             
 
-            Roboto.log.log("There are " + Roboto.Settings.expectedReplies.Count() + " expected replies on the stack", logging.loglevel.verbose);
-            Roboto.Settings.stats.logStat(new statItem("Expected Replies", typeof(mod_standard), Roboto.Settings.expectedReplies.Count()));
-
-            //main processing
+            //main processing - all pure in-memory list cleanup, no network I/O, so the whole thing
+            //(unlike trySendOutstandingMessagesForUser below, called per-user afterwards) can stay
+            //under one lock acquisition without risking blocking another chat's message dispatch on
+            //a slow network call.
             try
             {
-                //Remove any ERs that are for dead chats
-                List<ExpectedReply> deadERs = new List<ExpectedReply>();
-                foreach (ExpectedReply er in Roboto.Settings.expectedReplies)
+                List<long> userIDs;
+                using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
                 {
-                    if (er.chatID != 0) //ignore messages that are specifically chat-less
+                    Roboto.log.log("There are " + Roboto.Settings.expectedReplies.Count() + " expected replies on the stack", logging.loglevel.verbose);
+                    Roboto.Settings.stats.logStat(new statItem("Expected Replies", typeof(mod_standard), Roboto.Settings.expectedReplies.Count()));
+
+                    //Remove any ERs that are for dead chats
+                    List<ExpectedReply> deadERs = new List<ExpectedReply>();
+                    foreach (ExpectedReply er in Roboto.Settings.expectedReplies)
                     {
-                        chat c = Chats.getChat(er.chatID);
-                        if (c == null) { deadERs.Add(er); }
+                        if (er.chatID != 0) //ignore messages that are specifically chat-less
+                        {
+                            chat c = Chats.getChat(er.chatID);
+                            if (c == null) { deadERs.Add(er); }
+                        }
+                    }
+                    foreach (ExpectedReply er in deadERs) { Roboto.Settings.expectedReplies.Remove(er); }
+                    Roboto.log.log("Removed " + deadERs.Count() + " dead expected replies, now " + Roboto.Settings.expectedReplies.Count() + " remain", deadERs.Count() == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
+
+                    //remove any expired ones
+                    int i = Roboto.Settings.expectedReplies.RemoveAll(x => x.timeLogged < DateTime.Now.Subtract(TimeSpan.FromDays(Roboto.Settings.killInactiveChatsAfterXDays)));
+                    Roboto.log.log("Removed " + i + " expected replies, now " + Roboto.Settings.expectedReplies.Count() + " remain", i == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
+
+                    //Build up a list of user IDs
+                    userIDs = Roboto.Settings.expectedReplies.Select(e => e.userID).Distinct().ToList<long>();
+
+                    //remove any invalid messages
+                    List<ExpectedReply> messagesToRemove = Roboto.Settings.expectedReplies.Where(e => e.outboundMessageID > 0 && e.expectsReply == false).ToList();
+                    if (messagesToRemove.Count > 0)
+                    {
+                        Roboto.log.log("Removing " + messagesToRemove.Count() + " messages from queue as they are sent and dont require a reply", logging.loglevel.warn);
+                    }
+                    foreach (ExpectedReply e in messagesToRemove)
+                    {
+                        Roboto.Settings.expectedReplies.Remove(e);
                     }
                 }
-                foreach (ExpectedReply er in deadERs) { Roboto.Settings.expectedReplies.Remove(er); }
-                Roboto.log.log("Removed " + deadERs.Count() + " dead expected replies, now " + Roboto.Settings.expectedReplies.Count() + " remain", deadERs.Count() == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
 
-                //remove any expired ones
-                int i = Roboto.Settings.expectedReplies.RemoveAll(x => x.timeLogged < DateTime.Now.Subtract(TimeSpan.FromDays(Roboto.Settings.killInactiveChatsAfterXDays)));
-                Roboto.log.log("Removed " + i + " expected replies, now " + Roboto.Settings.expectedReplies.Count() + " remain", i == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
-
-                //Build up a list of user IDs
-                List<long> userIDs = Roboto.Settings.expectedReplies.Select(e => e.userID).Distinct().ToList<long>();
-
-                //remove any invalid messages
-                List<ExpectedReply> messagesToRemove = Roboto.Settings.expectedReplies.Where(e => e.outboundMessageID > 0 && e.expectsReply == false).ToList();
-                if (messagesToRemove.Count > 0)
-                {
-                    Roboto.log.log("Removing " + messagesToRemove.Count() + " messages from queue as they are sent and dont require a reply", logging.loglevel.warn);
-                }
-                foreach (ExpectedReply e in messagesToRemove)
-                {
-                    Roboto.Settings.expectedReplies.Remove(e);
-                }
-
+                //outside the lock - trySendOutstandingMessagesForUser can call sendMessage() (real
+                //network I/O) and manages its own locking internally per-call.
                 foreach (long userID in userIDs)
                 {
                     trySendOutstandingMessagesForUser(userID);
@@ -372,55 +411,66 @@ namespace RobotoChatBot
         /// <returns></returns>
         public static List<ExpectedReply> getExpectedReplies(Type pluginType, long chatID, long userID = -1, string filter = "")
         {
-            List<ExpectedReply> responses = new List<ExpectedReply>();
-            foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                if (e.isOfType(pluginType)
-                    && e.chatID == chatID
-                    && (userID == -1 || e.userID == userID)
-                    && (filter == "" || filter.Contains(e.messageData))
-                    )
+                List<ExpectedReply> responses = new List<ExpectedReply>();
+                foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
                 {
-                    responses.Add(e);
+                    if (e.isOfType(pluginType)
+                        && e.chatID == chatID
+                        && (userID == -1 || e.userID == userID)
+                        && (filter == "" || filter.Contains(e.messageData))
+                        )
+                    {
+                        responses.Add(e);
 
+
+                    }
 
                 }
-
+                return responses;
             }
-            return responses;
         }
 
         public static bool parseExpectedReplies(message m)
         {
 
-            //are we expecteing this? 
+            //are we expecteing this?
             bool processed = false;
             Modules.RobotoModuleTemplate pluginToCall = null;
             ExpectedReply er = null;
             try
             {
-                foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
+                using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
                 {
-                    //we are looking for direct messages from the user where c_id = m_id, OR reply messages where m_id = reply_id
-                    //could trigger twice if we fucked something up - dont think this is an issue but checking processed flag for safety
-                    if (!processed && e.isSent() && m.userID == e.userID)
+                    foreach (ExpectedReply e in Roboto.Settings.expectedReplies)
                     {
-                        if (m.chatID == e.userID || m.replyMessageID == e.outboundMessageID)
+                        //we are looking for direct messages from the user where c_id = m_id, OR reply messages where m_id = reply_id
+                        //could trigger twice if we fucked something up - dont think this is an issue but checking processed flag for safety
+                        if (!processed && e.isSent() && m.userID == e.userID)
                         {
-                            //find the plugin, send the expectedreply to it
-                            foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
+                            if (m.chatID == e.userID || m.replyMessageID == e.outboundMessageID)
                             {
-                                if (e.isOfType(plugin.GetType()))
+                                //find the plugin, send the expectedreply to it
+                                foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
                                 {
-                                    //stash these for calling outside of the "foreach" loop. This is so we can be sure it is called ONCE only, and so that we can remove
-                                    //the expected reply before calling the method, so any post-processing works smoother.
-                                    pluginToCall = plugin;
-                                    er = e;
+                                    if (e.isOfType(plugin.GetType()))
+                                    {
+                                        //stash these for calling outside of the "foreach" loop. This is so we can be sure it is called ONCE only, and so that we can remove
+                                        //the expected reply before calling the method, so any post-processing works smoother.
+                                        pluginToCall = plugin;
+                                        er = e;
+                                    }
                                 }
+                                processed = true;
                             }
-                            processed = true;
                         }
                     }
+
+                    //remove here too (still under the same lock acquisition as the search above) -
+                    //so a concurrent match on another thread for the same ExpectedReply genuinely
+                    //can't happen, not just "unlikely".
+                    if (processed && er != null) { Roboto.Settings.expectedReplies.Remove(er); }
                 }
             }
             catch (Exception e)
@@ -441,9 +491,6 @@ namespace RobotoChatBot
                     Roboto.log.log("Expected reply plugin found, but not available.", logging.loglevel.critical);
                     return true;
                 }
-
-                //now send it to the plugin (remove first, so any checks can be done)
-                Roboto.Settings.expectedReplies.Remove(er);
 
                 try
                 {
@@ -486,7 +533,7 @@ namespace RobotoChatBot
         public static void parseFailedReply(ExpectedReply er)
         {
 
-            Roboto.Settings.expectedReplies.Remove(er);
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Remove(er); }
             Modules.RobotoModuleTemplate pluginToCall = null;
 
             foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
@@ -519,7 +566,7 @@ namespace RobotoChatBot
 
         public static void removeReply(ExpectedReply r)
         {
-            Roboto.Settings.expectedReplies.Remove(r);
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Remove(r); }
         }
 
     }

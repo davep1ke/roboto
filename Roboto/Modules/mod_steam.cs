@@ -441,9 +441,20 @@ namespace RobotoChatBot.Modules
 
         protected override void backgroundProcessing()
         {
-            foreach (chat c in Roboto.Settings.chatData)
+            // Same snapshot-then-per-chat-lock pattern as mod_xyzzy.backgroundProcessing - see its
+            // own comment for the full reasoning.
+            List<chat> chatsSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                checkChat(c);
+                chatsSnapshot = Roboto.Settings.chatData.ToList();
+            }
+
+            foreach (chat c in chatsSnapshot)
+            {
+                using (ChatKeyedLock.Acquire(c.chatID))
+                {
+                    checkChat(c);
+                }
             }
         }
 

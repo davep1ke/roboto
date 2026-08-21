@@ -175,43 +175,52 @@ namespace RobotoChatBot
 
                     long chatID = update.Message.Chat.Id;
 
-                    chat chatData = null;
-                    if (chatID < 0)
+                    // Locks this chat (or, for a private message, this user - chatID equals the
+                    // user's own ID for a 1:1 DM, and Telegram's own ID namespace guarantees the two
+                    // never collide, see ChatKeyedLock's comment) for the whole "process one incoming
+                    // message" span - the same chokepoint the phase-4 background scheduler's own
+                    // per-chat work locks against, so the two threads can never mutate the same
+                    // chat's data at the same time.
+                    using (ChatKeyedLock.Acquire(chatID))
                     {
-                        //find the chat
-                        chatData = Chats.getChat(chatID);
-                        string chatTitle = update.Message.Chat.Title;
-                        //new chat, add
-                        if (chatData == null)
+                        chat chatData = null;
+                        if (chatID < 0)
                         {
-                            chatData = Chats.addChat(chatID, chatTitle);
-                        }
-                        if (chatData == null)
-                        {
-                            throw new InvalidOperationException("Something went wrong creating the new chat data");
-                        }
-                        chatData.setTitle(chatTitle);
-                    }
-
-                    //prevent delays - its sent something valid back to us so we are probably OK.
-                    if (chatData != null) { chatData.resetLastUpdateTime(); }
-
-                    message m = new message(update.Message);
-
-                    //now decide what to do with this stuff.
-                    bool processed = false;
-
-                    //check if this is an expected reply, and if so route it to the
-                    Messaging.parseExpectedReplies(m);
-
-                    foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
-                    {
-                        //Skip this message if the chat is muted.
-                        if (plugin.chatHook && (chatData == null || (chatData.muted == false || plugin.chatIfMuted)))
-                        {
-                            if (!processed || plugin.chatEvenIfAlreadyMatched)
+                            //find the chat
+                            chatData = Chats.getChat(chatID);
+                            string chatTitle = update.Message.Chat.Title;
+                            //new chat, add
+                            if (chatData == null)
                             {
-                                processed = plugin.chatEvent(m, chatData);
+                                chatData = Chats.addChat(chatID, chatTitle);
+                            }
+                            if (chatData == null)
+                            {
+                                throw new InvalidOperationException("Something went wrong creating the new chat data");
+                            }
+                            chatData.setTitle(chatTitle);
+                        }
+
+                        //prevent delays - its sent something valid back to us so we are probably OK.
+                        if (chatData != null) { chatData.resetLastUpdateTime(); }
+
+                        message m = new message(update.Message);
+
+                        //now decide what to do with this stuff.
+                        bool processed = false;
+
+                        //check if this is an expected reply, and if so route it to the
+                        Messaging.parseExpectedReplies(m);
+
+                        foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
+                        {
+                            //Skip this message if the chat is muted.
+                            if (plugin.chatHook && (chatData == null || (chatData.muted == false || plugin.chatIfMuted)))
+                            {
+                                if (!processed || plugin.chatEvenIfAlreadyMatched)
+                                {
+                                    processed = plugin.chatEvent(m, chatData);
+                                }
                             }
                         }
                     }

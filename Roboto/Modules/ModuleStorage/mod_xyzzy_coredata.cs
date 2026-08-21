@@ -316,8 +316,14 @@ namespace RobotoChatBot.Modules
         }
 
         /// <summary>
-        /// Removes any packs (over the maxPack limit, and under the per-sync limit) that havent been used in x days. 
+        /// Removes any packs (over the maxPack limit, and under the per-sync limit) that havent been used in x days.
         /// </summary>
+        /// <remarks>Not wired up anywhere (legacy's own call site is commented out in
+        /// mod_xyzzy.cs's backgroundProcessing - "TODO DISABLE AS CARDCAST DEAD") - genuinely
+        /// unreachable, matching legacy. This method's/removePack's own chatData iteration therefore
+        /// wasn't given the phase-4 ChatKeyedLock treatment the rest of this file's live cross-chat
+        /// operations (removeACard/removeQCard) got - would need the same snapshot-then-per-chat-lock
+        /// pattern if this is ever actually wired up.</remarks>
         public void removeDormantPacks()
         {
             
@@ -858,58 +864,71 @@ namespace RobotoChatBot.Modules
         private List<mod_xyzzy_chatdata> removeACard(mod_xyzzy_card cardToRemove, string replacementGuid)
         {
             List<mod_xyzzy_chatdata> result = new List<mod_xyzzy_chatdata>();
-            
+
             //remove from the master list
             bool success = answers.Remove(cardToRemove);
             log("Answer " + cardToRemove.text + (success ? " successfull": " FAILED") + " removal from master list", success ? logging.loglevel.normal:logging.loglevel.critical);
 
-            //remove any cached answers / cards in hand
-            foreach (chat c in Roboto.Settings.chatData)
+            // This can run from a live pack sync (phase-4 background scheduler thread) or a live
+            // pack import (message thread), and touches every chat's own game state (player hands,
+            // remaining cards), not just one - snapshot-then-per-chat-lock, same convention as
+            // mod_xyzzy.backgroundProcessing's own comment explains in full.
+            List<chat> chatsSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
-                if (chatData != null)
+                chatsSnapshot = Roboto.Settings.chatData.ToList();
+            }
+
+            //remove any cached answers / cards in hand
+            foreach (chat c in chatsSnapshot)
+            {
+                using (ChatKeyedLock.Acquire(c.chatID))
                 {
-                    //remove any cached answers
-                    chatData.remainingAnswers.RemoveAll(x => x == cardToRemove.uniqueID);
-
-                    //remove answers from player hands. 
-                    foreach (mod_xyzzy_player p in chatData.players )
+                    mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
+                    if (chatData != null)
                     {
-                        int i = p.cardsInHand.RemoveAll(x => x == cardToRemove.uniqueID);
-                        if (i > 0 )
+                        //remove any cached answers
+                        chatData.remainingAnswers.RemoveAll(x => x == cardToRemove.uniqueID);
+
+                        //remove answers from player hands.
+                        foreach (mod_xyzzy_player p in chatData.players )
                         {
-                            log("Removed " + i + " copies of card " + cardToRemove.text + " from player " + p.name + "'s hand", logging.loglevel.high);
-                            if (replacementGuid != null)
+                            int i = p.cardsInHand.RemoveAll(x => x == cardToRemove.uniqueID);
+                            if (i > 0 )
                             {
-                                p.cardsInHand.Add(replacementGuid);
-                                log("Added " + replacementGuid + " to replace removed card", logging.loglevel.high);
+                                log("Removed " + i + " copies of card " + cardToRemove.text + " from player " + p.name + "'s hand", logging.loglevel.high);
+                                if (replacementGuid != null)
+                                {
+                                    p.cardsInHand.Add(replacementGuid);
+                                    log("Added " + replacementGuid + " to replace removed card", logging.loglevel.high);
+                                }
+
                             }
+
+                            //check if they have played the card.
+                            i = p.selectedCards.RemoveAll(x => x == cardToRemove.uniqueID);
+                            if (i > 0)
+                            {
+                                log("Removed " + i + " copies of card " + cardToRemove.text + " from player " + p.name + "'s selected cards", logging.loglevel.high);
+                                if (replacementGuid != null)
+                                {
+                                    p.selectedCards.Add(replacementGuid);
+                                    log("Added " + replacementGuid + " to replace removed selected card", logging.loglevel.high);
+                                }
+                                else
+                                {
+                                    //removed a played card without a replacement guid - likely to all end in failure.
+                                    result.Add(chatData);
+                                }
+
+                            }
+
 
                         }
 
-                        //check if they have played the card. 
-                        i = p.selectedCards.RemoveAll(x => x == cardToRemove.uniqueID);
-                        if (i > 0)
-                        {
-                            log("Removed " + i + " copies of card " + cardToRemove.text + " from player " + p.name + "'s selected cards", logging.loglevel.high);
-                            if (replacementGuid != null)
-                            {
-                                p.selectedCards.Add(replacementGuid);
-                                log("Added " + replacementGuid + " to replace removed selected card", logging.loglevel.high);
-                            }
-                            else
-                            {
-                                //removed a played card without a replacement guid - likely to all end in failure. 
-                                result.Add(chatData);
-                            }
-
-                        }
 
 
                     }
-
-
-
                 }
             }
             return result;
@@ -925,31 +944,40 @@ namespace RobotoChatBot.Modules
             bool success = questions.Remove(cardToRemove);
             log("Question " + cardToRemove.text + (success ? " successfull" : " FAILED") + " removal from master list", success ? logging.loglevel.normal : logging.loglevel.critical);
 
+            // Same snapshot-then-per-chat-lock reasoning as removeACard above.
+            List<chat> chatsSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                chatsSnapshot = Roboto.Settings.chatData.ToList();
+            }
 
             //remove any cached questions
-            foreach (chat c in Roboto.Settings.chatData)
+            foreach (chat c in chatsSnapshot)
             {
-                mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
-                if (chatData != null)
+                using (ChatKeyedLock.Acquire(c.chatID))
                 {
-                    int recsRemoved = chatData.remainingQuestions.RemoveAll(x => x == cardToRemove.uniqueID);
-                    if (recsRemoved >0 )
+                    mod_xyzzy_chatdata chatData = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
+                    if (chatData != null)
                     {
-                        log("Removed question card from remaining question " + recsRemoved + " times from " + c.ToString(), logging.loglevel.warn);
-                    }
-                    //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done. 
-                    if (chatData.currentQuestion == cardToRemove.uniqueID)
-                    {
-                        result.Add(chatData);
-                        if (replacementGuid != null)
+                        int recsRemoved = chatData.remainingQuestions.RemoveAll(x => x == cardToRemove.uniqueID);
+                        if (recsRemoved >0 )
                         {
-                            chatData.currentQuestion = replacementGuid;
-                            log("The current question " + chatData.currentQuestion + " guid for chat " + c.ToString() + " has been replaced.", logging.loglevel.high);
+                            log("Removed question card from remaining question " + recsRemoved + " times from " + c.ToString(), logging.loglevel.warn);
                         }
-                        else
+                        //if we remove the current question, invalidate the chat. Will reask a question once the rest of the import is done.
+                        if (chatData.currentQuestion == cardToRemove.uniqueID)
                         {
+                            result.Add(chatData);
+                            if (replacementGuid != null)
+                            {
+                                chatData.currentQuestion = replacementGuid;
+                                log("The current question " + chatData.currentQuestion + " guid for chat " + c.ToString() + " has been replaced.", logging.loglevel.high);
+                            }
+                            else
+                            {
 
-                            log("The current question " + chatData.currentQuestion + " for " + chatData.status + " chat " + c.ToString() + " has been removed!", chatData.status == xyzzy_Statuses.Stopped? logging.loglevel.normal: logging.loglevel.high);
+                                log("The current question " + chatData.currentQuestion + " for " + chatData.status + " chat " + c.ToString() + " has been removed!", chatData.status == xyzzy_Statuses.Stopped? logging.loglevel.normal: logging.loglevel.high);
+                            }
                         }
                     }
                 }

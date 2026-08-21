@@ -159,19 +159,27 @@ namespace RobotoChatBot
 
 
 
+        // pluginData is only ever populated at startup (Plugins.startupChecks(), before the message
+        // loop or the phase-4 background scheduler thread exist) and essentially never mutated
+        // afterward in normal operation - lower real risk than chatData/expectedReplies/
+        // RecentChatMembers, which mutate continuously during live operation. Still locked with the
+        // same GlobalListsKey convention throughout this file for consistency/defensiveness, since
+        // the cost of doing so is trivial.
+
         public static void registerData(Modules.RobotoModuleDataTemplate data)
         {
-
-            if (typeDataExists(data.GetType()) == false)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                Roboto.Settings.pluginData.Add(data);
-                Console.WriteLine("Added data of type " + data.GetType().ToString());
+                if (typeDataExistsUnlocked(data.GetType()) == false)
+                {
+                    Roboto.Settings.pluginData.Add(data);
+                    Console.WriteLine("Added data of type " + data.GetType().ToString());
+                }
+                else
+                {
+                    Console.WriteLine("Plugin data of type " + data.GetType().ToString() + " already exists!");
+                }
             }
-            else
-            {
-                Console.WriteLine("Plugin data of type " + data.GetType().ToString() + " already exists!");
-            }
-
         }
 
         /// <summary>
@@ -180,6 +188,18 @@ namespace RobotoChatBot
         /// <param name="t"></param>
         /// <returns></returns>
         public static bool typeDataExists(Type t)
+        {
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                return typeDataExistsUnlocked(t);
+            }
+        }
+
+        /// <summary>Lock-free inner version - registerData already holds GlobalListsKey when it
+        /// needs this (Monitor is reentrant per-thread, so calling the public typeDataExists()
+        /// instead would have been safe too, but this avoids a pointless double-acquire on the exact
+        /// same thread for what's already a hot-ish path).</summary>
+        private static bool typeDataExistsUnlocked(Type t)
         {
             bool found = false;
             foreach (Modules.RobotoModuleDataTemplate existing in Roboto.Settings.pluginData)
@@ -214,13 +234,16 @@ namespace RobotoChatBot
 
         public static T getPluginData<T>()
         {
-            foreach (Modules.RobotoModuleDataTemplate existing in Roboto.Settings.pluginData)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                if (existing.GetType() == typeof(T))
+                foreach (Modules.RobotoModuleDataTemplate existing in Roboto.Settings.pluginData)
                 {
-                    //Console.WriteLine("Plugin data of type " + data.GetType().ToString() + " already exists!");
-                    T retVal = (T)Convert.ChangeType(existing, typeof(T));
-                    return retVal;
+                    if (existing.GetType() == typeof(T))
+                    {
+                        //Console.WriteLine("Plugin data of type " + data.GetType().ToString() + " already exists!");
+                        T retVal = (T)Convert.ChangeType(existing, typeof(T));
+                        return retVal;
+                    }
                 }
             }
 
@@ -245,15 +268,18 @@ namespace RobotoChatBot
         /// </summary>
         public static Modules.RobotoModuleDataTemplate getPluginData(Type pluginDataType)
         {
-            foreach (Modules.RobotoModuleDataTemplate existing in Roboto.Settings.pluginData)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                if (existing.GetType() == pluginDataType)
+                foreach (Modules.RobotoModuleDataTemplate existing in Roboto.Settings.pluginData)
                 {
-                    return existing;
+                    if (existing.GetType() == pluginDataType)
+                    {
+                        return existing;
+                    }
                 }
-            }
 
-            return null;
+                return null;
+            }
         }
     }
 }

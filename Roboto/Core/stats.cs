@@ -220,37 +220,60 @@ namespace RobotoChatBot
         }
 
 
+        // statsList (and each statType's own statSlices) is another shared structure touched by
+        // both the message thread (every incoming/outgoing message bumps a counter) and the phase-4
+        // background scheduler thread (every module's own backgroundProcessing calls logStat too) -
+        // same GlobalListsKey convention as everywhere else this pass touches shared state. All
+        // in-memory, no network I/O, so holding the lock across a whole method body here is fine.
         public void registerStatType(string name, Type moduleType, System.Drawing.Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = statmode.increment )
         {
-            statType existing = getStatType(name, moduleType.ToString());
-            if (existing != null)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + ":  already exists.", logging.loglevel.normal);
-                existing.updateDisplaySettings(c, displayMode, statMode);
-            }
-            else
-            {
-                statType newST = new statType(name, moduleType.ToString(), c, displayMode, statMode);
-                statsList.Add(newST);
-                Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + " added.", logging.loglevel.warn);
+                statType existing = getStatTypeUnlocked(name, moduleType.ToString());
+                if (existing != null)
+                {
+                    Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + ":  already exists.", logging.loglevel.normal);
+                    existing.updateDisplaySettings(c, displayMode, statMode);
+                }
+                else
+                {
+                    statType newST = new statType(name, moduleType.ToString(), c, displayMode, statMode);
+                    statsList.Add(newST);
+                    Roboto.log.log("Registering StatType " + name + " from " + moduleType.ToString() + " added.", logging.loglevel.warn);
+                }
             }
 
         }
 
         public void logStat(statItem item)
         {
-            statType type = getStatType(item.statTypeName, item.moduleType.ToString());
-            if (type != null)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                type.logStat(item);
-            }
-            else
-            {
-                Roboto.log.log("Tried to log stat " + item.statTypeName + " for " + item.moduleType + " but doesnt exist!", logging.loglevel.high);
+                statType type = getStatTypeUnlocked(item.statTypeName, item.moduleType.ToString());
+                if (type != null)
+                {
+                    type.logStat(item);
+                }
+                else
+                {
+                    Roboto.log.log("Tried to log stat " + item.statTypeName + " for " + item.moduleType + " but doesnt exist!", logging.loglevel.high);
+                }
             }
         }
 
         private statType getStatType(string name, string moduleType)
+        {
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
+            {
+                return getStatTypeUnlocked(name, moduleType);
+            }
+        }
+
+        /// <summary>Lock-free inner version, for callers (registerStatType/logStat above) that
+        /// already hold GlobalListsKey on the same thread - Monitor's reentrancy would make calling
+        /// the public getStatType() safe too, but this avoids a pointless double-acquire on a hot
+        /// path (every single incoming/outgoing message goes through logStat).</summary>
+        private statType getStatTypeUnlocked(string name, string moduleType)
         {
             List<statType> matches = statsList.Where(x => x.name == name && x.moduleType == moduleType).ToList();
             if (matches.Count == 1 ) { return matches[0]; }
@@ -273,27 +296,30 @@ namespace RobotoChatBot
         /// <returns></returns>
         private List<statType> getStatTypes (string regex)
         {
-            List<statType> matches = new List<statType>();
-            try
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                Regex r = new Regex(regex, RegexOptions.IgnoreCase);
-                foreach (statType t in statsList)
+                List<statType> matches = new List<statType>();
+                try
                 {
-
-                    Match m = r.Match(t.moduleType + ">" + t.name);
-                    if (m.Success)
+                    Regex r = new Regex(regex, RegexOptions.IgnoreCase);
+                    foreach (statType t in statsList)
                     {
-                        matches.Add(t);
-                    }
 
+                        Match m = r.Match(t.moduleType + ">" + t.name);
+                        if (m.Success)
+                        {
+                            matches.Add(t);
+                        }
+
+                    }
                 }
+                catch
+                {
+                    //will probably get some regex errors here - ignore them.
+                    Roboto.log.log("Error parsing statType. Probably a regex issue", logging.loglevel.warn);
+                }
+                return matches;
             }
-            catch
-            {
-                //will probably get some regex errors here - ignore them. 
-                Roboto.log.log("Error parsing statType. Probably a regex issue", logging.loglevel.warn);
-            }
-            return matches;
         }
 
 
@@ -364,12 +390,14 @@ namespace RobotoChatBot
 
         public void houseKeeping()
         {
-            //Ditch any stats
-            foreach (statType s in statsList)
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                s.removeOldData();
+                //Ditch any stats
+                foreach (statType s in statsList)
+                {
+                    s.removeOldData();
+                }
             }
-            
 
 
         }
