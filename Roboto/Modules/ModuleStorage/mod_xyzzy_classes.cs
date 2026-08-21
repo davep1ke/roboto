@@ -175,9 +175,20 @@ namespace RobotoChatBot.Modules
         public string uniqueID = Guid.NewGuid().ToString();
         public String text;
         [System.Obsolete("use Pack (Guid)")]
+        [XmlIgnore]
         public String category; //what pack did the card come from
 
         //shitty workaround to allow us to load in the cateogry info temporarily. - http://stackoverflow.com/questions/5096926/what-is-the-get-set-syntax-in-c
+        //
+        // [XmlIgnore] added on category (above) when porting off .NET Framework: modern .NET's
+        // XmlSerializer is stricter about duplicate element names than the old Framework one was -
+        // both the category field and this TempCategory property were serializing under the same
+        // "category" XML element name (neither had XmlIgnore), which used to be silently tolerated
+        // but now throws InvalidOperationException("...already present in the current scope...") at
+        // XmlSerializer construction. TempCategory is the only one meant to actually serialize -
+        // category is just its obsolete-but-still-read backing field (see mod_xyzzy_coredata.cs's
+        // dedup/startup-check code, which still compares against it) - so this is a compatibility fix,
+        // not a behavior change: the same data still round-trips through the same "category" element.
         [XmlElement("category")]
         public string TempCategory
         {

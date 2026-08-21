@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Windows.Media;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
@@ -200,7 +199,7 @@ namespace RobotoChatBot
             
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(updateURL);
             
-            Roboto.log.log(".", logging.loglevel.low, Colors.White, true);
+            Roboto.log.log(".", logging.loglevel.low, true);
             request.Method = "GET";
             request.ContentType = "application/json";
 
@@ -325,7 +324,7 @@ namespace RobotoChatBot
 
             catch (Exception e)
             {
-                Roboto.log.log("Exception caught at main loop. " + e.ToString(), logging.loglevel.critical, Colors.White, false, false, false, false, 2);
+                Roboto.log.log("Exception caught at main loop. " + e.ToString(), logging.loglevel.critical, false, false, false, false, 2);
                 return Messaging.returnCodes.Unavail;
             }
             return Messaging.returnCodes.OK;
@@ -446,7 +445,7 @@ namespace RobotoChatBot
         /// </summary>
         private static void WriteToStream(Stream s, string txt )
         {
-            Roboto.log.log( txt, logging.loglevel.verbose, Colors.White, false, false, false, true);
+            Roboto.log.log( txt, logging.loglevel.verbose, false, false, false, true);
             byte[] bytes = Encoding.UTF8.GetBytes(txt);
             s.Write(bytes, 0, bytes.Length);
         }

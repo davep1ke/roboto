@@ -1,9 +1,7 @@
 ﻿using System;
-using System.Windows.Media;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Net.PeerToPeer.Collaboration;
 
 namespace RobotoChatBot.Modules
 {
@@ -117,11 +115,10 @@ namespace RobotoChatBot.Modules
         /// </summary>
         /// <param name="text"></param>
         /// <param name="level"></param>
-        /// <param name="colour"></param>
         /// <param name="noLineBreak"></param>
-        public void log(string text, logging.loglevel level = logging.loglevel.normal, Color? colour = null, bool noLineBreak = false)
+        public void log(string text, logging.loglevel level = logging.loglevel.normal, bool noLineBreak = false)
         {
-            Roboto.log.log(text, level, colour, noLineBreak, false, false, false, 2);
+            Roboto.log.log(text, level, noLineBreak, false, false, false, 2);
         }
 
         //Helper Methods

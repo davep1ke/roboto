@@ -1,12 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-//using System.Windows.Media;
 using System.Drawing;
 using System.Text.RegularExpressions;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using System.Windows.Forms.DataVisualization.Charting;
 using System.IO;
 
 namespace RobotoChatBot
@@ -79,30 +77,26 @@ namespace RobotoChatBot
         }
 
         /// <summary>
-        /// Generate a series of datapoints for use on a graph
+        /// Gather this stat's datapoints for use on a graph - used to build a System.Windows.Forms.
+        /// DataVisualization.Charting.Series directly; that type doesn't exist outside WinForms, so
+        /// this now returns the same underlying (title, points, color, line-vs-bar) data as a plain
+        /// DTO instead. Chart rendering itself is a stub pending the ScottPlot port (see
+        /// stats.generateImage) - kept the data-gathering loop as-is since it's the reusable part.
         /// </summary>
         /// <param name="startTime"></param>
         /// <returns></returns>
-        public Series getSeries(DateTime startTime)
+        public statSeriesData getSeries(DateTime startTime)
         {
-            TimeSpan startTSAgo = TimeSpan.FromTicks( stats.granularity.Ticks * stats.graphYAxisCount);
             string title = this.moduleType.StartsWith("Roboto.") ? this.moduleType.Substring(7) : this.moduleType;
-            Series s = new Series(title + ">" + this.name);
-            s.Color = c;
-            
-            if (displayMode == stats.displaymode.line)
-            {
-                s.BorderWidth = 2;
-                s.ChartType = SeriesChartType.Line;
-            }
+            statSeriesData s = new statSeriesData(title + ">" + this.name, c, displayMode);
+
             for (int i = 0; i < stats.graphYAxisCount; i++)
             {
                 DateTime point = startTime.Subtract(TimeSpan.FromTicks(stats.granularity.Ticks * i));
                 statSlice slice = getSlice(point);
                 if (slice != null)
                 {
-                    DataPoint p = new DataPoint(point.Subtract(startTime).TotalHours, slice.count);
-                    s.Points.Add(p);
+                    s.points.Add((point.Subtract(startTime).TotalHours, slice.count));
                 }
 
             }
@@ -117,6 +111,23 @@ namespace RobotoChatBot
         }
 
 
+    }
+
+    /// <summary>Plain data carried out of statType.getSeries - see that method's comment. Chart-
+    /// library-agnostic on purpose, pending the ScottPlot port.</summary>
+    public class statSeriesData
+    {
+        public string title;
+        public System.Drawing.Color color;
+        public stats.displaymode displayMode;
+        public List<(double hoursAgo, double value)> points = new List<(double, double)>();
+
+        public statSeriesData(string title, System.Drawing.Color color, stats.displaymode displayMode)
+        {
+            this.title = title;
+            this.color = color;
+            this.displayMode = displayMode;
+        }
     }
 
     public class statSlice
@@ -290,94 +301,65 @@ namespace RobotoChatBot
         /// Expecting a list of series names, which are the type and name, split with an ">", or can be a list of regex's
         /// </summary>
         /// <param name="series"></param>
+        /// <remarks>
+        /// STUB pending the ScottPlot port (this codebase's rewrite branch already has a working
+        /// ScottPlot renderer to model this on - see src/Roboto.Bot/Commands/StatGraphCommand.cs on
+        /// rewrite/dotnet-docker-port). The old System.Windows.Forms.DataVisualization.Charting
+        /// implementation (Chart/ChartArea/Series/Legend, SaveImage to a Stream) can't run outside
+        /// WinForms at all. getMatchingSeries below still does the real series-selection logic
+        /// (exact + regex match against "moduleType>name") and each match's statType.getSeries(...)
+        /// still gathers real datapoints (as statSeriesData, chart-library-agnostic) - only the
+        /// actual image rendering is missing. /statgraph (mod_standard.cs) will report "no image"
+        /// until this is filled in.
+        /// </remarks>
         public Stream generateImage(List<string> series)
         {
+            List<statType> matches = getMatchingSeries(series);
+            if (matches.Count == 0)
+            {
+                Roboto.log.log("No chart type matches", logging.loglevel.warn);
+                return null;
+            }
+
             DateTime graphStartTime = DateTime.Now;
-            
+            List<statSeriesData> seriesData = matches.Select(m => m.getSeries(graphStartTime)).ToList();
 
-            //set up a windows form graph thing
-            try
-            {
-                using (var ch = new Chart())
-                {
-                    ch.Width = 1200;
-                    ch.Height = 600;
-                    ch.TextAntiAliasingQuality = TextAntiAliasingQuality.High;
-
-                    Title t = new Title(Roboto.Settings.botUserName + " Statistics", Docking.Top, new System.Drawing.Font("Roboto", 14), Color.Black);
-                    ch.Titles.Add(t);
-                    
-                    ChartArea cha = new ChartArea("cha");
-                    cha.BackColor = Color.FromArgb(200,225,255);
-                    
-                    cha.AxisX.Title = "Hours Ago";
-                    //cha.AxisX.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
-                    cha.AxisX.TitleFont = new System.Drawing.Font("Roboto", 11);
-                    cha.AxisX.MajorGrid.Interval = 6;
-                    cha.AxisY.Title = "Value / " + granularity.TotalMinutes.ToString() + " mins"  ;
-                    cha.AxisY.TitleFont = new System.Drawing.Font("Roboto", 11);
-                    //cha.AxisY.TitleFont = new System.Drawing.Font("Calibri", 11, System.Drawing.FontStyle.Bold);
-
-                    Legend l = new Legend("Legend");
-                    l.DockedToChartArea = "cha";
-                    l.IsDockedInsideChartArea = true;
-                    l.Docking = Docking.Right;
-                    
-                    ch.ChartAreas.Add(cha);
-                    ch.Legends.Add(l);
-                    
-                    
-
-                   //if nothing passed in, assume all stats
-                    if (series.Count == 0) { series.Add(".*"); }
-
-                    //gather all matching statTypes
-                    List<statType> matches = new List<statType>();
-
-                    foreach (string s in series)
-                    {
-                        //populate list of statTypes that match our query. Dont worry about order / dupes - will be ordered later
-                        //try exact matches
-                        string[] titles = s.Trim().Split(">"[0]);
-                        if (titles.Length == 2)
-                        {
-                            //get the series info
-                            statType seriesStats = getStatType(titles[1], titles[0]);
-                            if (seriesStats != null) { matches.Add(seriesStats); }
-                        }
-
-                        //try regex matches
-                        List<statType> matchingTypes = getStatTypes(s);
-                        foreach (statType mt in matchingTypes)
-                        {
-                            matches.Add(mt);
-                        }
-                        
-                    }
-                    if (matches.Count == 0)
-                    {
-                        Roboto.log.log("No chart type matches", logging.loglevel.warn);
-                        return null;
-                    }
-                    else
-                    {
-                        matches = matches.Distinct().OrderBy(x => x.moduleType + ">" + x.name).ToList();
-                        foreach (statType seriesStats in matches)
-                        {
-                            ch.Series.Add(seriesStats.getSeries(graphStartTime));
-                        }
-                        //ch.SaveImage(@"C:\temp\chart.jpg", ChartImageFormat.Jpeg);
-                        MemoryStream ms = new MemoryStream();
-                        ch.SaveImage(ms, ChartImageFormat.Jpeg);
-                        return (ms);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                Roboto.log.log("Error generating chart. " + e.ToString() , logging.loglevel.critical);
-            }
+            Roboto.log.log($"generateImage: chart rendering not yet ported off WinForms - {seriesData.Count} series ready, no image produced. See this method's doc comment.", logging.loglevel.warn);
             return null;
+        }
+
+        /// <summary>Resolves a list of "moduleType>name" exact matches / regexes (or none, meaning
+        /// "everything") against the registered statTypes. Split out of generateImage so the
+        /// series-selection logic - the part with no charting-library dependency at all - survives
+        /// untouched once rendering itself is ported to ScottPlot.</summary>
+        private List<statType> getMatchingSeries(List<string> series)
+        {
+            //if nothing passed in, assume all stats
+            if (series.Count == 0) { series = new List<string> { ".*" }; }
+
+            List<statType> matches = new List<statType>();
+            foreach (string s in series)
+            {
+                //populate list of statTypes that match our query. Dont worry about order / dupes - will be ordered later
+                //try exact matches
+                string[] titles = s.Trim().Split(">"[0]);
+                if (titles.Length == 2)
+                {
+                    //get the series info
+                    statType seriesStats = getStatType(titles[1], titles[0]);
+                    if (seriesStats != null) { matches.Add(seriesStats); }
+                }
+
+                //try regex matches
+                List<statType> matchingTypes = getStatTypes(s);
+                foreach (statType mt in matchingTypes)
+                {
+                    matches.Add(mt);
+                }
+
+            }
+
+            return matches.Distinct().OrderBy(x => x.moduleType + ">" + x.name).ToList();
         }
 
         public void houseKeeping()

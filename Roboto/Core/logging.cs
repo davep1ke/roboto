@@ -1,27 +1,24 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
-//using System.Drawing;
-using System.Windows.Media;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Runtime.CompilerServices;
 using System.Text;
-using System.Threading.Tasks;
-using System.Windows.Forms;
-using System.Windows;
-using System.Threading;
-using System.Windows.Threading;
-using System.ComponentModel;
-using System.Data;
-
-
+using Serilog;
+using Serilog.Events;
 
 namespace RobotoChatBot
 {
     /// <summary>
-    /// Class for logging data in a standard format. 
+    /// Class for logging data in a standard format.
+    ///
+    /// Ported off WPF: this used to write to both a file and a WPF LogWindow, with every log() call
+    /// carrying a System.Windows.Media.Color? for the LogWindow's text color - neither WPF concept
+    /// survives a headless Linux/Docker port. Kept the exact public method shapes (log/logItem/
+    /// longOp/loglevel/setWindowTitle/cleanse) so the hundreds of existing call sites across every
+    /// module didn't need to change, minus the colour parameter itself (mechanically stripped from
+    /// every call site - it only ever drove LogWindow text color, nothing else). Output now goes
+    /// through Serilog (console sink here; a DB sink with a 30-day purge is added in a later phase -
+    /// see MIGRATION.md).
     /// </summary>
     public class logging
     {
@@ -32,7 +29,6 @@ namespace RobotoChatBot
         {
             public string logText { get; set; }
             public loglevel level { get; set; } = loglevel.normal;
-            public Color? colour { get; set; } = null;
             public bool noLineBreak { get; set; } = false;
             public bool banner { get; set; } = false;
             public bool pause { get; set; } = false;
@@ -41,11 +37,10 @@ namespace RobotoChatBot
             public string classtype { get; set; }
             public string methodName { get; set; }
 
-            public logItem(string text, loglevel level = loglevel.normal, Color? colour = null, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 2)
+            public logItem(string text, loglevel level = loglevel.normal, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 2)
             {
                 this.logText = text;
                 this.level = level;
-                this.colour = colour;
                 this.noLineBreak = noLineBreak;
                 this.banner = banner;
                 this.pause = pause;
@@ -55,25 +50,24 @@ namespace RobotoChatBot
                 try
                 {
                     StackFrame frame = new StackFrame(skipLevel);
-                    if (frame == null ) { throw new SystemException("Frame Not Found"); }
+                    if (frame == null) { throw new SystemException("Frame Not Found"); }
                     var method = frame.GetMethod();
-                    if (method == null) 
+                    if (method == null)
                     {
                         //not sure why this is an issue. For early calls on the VM this throws an exception so hardcode it if we can't find a method for the frame.
-                        //throw new SystemException("Method Not Found"); 
                         methodName = "Root";
                         classtype = "Class";
                         return;
                     }
                     methodName = method.Name;
-                    if(method.DeclaringType == null) { throw new SystemException("Method Declaring Type not found"); }
+                    if (method.DeclaringType == null) { throw new SystemException("Method Declaring Type not found"); }
                     classtype = method.DeclaringType.ToString();
                     if (classtype == null) { throw new SystemException("Method Not Found"); }
 
                 }
                 catch (Exception e)
                 {
-                    System.Windows.MessageBox.Show("Couldnt create logItem.\r\n" + e.ToString());
+                    Console.Error.WriteLine("Couldnt create logItem.\r\n" + e.ToString());
                     Roboto.log.log("Couldnt create logItem.\r\n" + e.ToString(), loglevel.critical);
                 }
             }
@@ -100,31 +94,35 @@ namespace RobotoChatBot
                 return outputString;
             }
 
-            internal Color getColor()
+            internal LogEventLevel getSerilogLevel()
             {
-                if (colour != null) { return (Color)colour; }
-
-
                 switch (level)
                 {
                     case loglevel.verbose:
-                        return Colors.Gray;
+                        return LogEventLevel.Verbose;
                     case loglevel.low:
-                        return Colors.DarkGreen;
+                        return LogEventLevel.Debug;
                     case loglevel.normal:
-                        return Colors.Cyan;
+                        return LogEventLevel.Information;
                     case loglevel.warn:
-                        return Colors.Magenta;
+                        return LogEventLevel.Warning;
                     case loglevel.high:
-                        return Colors.Yellow;
+                        return LogEventLevel.Error;
                     case loglevel.critical:
-                        return Colors.Red;
+                        return LogEventLevel.Fatal;
                 }
 
-                return Colors.White;
+                return LogEventLevel.Information;
             }
         }
 
+        /// <summary>
+        /// Was a WPF progress-bar abstraction (Roboto.logWindow.addOrUpdateLongOp/removeProgressBar) -
+        /// no UI to drive any more, so this now just logs its own start/step/completion as plain log
+        /// lines instead of rendering a progress bar. Kept as a class (not deleted outright) since
+        /// every call site (Plugins.cs, mod_xyzzy.cs, Roboto.cs startup) constructs one positionally
+        /// and calls addone()/complete() - changing those call sites isn't needed for this to work.
+        /// </summary>
         public class longOp
         {
             public string name;
@@ -155,7 +153,7 @@ namespace RobotoChatBot
                 this.name = name;
                 this.totalLength = totalLength;
                 Roboto.log.registerLongOp(this);
-                Roboto.logWindow.addOrUpdateLongOp(this);
+                Roboto.log.log($"{name}: starting ({totalLength} steps)", loglevel.low);
             }
 
             public longOp(string name, int totalLength, longOp parent)
@@ -164,13 +162,13 @@ namespace RobotoChatBot
                 this.totalLength = totalLength;
                 this.parent = parent;
                 Roboto.log.registerLongOp(this);
-                Roboto.logWindow.addOrUpdateLongOp(this);
+                Roboto.log.log($"{name}: starting ({totalLength} steps)", loglevel.low);
             }
 
             public void updateLongOp(int current, bool complete = false)
             {
                 this.currentPos = current;
-                Roboto.logWindow.addOrUpdateLongOp(this);
+                Roboto.log.log($"{name}: {current}/{totalLength}", loglevel.verbose);
 
                 if (complete) { this.complete(); }
             }
@@ -178,12 +176,12 @@ namespace RobotoChatBot
             public void complete()
             {
                 Roboto.log.unregisterLongOp(this);
-                Roboto.logWindow.removeProgressBar(this);
+                Roboto.log.log($"{name}: complete", loglevel.low);
             }
 
             public void addone()
             {
-                updateLongOp(currentPos+1);
+                updateLongOp(currentPos + 1);
             }
         }
 
@@ -201,42 +199,46 @@ namespace RobotoChatBot
         private StreamWriter textWriter = null;
         private bool initialised = false;
         private bool followOnLine = false;
-        private Char bannerChar = "*".ToCharArray()[0];
         private DateTime currentLogFileDate = DateTime.MinValue;
         private DateTime logLastFlushed = DateTime.Now;
         private static string windowTitleCore = "Roboto ChatBot";
         private string windowTitle = windowTitleCore;
         private List<longOp> longOps = new List<longOp>();
+        private ILogger serilog;
 
-        /// <summary>
-        /// 
-        /// </summary>
+        public logging()
+        {
+            serilog = new LoggerConfiguration()
+                .MinimumLevel.Verbose()
+                .WriteTo.Console(outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .CreateLogger();
+        }
+
         /// <param name="text"></param>
         /// <param name="level"></param>
-        /// <param name="colour"></param>
         /// <param name="noLineBreak"></param>
         /// <param name="banner"></param>
         /// <param name="pause"></param>
         /// <param name="skipheader"></param>
         /// <param name="skipLevel">Levels of the stack to skip when getting the calling class</param>
-        public void log(string text, loglevel level = loglevel.normal, Color? colour = null, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 2)
+        public void log(string text, loglevel level = loglevel.normal, bool noLineBreak = false, bool banner = false, bool pause = false, bool skipheader = false, int skipLevel = 2)
         {
-            log(new logItem(text, level, colour, noLineBreak, banner, pause, skipheader, skipLevel));
+            log(new logItem(text, level, noLineBreak, banner, pause, skipheader, skipLevel));
         }
 
         /// <summary>
         /// Add an item to the log
         /// </summary>
         /// <param name="thisLogItem"></param>
-        public void log (logItem thisLogItem)
-        { 
+        public void log(logItem thisLogItem)
+        {
             //check logfile correct
             if (initialised && Roboto.Settings.enableFileLogging && DateTime.Now > currentLogFileDate.AddHours(Roboto.Settings.rotateLogsEveryXHours))
             {
                 initialised = false;
                 try
                 {
-                    log("Rotating Logs", loglevel.warn, Colors.White, false, true);
+                    log("Rotating Logs", loglevel.warn, false, true);
                     finalise();
                     load();
                 }
@@ -247,7 +249,7 @@ namespace RobotoChatBot
                 }
             }
 
-            if (logLastFlushed < DateTime.Now.AddMinutes(-5) )
+            if (logLastFlushed < DateTime.Now.AddMinutes(-5))
             {
                 try
                 {
@@ -286,27 +288,16 @@ namespace RobotoChatBot
                     writeLine();
                     followOnLine = false;
                 }
-                
+
 
                 //write the main line
                 writeLine(thisLogItem);
-
-             
-                //TODO - pause
-                /*if (pause)
-                {
-                    writeLine(new logItem("Press any key to continue", loglevel.critical, ConsoleColor.Red,false,false,true);
-                    Console.ReadKey();
-                }*/
-
             }
-            Console.ResetColor();
         }
 
         public void setWindowTitle(string title)
         {
             this.windowTitle = windowTitleCore + " " + title;
-            if (Roboto.logWindow != null) { Roboto.logWindow.setTitle(windowTitleCore + " " + title); }
         }
 
         public string getWindowTitle()
@@ -316,7 +307,7 @@ namespace RobotoChatBot
 
         internal void finalise()
         {
-            log("Closing logfile", loglevel.warn );
+            log("Closing logfile", loglevel.warn);
             textWriter.Flush();
             textWriter.Close();
             initialised = false;
@@ -333,9 +324,7 @@ namespace RobotoChatBot
         private void writeLine(logItem thisLogItem)
         {
             thisLogItem.logText = cleanse(thisLogItem.logText);
-            //Console.WriteLine(s);
-            Roboto.logWindow.addLogItem(thisLogItem);
-            
+            serilog.Write(thisLogItem.getSerilogLevel(), thisLogItem.ToString());
 
             if (initialised && textWriter != null)
             {
@@ -349,13 +338,8 @@ namespace RobotoChatBot
         {
             //cleanse our text of anything we shouldnt log
             s = cleanse(s);
-            //append the text to the last item.
-            Roboto.logWindow.appendText(s);
+            serilog.Write(LogEventLevel.Information, s);
 
-
-            //logitems[logitems.Count - 1].logText += s;
-
-            //Console.Write(s);
             if (Roboto.Settings.enableFileLogging && textWriter != null)
             {
                 textWriter.Write(s);
@@ -382,7 +366,7 @@ namespace RobotoChatBot
             //Set up any stats
             Roboto.Settings.stats.registerStatType("Critical Errors", typeof(logging), System.Drawing.Color.Crimson, stats.displaymode.bar);
             Roboto.Settings.stats.registerStatType("High Errors", typeof(logging), System.Drawing.Color.Orange, stats.displaymode.bar);
-            
+
             //todo - remove any logs older than x days.
 
             if (Roboto.Settings.enableFileLogging)
@@ -391,7 +375,7 @@ namespace RobotoChatBot
                 currentLogFileDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, DateTime.Now.Hour, 0, 0);
                 string logfile = settings.foldername + Roboto.Settings.botUserName + " " + DateTime.Now.ToString("yyyy-MM-dd HH") + ".log";
                 if (!Directory.Exists(settings.foldername)) { Directory.CreateDirectory(settings.foldername); }
-                textWriter = new StreamWriter(logfile, true, new UTF8Encoding(),65536);
+                textWriter = new StreamWriter(logfile, true, new UTF8Encoding(), 65536);
                 for (int i = 0; i < 10; i++) { textWriter.WriteLine(); }
                 initialised = true;
                 log("Enabled logging to file " + logfile, loglevel.warn);
@@ -399,10 +383,10 @@ namespace RobotoChatBot
             }
             else
             {
-                log("File logging is disabled. Enable in the xml configuration file." );
+                log("File logging is disabled. Enable in the xml configuration file.");
             }
 
-            
+
 
         }
 

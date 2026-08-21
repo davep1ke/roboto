@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Windows.Media;
 using System.Linq;
 using System.Text;
 using System.IO;
@@ -51,7 +50,7 @@ namespace RobotoChatBot
 
                 }
             }
-            Roboto.log.log("All Plugins initialised", logging.loglevel.high, Colors.White, false, true);
+            Roboto.log.log("All Plugins initialised", logging.loglevel.high, false, true);
         }
 
 
@@ -232,6 +231,18 @@ namespace RobotoChatBot
 
 
 
+        /// <summary>
+        /// Returns null (not a throw) on a miss - RobotoModuleTemplate.initPluginData(), the only
+        /// caller, explicitly branches on that to create-and-register fresh data for a module that
+        /// doesn't have any yet (e.g. a genuinely first-ever run, empty pluginData). This used to
+        /// throw unconditionally instead, which made that fallback branch dead code and crashed
+        /// startup on a fresh instance with no pre-existing settings file - only ever went unnoticed
+        /// because production has run continuously off one already-populated settings file since
+        /// this bug was introduced, so a truly empty pluginData list was never actually exercised.
+        /// getPluginData&lt;T&gt; (the generic overload, below) is a different, deliberately-throwing
+        /// contract used only by modules fetching their own already-registered data well after
+        /// startup - not touched here.
+        /// </summary>
         public static Modules.RobotoModuleDataTemplate getPluginData(Type pluginDataType)
         {
             foreach (Modules.RobotoModuleDataTemplate existing in Roboto.Settings.pluginData)
@@ -242,8 +253,7 @@ namespace RobotoChatBot
                 }
             }
 
-            Console.WriteLine("Couldnt find plugin data of type " + pluginDataType.ToString());
-            throw new InvalidDataException("Couldnt find plugin data of type " + pluginDataType.ToString());
+            return null;
         }
     }
 }

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
-using System.Windows.Media;
 using System.Linq;
 using System.Text;
 using System.IO;
@@ -23,7 +22,7 @@ namespace RobotoChatBot
         {
             logging.longOp lo_s = new logging.longOp("Dormant Chat Check", Roboto.Settings.chatData.Count());
 
-            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, Colors.White, false, true);
+            Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, false, true);
             foreach (chat c in Roboto.Settings.chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(Roboto.Settings.purgeInactiveChatsAfterXDays, 0, 0, 0))).ToList())
             {
                 //check all plugins and remove data if no longer reqd
