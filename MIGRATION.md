@@ -27,7 +27,7 @@ is arbitrary.
 | 3c. `logs` table + custom Serilog DB sink + 30-day purge task | Done, verified | `0d8e1c3` |
 | 4. Real periodic background scheduler + `ChatKeyedLock` | Done, verified | `521b9eb` |
 | 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Deferred - user call, see notes | — |
-| 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Done, verified | — |
+| 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Done, verified | `a98f277` |
 | 7. Test harness + business-logic test suite | Done, verified (partial coverage - see notes) | `28d4714` |
 | 8. Migrator retarget (`XmlImporter` → new decomposed store) | Not started | — |
 | 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Not started | — |
