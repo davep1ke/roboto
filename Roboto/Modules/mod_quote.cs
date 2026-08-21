@@ -221,7 +221,7 @@ namespace RobotoChatBot.Modules
                     List<string> options = new List<string>();
                     options.Add("Set Duration");
                     options.Add("Toggle automatic quotes");
-                    string keyboard = TelegramAPI.createKeyboard(options, 1);
+                    var keyboard = TelegramAPI.createKeyboard(options, 1);
                     Messaging.SendQuestion(c.chatID, m.userID,
                         "Quotes are currently " + (localChatData.autoQuoteEnabled == true? "enabled" : "disabled") 
                         + " and set to announce every " + localChatData.autoQuoteHours.ToString() + " hours"
@@ -338,7 +338,7 @@ namespace RobotoChatBot.Modules
                 }
                 else
                 {
-                    Messaging.SendQuestion(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.userFullName, m.message_id, true, "", false,false,true);
+                    Messaging.SendQuestion(e.chatID, m.userID, "What was the quote from " + m.text_msg, true, typeof(mod_quote), "TEXT " + m.text_msg, m.userFullName, m.message_id, true, null, false,false,true);
                 }
                 return true;
             }

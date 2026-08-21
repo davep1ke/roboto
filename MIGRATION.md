@@ -21,7 +21,7 @@ is arbitrary.
 |---|---|---|
 | 0. Branch + skeleton: new branch off `master`/`legacy-winforms-baseline`, SDK-style `.csproj` (net10, `Exe`) | Done, verified | `3bcc6e9` |
 | 1. Drop WPF/WinForms: `LogWindow` removed, `Color?`-threaded logging → Serilog, chart rendering stubbed | Done, verified | `4adcb18` |
-| 2. Telegram transport swap (`Telegram.Bot` package, preserving `Messaging`/`ExpectedReply`/dispatch contracts exactly) | Not started | — |
+| 2. Telegram transport swap (`Telegram.Bot` package, preserving `Messaging`/`ExpectedReply`/dispatch contracts exactly) | Done, verified | — |
 | 3. Persistence swap (`IStateStore` blob rows + relational tables), `.env`/`ROBOTO_INSTANCE` config, `logs` table + DB sink | Not started | — |
 | 4. Real periodic background scheduler + `ChatKeyedLock` | Not started | — |
 | 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Not started | — |
@@ -56,9 +56,40 @@ today (produces flat oddly-named files instead of a real subdirectory tree, conf
 smoke test) rather than a crash. Phase 3's `.env`/`ROBOTO_INSTANCE`/`{DataDir}/{Instance}/` config
 swap replaces this path-resolution scheme entirely, so no separate fix needed before then.
 
+## Phase 2 notes (Telegram transport swap)
+
+`TelegramAPI.cs`'s hand-rolled `HttpWebRequest`+`JObject` layer is now the `Telegram.Bot` package
+throughout (`postExpectedReplyToPlayer`, `getUpdates`, `createKeyboard`, `getChatMembersCount`), and
+`Storage/message.cs` builds from a typed `Telegram.Bot.Types.Message` instead of a raw `JToken`.
+Every module-facing call signature (`Messaging.SendMessage`/`SendQuestion`/`SendPhoto`,
+`TelegramAPI.createKeyboard`) is unchanged in shape; only `createKeyboard`'s and
+`ExpectedReply.keyboard`'s *type* changed (`string` → `List<List<string>>`, plain button-label rows -
+**not** a real `ReplyKeyboardMarkup` directly, see below), which every call site just passed through
+opaquely already, so this was a mechanical propagation across ~17 sites, not a redesign. Dispatch
+itself - the per-plugin `chatEvent` loop, `Messaging.parseExpectedReplies`, the `ExpectedReply`
+matching/queueing machinery - is untouched, just now driven from `Update`/`Message` objects instead
+of `JToken`s.
+
+**Real design finding, not just a mechanical port**: `ExpectedReply` (and therefore its `keyboard`
+field) is part of the XML-serialized `Roboto.Settings.expectedReplies` graph - `XmlSerializer` cannot
+serialize a real `Telegram.Bot.Types.ReplyMarkups.ReplyKeyboardMarkup` at all (its `Keyboard` property
+is `IEnumerable<...>`-typed, which throws `NotSupportedException` at `XmlSerializer` construction,
+caught during phase 2 verification, not just a compile-time issue). Kept `ExpectedReply.keyboard` as
+plain serializable `List<List<string>>` button-label rows instead, and added
+`TelegramAPI.BuildReplyMarkup` to build the real typed keyboard only at the actual send boundary. This
+decouples "what's persisted" from "what's sent" - a distinction legacy's own raw-JSON-string design
+already implicitly had, that a naive typed port would have silently broken.
+
+Verified via a real smoke test end-to-end: with the placeholder API key, `Client` construction
+correctly rejects it (`ArgumentException: Bot token invalid`), logged and looped exactly like legacy's
+own resilience model (no crash). With the real `beefy` test-bot token (from the abandoned rewrite
+branch's leftover `data/beefy/bot.env`), the call reached the real Telegram API and got back a genuine
+`409 Conflict: terminated by other getUpdates request` - proof of a real, successfully-authenticated
+round trip (something else was already holding a long-poll on that same token; not a bug here).
+
 ## What's still open
 
-Everything from phase 2 onward - see the phase table above and the full plan file for what each phase
+Everything from phase 3 onward - see the phase table above and the full plan file for what each phase
 actually involves, the four explicitly-confirmed architecture decisions (hybrid keyboards, real
 background scheduler, decomposed persistence + relational tables for whole-bot lists, carry-forward
 deltas), and the resolved/open sub-decisions (chatPriority sort - decided, implement; card/pack ID

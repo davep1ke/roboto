@@ -572,7 +572,7 @@ namespace RobotoChatBot.Modules
             List<string> playernames = new List<string>();
             foreach (mod_xyzzy_player p in players ) { playernames.Add(p.name); }
             playernames.Add("Cancel");
-            string keyboard = TelegramAPI.createKeyboard(playernames, 2);
+            var keyboard = TelegramAPI.createKeyboard(playernames, 2);
             Messaging.SendQuestion(chatID, m.userID, "Which player do you want to kick", true, typeof(mod_xyzzy), "kick", m.userFullName, -1, true, keyboard);
 
         }
@@ -747,7 +747,7 @@ namespace RobotoChatBot.Modules
 
                 if (missingReplies) { chatMsg += missingRepliestxt; }
 
-                string keyboard = TelegramAPI.createKeyboard(responses, 1);
+                var keyboard = TelegramAPI.createKeyboard(responses, 1);
                 //int judgeMsg = TelegramAPI.GetReply(tzar.playerID, "Pick the best answer! \r\n" + q.text, -1, true, keyboard);
                 //localData.expectedReplies.Add(new mod_xyzzy_expectedReply(judgeMsg, tzar.playerID, chatID, ""));
                 //TODO - add messageData types to an enum
@@ -788,7 +788,7 @@ namespace RobotoChatBot.Modules
             List<string> playernames = new List<string>();
             foreach (mod_xyzzy_player p in players) { playernames.Add(p.name); }
             playernames.Add("Cancel");
-            string keyboard = TelegramAPI.createKeyboard(playernames, 2);
+            var keyboard = TelegramAPI.createKeyboard(playernames, 2);
             Messaging.SendQuestion(chatID, m.userID, "Whose score do you want to alter?", true, typeof(mod_xyzzy), "changescore", m.userFullName, -1, true, keyboard);
         }
 
@@ -797,7 +797,7 @@ namespace RobotoChatBot.Modules
             List< string > playernames = new List<string>();
             foreach (mod_xyzzy_player p in players) { playernames.Add(p.name); }
             playernames.Add("Cancel");
-            string keyboard = TelegramAPI.createKeyboard(playernames, 2);
+            var keyboard = TelegramAPI.createKeyboard(playernames, 2);
             Messaging.SendQuestion(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", m.userFullName, -1, true, keyboard);
         }
 
@@ -969,7 +969,7 @@ namespace RobotoChatBot.Modules
         /// <param name="userID"></param>
         public void askMaxTimeout(long userID)
         {
-            string kb = TelegramAPI.createKeyboard(new List<string>()
+            var kb = TelegramAPI.createKeyboard(new List<string>()
             {
                 "Continue", "No Timeout"
                 , "1","2", "6", "12", "24", "48"
@@ -987,7 +987,7 @@ namespace RobotoChatBot.Modules
         public void askMinTimeout(long userID)
         {
 
-            string kb = TelegramAPI.createKeyboard(new List<string>()
+            var kb = TelegramAPI.createKeyboard(new List<string>()
             {
                 "Continue", "No Limit"
                 , "1","2", "6", "12", "24", "48"
@@ -1716,7 +1716,7 @@ namespace RobotoChatBot.Modules
             }
 
             //now send the new list. 
-            string keyboard = TelegramAPI.createKeyboard(keyboardResponse, 2);//todo columns
+            var keyboard = TelegramAPI.createKeyboard(keyboardResponse, 2);//todo columns
             Messaging.SendQuestion(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter " + pageNr, m.userFullName,  -1, false, keyboard, true);
         }
 

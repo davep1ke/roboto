@@ -107,7 +107,7 @@ namespace RobotoChatBot.Modules
 
         }
 
-        public string getAnswerKeyboard(mod_xyzzy_coredata localData)
+        public List<List<string>> getAnswerKeyboard(mod_xyzzy_coredata localData)
         {
             List<string> answers = new List<string>();
 

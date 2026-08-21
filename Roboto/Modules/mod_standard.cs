@@ -355,11 +355,11 @@ namespace RobotoChatBot.Modules
                     if (success && s > TimeSpan.Zero && s.TotalDays < 1)
                     {
                         chatData.quietHoursStartTime = s;
-                        Messaging.SendQuestion(e.chatID, m.userID, "Enter the wake time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setWakeHours", m.userFullName, -1, false, "", false, false, true);
+                        Messaging.SendQuestion(e.chatID, m.userID, "Enter the wake time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setWakeHours", m.userFullName, -1, false, null, false, false, true);
                     }
                     else
                     {
-                        Messaging.SendQuestion(e.chatID, m.userID,  "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
+                        Messaging.SendQuestion(e.chatID, m.userID,  "Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, null, false, false, true);
                     }
 
 
@@ -391,7 +391,7 @@ namespace RobotoChatBot.Modules
                     }
                     else
                     {
-                        Messaging.SendQuestion(e.chatID, m.userID,"Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, "", false, false, true);
+                        Messaging.SendQuestion(e.chatID, m.userID,"Invalid value. Enter the start time for the quiet hours, cancel, or disable. This should be in the format hh:mm:ss (e.g. 23:00:00)", true, this.GetType(), "setQuietHours", m.userFullName, -1, false, null, false, false, true);
                     }
                 }
                 return true;

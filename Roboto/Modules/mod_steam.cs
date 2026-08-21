@@ -414,7 +414,7 @@ namespace RobotoChatBot.Modules
                         playerKeyboard.Add(p.playerName);
                     }
                     playerKeyboard.Add("Cancel");
-                    string playerKeyboardText = TelegramAPI.createKeyboard(playerKeyboard, 2);
+                    var playerKeyboardText = TelegramAPI.createKeyboard(playerKeyboard, 2);
                     Messaging.SendQuestion(c.chatID, m.userID, "Which player do you want to stop tracking?", false, typeof(mod_steam), "REMOVEPLAYER", m.userFullName, m.message_id, true, playerKeyboardText);
                     
                 }

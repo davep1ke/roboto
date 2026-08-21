@@ -1,17 +1,9 @@
 ﻿using System;
 using System.Threading;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Linq;
-using System.Web;
-using System.Text;
-using System.Net;
-using System.Net.Http;
 using System.IO;
-using System.Threading.Tasks;
-using System.Runtime.Serialization;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
+using Telegram.Bot;
 using RobotoChatBot.Modules;
 
 namespace RobotoChatBot
@@ -47,7 +39,7 @@ namespace RobotoChatBot
         {
 
             bool isPM = (chatID < 0 ? false : true);
-            ExpectedReply e = new ExpectedReply(chatID, chatID, userName, text, isPM, null, null, replyToMessageID, false, "", markDown, clearKeyboard, false);
+            ExpectedReply e = new ExpectedReply(chatID, chatID, userName, text, isPM, null, null, replyToMessageID, false, null, markDown, clearKeyboard, false);
 
             //add the message to the stack. If it is sent, get the messageID back.
             long messageID = processNewExpectedReply(e, trySendImmediately);
@@ -69,26 +61,30 @@ namespace RobotoChatBot
         /// <returns></returns>
         public static long SendPhoto(long chatID, string caption, Stream image, string fileName, string fileContentType, long replyToMessageID, bool clearKeyboard)
         {
-            //TODO - should be cached in the expectedReply object first. 
             Roboto.Settings.stats.logStat(new statItem("Outgoing Msgs", typeof(TelegramAPI)));
 
-            string postURL = Roboto.Settings.telegramAPIURL + Roboto.Settings.telegramAPIKey + "/sendPhoto";
-
-            var pairs = new NameValueCollection();
-            pairs["chat_id"] = chatID.ToString();
-            pairs["caption"] = caption;
-
             if (caption.Length > 2000) { caption = caption.Substring(0, 1990); }
-            if (replyToMessageID != -1) { pairs["reply_to_message_id"] = replyToMessageID.ToString(); }
-            if (clearKeyboard) { pairs["reply_markup"] = "{\"hide_keyboard\":true}"; }
+
+            Telegram.Bot.Types.ReplyParameters replyParameters = replyToMessageID != -1
+                ? new Telegram.Bot.Types.ReplyParameters { MessageId = (int)replyToMessageID }
+                : null;
+            Telegram.Bot.Types.ReplyMarkups.ReplyMarkup replyMarkup = clearKeyboard
+                ? new Telegram.Bot.Types.ReplyMarkups.ReplyKeyboardRemove()
+                : null;
+
             try
             {
-                JObject response = TelegramAPI.sendPOST(postURL, pairs, image, fileName, fileContentType).Result;
-                //get the message ID
-                int messageID = response.SelectToken("result.message_id").Value<int>();
-                return messageID;
+                Telegram.Bot.Types.Message sentMessage = TelegramAPI.Client.SendPhoto(
+                    chatID,
+                    Telegram.Bot.Types.InputFile.FromStream(image, fileName),
+                    caption: caption,
+                    replyParameters: replyParameters,
+                    replyMarkup: replyMarkup
+                ).GetAwaiter().GetResult();
+
+                return sentMessage.MessageId;
             }
-            catch (WebException e)
+            catch (Exception e)
             {
                 //log it and carry on
                 Roboto.log.log("Couldnt send photo " + fileName + " to " + chatID + "! " + e.ToString(), logging.loglevel.critical);
@@ -108,7 +104,7 @@ namespace RobotoChatBot
         /// <param name="selective"></param>
         /// <param name="answerKeyboard"></param>
         /// <returns>An integer specifying the message id. -1 indicates it is queueed, long.MinValue indicates a failure</returns>
-        public static long SendQuestion(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, string userName = null, long replyToMessageID = -1, bool selective = false, string answerKeyboard = "", bool useMarkdown = false, bool clearKeyboard = false, bool trySendImmediately = false)
+        public static long SendQuestion(long chatID, long userID, string text, bool isPrivateMessage, Type pluginType, string messageData, string userName = null, long replyToMessageID = -1, bool selective = false, List<List<string>> answerKeyboard = null, bool useMarkdown = false, bool clearKeyboard = false, bool trySendImmediately = false)
         {
             ExpectedReply e = new ExpectedReply(chatID, userID, userName, text, isPrivateMessage, pluginType, messageData, replyToMessageID, selective, answerKeyboard, useMarkdown, clearKeyboard, true);
 

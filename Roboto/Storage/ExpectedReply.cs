@@ -9,7 +9,7 @@ namespace RobotoChatBot
     public class ExpectedReply
     {
         /// <summary>
-        /// The chat that the reply relates to (not the chat it was posted to, neccessarily). 
+        /// The chat that the reply relates to (not the chat it was posted to, neccessarily).
         /// </summary>
         public long chatID = -1;
         public long userID = -1;
@@ -19,7 +19,15 @@ namespace RobotoChatBot
         public string text = "";
         public long replyToMessageID = -1;
         public bool selective = false;
-        public string keyboard = "";
+        /// <summary>Null means "no keyboard" - was a raw JSON-fragment string before the
+        /// Telegram.Bot port; now plain button-label rows (see TelegramAPI.createKeyboard's
+        /// comment) rather than a real Telegram.Bot ReplyKeyboardMarkup, deliberately - this field
+        /// is part of the persisted Roboto.Settings.expectedReplies graph (XmlSerializer can't
+        /// serialize ReplyKeyboardMarkup itself, its Keyboard property is interface-typed). The real
+        /// typed keyboard only gets built at the send boundary, in TelegramAPI.BuildReplyMarkup.
+        /// TelegramAPI.postExpectedReplyToPlayer still treats null/clearKeyboard/force-reply as
+        /// mutually exclusive the same way it always did.</summary>
+        public List<List<string>> keyboard = null;
         public bool expectsReply = true;
         public bool markDown = false;
         public bool clearKeyboard = false;
@@ -44,7 +52,7 @@ namespace RobotoChatBot
         /// <param name="isPrivateMessage"></param>
         /// <param name="pluginType"></param>
         /// <param name="messageData"></param>
-        public ExpectedReply(long chatID, long userID, string userName, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID, bool selective, string keyboard, bool  markDown, bool clearKeyboard, bool expectsReply)
+        public ExpectedReply(long chatID, long userID, string userName, string text, bool isPrivateMessage, Type pluginType, string messageData, long replyToMessageID, bool selective, List<List<string>> keyboard, bool  markDown, bool clearKeyboard, bool expectsReply)
         {
             
             this.chatID = chatID;

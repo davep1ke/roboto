@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using Newtonsoft.Json;
-using System.Web;
-using Newtonsoft.Json.Linq;
-
+using System;
 
 namespace RobotoChatBot
 {
@@ -24,40 +17,40 @@ namespace RobotoChatBot
         public String chatName;
         public long userID = -1;
 
-        //is this in reply to another text that we sent? 
+        //is this in reply to another text that we sent?
         public bool isReply = false;
         public String replyOrigMessage = "";
         public String replyOrigUser = "";
         public long replyMessageID = -1;
 
-        public message(JToken update_TK)
+        /// <summary>Ported off hand-parsing a raw JToken (Newtonsoft) onto reading a typed
+        /// Telegram.Bot.Types.Message directly - same field mapping, just via strongly-typed
+        /// properties instead of SelectToken string paths.</summary>
+        public message(Telegram.Bot.Types.Message tgMessage)
         {
             try
             {
                 //get the message details
-                message_id = update_TK.SelectToken(".message_id").Value<long>();
-                chatID = update_TK.SelectToken(".chat.id").Value<long>();
-                chatName = getNullableString(update_TK.SelectToken(".chat.title"));
-                text_msg =  update_TK.SelectToken(".text").Value<String>();
-                //text_msg = (String)JsonConvert.DeserializeObject(text_msg);
-                userID = update_TK.SelectToken(".from.id").Value<long>();
-                userHandle = getNullableString(update_TK.SelectToken(".from.username"));
-                userFirstName = getNullableString(update_TK.SelectToken(".from.first_name"));
-                userSurname = getNullableString(update_TK.SelectToken(".from.last_name"));
+                message_id = tgMessage.MessageId;
+                chatID = tgMessage.Chat.Id;
+                chatName = tgMessage.Chat.Title ?? "";
+                text_msg = tgMessage.Text;
+                userID = tgMessage.From.Id;
+                userHandle = tgMessage.From.Username ?? "";
+                userFirstName = tgMessage.From.FirstName ?? "";
+                userSurname = tgMessage.From.LastName ?? "";
                 userFullName = userFirstName + " " + userSurname;
 
                 //in reply to...
-                JToken replyMsg_TK = update_TK.SelectToken(".reply_to_message");
-                if (replyMsg_TK != null)
+                if (tgMessage.ReplyToMessage != null)
                 {
                     isReply = true;
-                    replyOrigMessage = getNullableString(replyMsg_TK.SelectToken(".text"));
-                    replyOrigUser = getNullableString(replyMsg_TK.SelectToken(".from.username"));
-                    replyMessageID = replyMsg_TK.SelectToken(".message_id").Value<long>();
-                    
+                    replyOrigMessage = tgMessage.ReplyToMessage.Text ?? "";
+                    replyOrigUser = tgMessage.ReplyToMessage.From?.Username ?? "";
+                    replyMessageID = tgMessage.ReplyToMessage.MessageId;
                 }
                 Roboto.Settings.stats.logStat(new statItem("Incoming Msgs", typeof(TelegramAPI)));
-                Roboto.log.log("Message:" + userFullName.PadRight(17, " "[0] ) + " -> " + text_msg, logging.loglevel.low);
+                Roboto.log.log("Message:" + userFullName.PadRight(17, " "[0]) + " -> " + text_msg, logging.loglevel.low);
             }
             catch (Exception e)
             {
@@ -66,22 +59,6 @@ namespace RobotoChatBot
             }
 
         }
-
-        public string getNullableString(JToken token)
-        {
-            string rtn = "";
-
-            if (token != null)
-            {
-                rtn = token.Value<String>();
-            }
-
-            return rtn;
-
-        }
-        
-
-
 
     }
 }

@@ -97,7 +97,7 @@ namespace RobotoChatBot.Modules
 
 
                     //use defaults or configure game
-                    string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
+                    var kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
                     
                     long messageID = Messaging.SendQuestion(c.chatID, m.userID, "Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1,false,kb);
 
@@ -274,7 +274,7 @@ namespace RobotoChatBot.Modules
                     {
                         //make a keyboard and send leave message to user.
                         activeGames.Add("Cancel");
-                        string kb = TelegramAPI.createKeyboard(activeGames, 1);
+                        var kb = TelegramAPI.createKeyboard(activeGames, 1);
                         long messageID = Messaging.SendQuestion(0, m.userID, "Which game would you like to leave?", true, typeof(mod_xyzzy), "leaveGamePickGroup", m.userFullName, -1, false, kb, false, false, true);
                     }
                     else
@@ -518,7 +518,7 @@ namespace RobotoChatBot.Modules
                         //add all the q's and a's based on the previous settings / defaults if a new game. 
                         chatData.addQuestions();
                         chatData.addAllAnswers();
-                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                         chatData.setStatus(xyzzy_Statuses.Invites);
                     }
@@ -535,7 +535,7 @@ namespace RobotoChatBot.Modules
                     }
                     else
                     {
-                        string kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
+                        var kb = TelegramAPI.createKeyboard(new List<string>() { "Use Defaults", "Configure Game", "Cancel" }, 2);
                         long messageID = Messaging.SendQuestion(c.chatID, m.userID, "Not a valid answer. Do you want to start the game with the default settings, or set advanced optons first? You can change these options later with /xyzzy_settings", true, typeof(mod_xyzzy), "useDefaults", m.userFullName, -1, false, kb);
                     }
                     processed = true;
@@ -713,7 +713,7 @@ namespace RobotoChatBot.Modules
                     {
 
                         //Ready to start game - tell the player they can start when they want
-                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                         chatData.setStatus(xyzzy_Statuses.Invites);
 
@@ -761,12 +761,12 @@ namespace RobotoChatBot.Modules
                     }
                     else if (m.text_msg == "Start")
                     {
-                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     }
                     else
                     {
-                        string keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     }
 
@@ -848,7 +848,7 @@ namespace RobotoChatBot.Modules
                     mod_xyzzy_player p = chatData.getPlayer(m.text_msg);
                     if (p != null)
                     {
-                        Messaging.SendQuestion(chatData.chatID, m.userID, "What should their new score be?", true, typeof(mod_xyzzy), "changescorepoints " + p.playerID.ToString(), m.userFullName, -1, true, "", false, true, true);
+                        Messaging.SendQuestion(chatData.chatID, m.userID, "What should their new score be?", true, typeof(mod_xyzzy), "changescorepoints " + p.playerID.ToString(), m.userFullName, -1, true, null, false, true, true);
                     }
                     else
                     {
