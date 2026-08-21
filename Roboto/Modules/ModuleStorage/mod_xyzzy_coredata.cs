@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
 using System.Xml.Serialization;
+using System.Text.Json.Serialization;
 using RobotoChatBot.Helpers;
 
 namespace RobotoChatBot.Modules
@@ -24,8 +25,18 @@ namespace RobotoChatBot.Modules
         public int maxDormantPacksToRemovePerPass = 1;
         public int minimumPackThreshold = 150;
         public int packDormantThresholdDays = 90;
+        // Persisted via the real xyzzy_cards/xyzzy_packs tables instead of as part of this module's
+        // own blob row - see SqliteStateStore's own comment on why (real scale concern: up to
+        // 72k/230k cards in the largest real production export seen). settings.load()/save()
+        // populate/write these directly for this one module type; the field initializers below
+        // (especially the 7 default packs) are what a genuinely fresh instance - no rows in
+        // xyzzy_packs yet - starts with, same "field initializer is the fallback default" pattern
+        // every other module's fresh-instance case already relies on.
+        [JsonIgnore]
         public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
+        [JsonIgnore]
         public List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
+        [JsonIgnore]
         //Add packs for the standard CaH packs.
         public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>()
         { 

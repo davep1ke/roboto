@@ -12,12 +12,12 @@ namespace RobotoChatBot
     /// Ported off one big XmlSerializer round-trip of this entire object graph to one file, onto
     /// SqliteStateStore: small/bounded state (this object's own scalar config, each chat's per-
     /// module data, each module's own global core-data) as JSON blob rows; genuinely whole-bot-
-    /// scoped growing collections (expectedReplies, stats, RecentChatMembers) as real SQL tables -
+    /// scoped growing collections (expectedReplies, stats, RecentChatMembers, and - a real scale
+    /// concern, not just "whole bot list" framing - the xyzzy card/pack catalog) as real SQL tables -
     /// see SqliteStateStore's own comment for why the split, and MIGRATION.md's phase 3 notes for
-    /// what's deliberately deferred (the xyzzy card/pack catalog is still one big blob for now, not
-    /// yet split into its own table; real per-mutation write-through durability for expectedReplies/
-    /// stats/etc is a separate follow-up, not delivered by this pass - both flush only at save(),
-    /// same timing model XmlSerializer always had).
+    /// what's still deliberately deferred (real per-mutation write-through durability for
+    /// expectedReplies/stats/etc is a separate follow-up, not delivered by this pass - every table
+    /// still only flushes at save(), same timing model XmlSerializer always had).
     ///
     /// The fields below marked [JsonIgnore] are populated by load()/save() from elsewhere (their own
     /// blob rows or real tables), not as part of this object's own blob - keeping them as real
@@ -110,6 +110,24 @@ namespace RobotoChatBot
                 }
             }
 
+            //xyzzy's card/pack catalog - real tables (see mod_xyzzy_coredata's own [JsonIgnore]
+            //comment), not part of that module's blob row above. A fresh instance (no rows in
+            //xyzzy_packs yet) keeps whichever mod_xyzzy_coredata.pack/questions/answers field
+            //initializers it already got (the 7 default CAH packs, empty catalog) - same fallback
+            //convention as any other module's fresh-instance case.
+            if (setts.pluginData.OfType<mod_xyzzy_coredata>().FirstOrDefault() is { } xyzzyData)
+            {
+                var loadedQuestions = store.LoadXyzzyCards("question");
+                var loadedAnswers = store.LoadXyzzyCards("answer");
+                var loadedPacks = store.LoadXyzzyPacks();
+                if (loadedPacks.Count > 0)
+                {
+                    xyzzyData.questions = loadedQuestions;
+                    xyzzyData.answers = loadedAnswers;
+                    xyzzyData.packs = loadedPacks;
+                }
+            }
+
             //chats - one blob row per chat for its own scalars, plus one blob row per (chat, module
             //type) for that chat's module data, reassembled into chat.chatData same as it always was
             //in memory.
@@ -153,6 +171,13 @@ namespace RobotoChatBot
             foreach (var data in pluginData)
             {
                 store.Save(data.GetType(), ModuleDataKey(data.GetType()), data);
+            }
+
+            if (pluginData.OfType<mod_xyzzy_coredata>().FirstOrDefault() is { } xyzzyData)
+            {
+                store.SaveXyzzyCards("question", xyzzyData.questions);
+                store.SaveXyzzyCards("answer", xyzzyData.answers);
+                store.SaveXyzzyPacks(xyzzyData.packs);
             }
 
             foreach (var c in chatData)

@@ -23,8 +23,8 @@ is arbitrary.
 | 1. Drop WPF/WinForms: `LogWindow` removed, `Color?`-threaded logging → Serilog, chart rendering stubbed | Done, verified | `4adcb18` |
 | 2. Telegram transport swap (`Telegram.Bot` package, preserving `Messaging`/`ExpectedReply`/dispatch contracts exactly) | Done, verified | — |
 | 3. Persistence swap (`IStateStore` blob rows + relational tables), `.env`/`ROBOTO_INSTANCE` config | Done, verified | — |
-| 3b. Split the xyzzy card/pack catalog out of its blob into the `xyzzy_cards`/`xyzzy_packs` tables | Not started | — |
-| 3c. `logs` table + custom Serilog DB sink + 30-day purge task | Not started | — |
+| 3b. Split the xyzzy card/pack catalog out of its blob into the `xyzzy_cards`/`xyzzy_packs` tables | Done, verified | — |
+| 3c. `logs` table + custom Serilog DB sink + 30-day purge task | Done, verified | — |
 | 4. Real periodic background scheduler + `ChatKeyedLock` | Not started | — |
 | 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Not started | — |
 | 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Not started | — |
@@ -100,9 +100,8 @@ nested inside `mod_quote_data`/`mod_birthday_data`, not whole-bot lists, and sta
 modules' own blob rows. The xyzzy card/pack catalog (`mod_xyzzy_coredata.questions`/`.answers`/
 `.packs`) has a real scale argument for its own tables independent of that framing (up to 72k/230k
 cards in the largest real production export seen on the abandoned rewrite branch - one blob holding
-that would be a multi-MB read/write on every save) and is still planned as `xyzzy_cards`/`xyzzy_packs`
-- just **deferred to phase 3b**, not done in this pass, to keep this already-large change reviewable.
-Still one blob (`module:mod_xyzzy_coredata`) for now, catalog included.
+that would be a multi-MB read/write on every save) - split out into `xyzzy_cards`/`xyzzy_packs` in
+phase 3b (see its own notes below).
 
 **Timing model, flagged explicitly**: every table (including the new `expected_replies`/`stats`/
 `chat_presence` ones) is flushed via a full delete+reinsert at `settings.save()`, matching the exact
@@ -151,6 +150,44 @@ exists" on the second run, proving actual round-trip persistence, not just succe
 xyzzy-specific stat types show "added" again on restart rather than "already exists" - expected, not a
 bug: they were registered but never actually measured in the test window, so no row existed to
 reconstruct in the first place; a `statType` with zero recorded slices behaves identically either way.)
+
+## Phase 3b notes (xyzzy card/pack catalog tables)
+
+`mod_xyzzy_coredata.questions`/`.answers`/`.packs` are `[JsonIgnore]`'d out of that module's own blob
+row and persisted via the real `xyzzy_cards`/`xyzzy_packs` tables instead (`SqliteStateStore.
+LoadXyzzyCards`/`SaveXyzzyCards`/`LoadXyzzyPacks`/`SaveXyzzyPacks`), wired into `settings.load()`/
+`save()` as a special case for that one module type (found via `pluginData.OfType<mod_xyzzy_coredata>
+().FirstOrDefault()`). A genuinely fresh instance (no rows in `xyzzy_packs` yet) keeps whatever
+`mod_xyzzy_coredata`'s own field initializers already supply (the 7 default CAH packs, empty
+questions/answers) rather than the load path overwriting them with an empty load result - same
+fresh-instance-fallback convention every other module already had via `Plugins.initPluginData()`.
+
+**Verified**: a fresh instance seeds and persists the 7 default packs correctly; a genuine restart
+proof (not just "doesn't crash") - hand-edited one pack's `total_picks` directly in the DB via
+`sqlite3`, restarted, and confirmed the edited value (not the field-initializer default) survived,
+proving real load-from-table rather than silent re-seeding.
+
+## Phase 3c notes (DB logging + purge)
+
+`Core/DbLogSink.cs` - a small custom `Serilog.Core.ILogEventSink` writing to the new `logs` table
+(`SqliteStateStore.WriteLogEvent`), added to `logging.cs`'s `LoggerConfiguration` alongside (not
+instead of) the console sink. Fully additive/best-effort: wrapped in a bare `try/catch` that silently
+drops a failed write rather than risking a recursive failure-logging-a-failure spiral, and safely
+no-ops via `Roboto.Store?.` for the handful of very-early log lines (the "ROBOTO" startup banner, etc)
+that happen before `Roboto.Store` is constructed (this codebase's static `Roboto.log = new logging()`
+field initializer runs before `startBackground()`'s instance bootstrap). Genuinely write-through per
+log line (not batched to `settings.save()`'s timing model like the rest of this phase) - a log line
+capturing what happened is the whole point, so it needs to survive a crash on its own.
+
+30-day purge lives in `mod_standard.backgroundProcessing()` (`SqliteStateStore.PurgeLogsOlderThan`),
+throttled to once/day via a new `mod_standard_data.lastLogPurgeDateTime` field, the same pattern
+`lastSaveToDiskDateTime` already used for throttling `settings.save()`.
+
+**Verified**: real startup produces real rows in `logs` with correct level/timestamp/message content,
+confirmed by direct SQLite inspection. The purge path itself (correct SQL, follows the exact same
+delete-with-cutoff pattern already verified for `expected_replies`/`chat_presence`/`stats`) wasn't yet
+exercised for real, since `Plugins.backgroundProcessing()` doesn't fire on a live timer until phase 4 -
+flagged to confirm once phase 4's scheduler is running and actually driving it repeatedly.
 
 ## What's still open
 

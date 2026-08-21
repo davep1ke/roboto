@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
+using RobotoChatBot.Helpers;
 
 namespace RobotoChatBot.Persistence
 {
@@ -120,6 +121,15 @@ namespace RobotoChatBot.Persistence
                     next_sync TEXT,
                     fail_count INTEGER NOT NULL
                 );
+
+                CREATE TABLE IF NOT EXISTS logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_utc TEXT NOT NULL,
+                    level TEXT NOT NULL,
+                    source_context TEXT,
+                    message TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_logs_timestamp_utc ON logs(timestamp_utc);
                 """;
             command.ExecuteNonQuery();
         }
@@ -454,6 +464,183 @@ namespace RobotoChatBot.Persistence
             }
 
             transaction.Commit();
+        }
+
+        // -- xyzzy_cards / xyzzy_packs -----------------------------------------------------------
+        // Split out of mod_xyzzy_coredata's own blob (see that class's [JsonIgnore] comment) - real
+        // scale concern, not just "whole bot list" framing: up to 72k/230k cards in the largest real
+        // production export seen on the abandoned rewrite branch, which a single JSON blob would
+        // make an expensive multi-MB read/write on every settings.save(). Callers get back an empty
+        // list on a fresh instance (no rows yet) rather than anything special - mod_xyzzy_coredata's
+        // own field initializers (the 7 default CAH packs) already supply sensible defaults for that
+        // case, same as any other module's fresh-instance fallback (Plugins.initPluginData()).
+
+        public List<Modules.mod_xyzzy_card> LoadXyzzyCards(string cardType)
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT unique_id, text, category, pack_id, nr_answers FROM xyzzy_cards WHERE card_type = $card_type;";
+            command.Parameters.AddWithValue("$card_type", cardType);
+
+            var results = new List<Modules.mod_xyzzy_card>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                var card = new Modules.mod_xyzzy_card(reader.GetString(1), Guid.Parse(reader.GetString(3)), reader.GetInt32(4))
+                {
+                    uniqueID = reader.GetString(0),
+                };
+#pragma warning disable 618
+                card.category = reader.IsDBNull(2) ? null : reader.GetString(2);
+#pragma warning restore 618
+                results.Add(card);
+            }
+
+            return results;
+        }
+
+        public void SaveXyzzyCards(string cardType, List<Modules.mod_xyzzy_card> cards)
+        {
+            using var connection = Open();
+            using var transaction = connection.BeginTransaction();
+
+            using (var deleteCommand = connection.CreateCommand())
+            {
+                deleteCommand.Transaction = transaction;
+                deleteCommand.CommandText = "DELETE FROM xyzzy_cards WHERE card_type = $card_type;";
+                deleteCommand.Parameters.AddWithValue("$card_type", cardType);
+                deleteCommand.ExecuteNonQuery();
+            }
+
+            foreach (var card in cards)
+            {
+                using var insertCommand = connection.CreateCommand();
+                insertCommand.Transaction = transaction;
+                insertCommand.CommandText =
+                    """
+                    INSERT INTO xyzzy_cards (unique_id, card_type, text, category, pack_id, nr_answers)
+                    VALUES ($unique_id, $card_type, $text, $category, $pack_id, $nr_answers);
+                    """;
+                insertCommand.Parameters.AddWithValue("$unique_id", card.uniqueID);
+                insertCommand.Parameters.AddWithValue("$card_type", cardType);
+                insertCommand.Parameters.AddWithValue("$text", card.text ?? "");
+#pragma warning disable 618
+                insertCommand.Parameters.AddWithValue("$category", (object)card.category ?? DBNull.Value);
+#pragma warning restore 618
+                insertCommand.Parameters.AddWithValue("$pack_id", card.packID.ToString());
+                insertCommand.Parameters.AddWithValue("$nr_answers", card.nrAnswers);
+                insertCommand.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
+        public List<cardcast_pack> LoadXyzzyPacks()
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT pack_id, name, pack_code, description, language, category, pack_source,
+                       last_picked_date, total_picks, next_sync, fail_count
+                FROM xyzzy_packs;
+                """;
+
+            var results = new List<cardcast_pack>();
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                results.Add(new cardcast_pack(reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3))
+                {
+                    packID = Guid.Parse(reader.GetString(0)),
+                    language = reader.IsDBNull(4) ? "Unknown" : reader.GetString(4),
+                    category = reader.IsDBNull(5) ? "Unknown" : reader.GetString(5),
+                    packSource = reader.IsDBNull(6) ? packSource.unknown : Enum.Parse<packSource>(reader.GetString(6)),
+                    lastPickedDate = DateTime.Parse(reader.GetString(7), null, System.Globalization.DateTimeStyles.RoundtripKind),
+                    totalPicks = reader.GetInt32(8),
+                    nextSync = DateTime.Parse(reader.GetString(9), null, System.Globalization.DateTimeStyles.RoundtripKind),
+                    failCount = reader.GetInt32(10),
+                });
+            }
+
+            return results;
+        }
+
+        public void SaveXyzzyPacks(List<cardcast_pack> packs)
+        {
+            using var connection = Open();
+            using var transaction = connection.BeginTransaction();
+
+            using (var deleteCommand = connection.CreateCommand())
+            {
+                deleteCommand.Transaction = transaction;
+                deleteCommand.CommandText = "DELETE FROM xyzzy_packs;";
+                deleteCommand.ExecuteNonQuery();
+            }
+
+            foreach (var pack in packs)
+            {
+                using var insertCommand = connection.CreateCommand();
+                insertCommand.Transaction = transaction;
+                insertCommand.CommandText =
+                    """
+                    INSERT INTO xyzzy_packs
+                        (pack_id, name, pack_code, description, language, category, pack_source,
+                         last_picked_date, total_picks, next_sync, fail_count)
+                    VALUES
+                        ($pack_id, $name, $pack_code, $description, $language, $category, $pack_source,
+                         $last_picked_date, $total_picks, $next_sync, $fail_count);
+                    """;
+                insertCommand.Parameters.AddWithValue("$pack_id", pack.packID.ToString());
+                insertCommand.Parameters.AddWithValue("$name", (object)pack.name ?? DBNull.Value);
+                insertCommand.Parameters.AddWithValue("$pack_code", (object)pack.packCode ?? DBNull.Value);
+                insertCommand.Parameters.AddWithValue("$description", (object)pack.description ?? DBNull.Value);
+                insertCommand.Parameters.AddWithValue("$language", pack.language ?? "Unknown");
+                insertCommand.Parameters.AddWithValue("$category", pack.category ?? "Unknown");
+                insertCommand.Parameters.AddWithValue("$pack_source", pack.packSource.ToString());
+                insertCommand.Parameters.AddWithValue("$last_picked_date", pack.lastPickedDate.ToString("O"));
+                insertCommand.Parameters.AddWithValue("$total_picks", pack.totalPicks);
+                insertCommand.Parameters.AddWithValue("$next_sync", pack.nextSync.ToString("O"));
+                insertCommand.Parameters.AddWithValue("$fail_count", pack.failCount);
+                insertCommand.ExecuteNonQuery();
+            }
+
+            transaction.Commit();
+        }
+
+        // -- logs -------------------------------------------------------------------------------
+        // Additive to the console sink, not a replacement (see Core/DbLogSink.cs) - legacy logged to
+        // a file as well as its WPF window; console-only after the WPF removal (phase 0/1) was a
+        // real functionality loss versus that. WriteLogEvent is called once per log line (a genuine
+        // write-through, unlike the rest of this phase's blob/table saves) since a log line is
+        // useless if only durable at the next periodic settings.save() - the whole point is
+        // capturing what happened even through a crash.
+
+        public void WriteLogEvent(DateTime timestampUtc, string level, string sourceContext, string message)
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                INSERT INTO logs (timestamp_utc, level, source_context, message)
+                VALUES ($timestamp_utc, $level, $source_context, $message);
+                """;
+            command.Parameters.AddWithValue("$timestamp_utc", timestampUtc.ToString("O"));
+            command.Parameters.AddWithValue("$level", level);
+            command.Parameters.AddWithValue("$source_context", (object)sourceContext ?? DBNull.Value);
+            command.Parameters.AddWithValue("$message", message ?? "");
+            command.ExecuteNonQuery();
+        }
+
+        /// <returns>How many rows were purged - logged by the caller so the purge itself leaves a
+        /// trace.</returns>
+        public int PurgeLogsOlderThan(DateTime cutoffUtc)
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM logs WHERE timestamp_utc < $cutoff;";
+            command.Parameters.AddWithValue("$cutoff", cutoffUtc.ToString("O"));
+            return command.ExecuteNonQuery();
         }
     }
 }

@@ -13,6 +13,10 @@ namespace RobotoChatBot.Modules
     public class mod_standard_data : RobotoModuleDataTemplate
     {
         public DateTime lastSaveToDiskDateTime = DateTime.Now;
+        //Throttles the logs-table purge the same way lastSaveToDiskDateTime throttles the settings
+        //save - once a day is plenty for a 30-day retention window, and avoids a DELETE query on
+        //every single background pass once the real scheduler (a much shorter interval) exists.
+        public DateTime lastLogPurgeDateTime = DateTime.MinValue;
     }
 
     [XmlType("mod_standard_chatdata")]
@@ -143,6 +147,15 @@ namespace RobotoChatBot.Modules
             Presence.backgroundProcessing();
             Messaging.backgroundProcessing();
             Chats.removeDormantChats();
+
+            //purge the logs table of anything older than 30 days - once a day is plenty (see
+            //lastLogPurgeDateTime's own comment).
+            if (((mod_standard_data)localData).lastLogPurgeDateTime.AddDays(1) < DateTime.Now)
+            {
+                ((mod_standard_data)localData).lastLogPurgeDateTime = DateTime.Now;
+                int purged = Roboto.Store.PurgeLogsOlderThan(DateTime.UtcNow.AddDays(-30));
+                if (purged > 0) { Roboto.log.log("Purged " + purged + " log rows older than 30 days", logging.loglevel.low); }
+            }
 
         }
 

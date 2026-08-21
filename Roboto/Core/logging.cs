@@ -208,9 +208,15 @@ namespace RobotoChatBot
 
         public logging()
         {
+            //DbLogSink writes to Roboto.Store (the logs table) - see its own comment on why this is
+            //additive to the console sink, not a replacement, and why it's safe to construct here
+            //even though Roboto.Store doesn't exist yet at this point (this runs from Roboto.log's
+            //static field initializer, before startBackground()'s instance bootstrap) - it just
+            //no-ops until the store is actually available.
             serilog = new LoggerConfiguration()
                 .MinimumLevel.Verbose()
                 .WriteTo.Console(outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .WriteTo.Sink(new DbLogSink())
                 .CreateLogger();
         }
 
