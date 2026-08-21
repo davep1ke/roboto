@@ -26,8 +26,8 @@ is arbitrary.
 | 3b. Split the xyzzy card/pack catalog out of its blob into the `xyzzy_cards`/`xyzzy_packs` tables | Done, verified | `0d8e1c3` |
 | 3c. `logs` table + custom Serilog DB sink + 30-day purge task | Done, verified | `0d8e1c3` |
 | 4. Real periodic background scheduler + `ChatKeyedLock` | Done, verified | `521b9eb` |
-| 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Not started | — |
-| 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Not started | — |
+| 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Deferred - user call, see notes | — |
+| 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Done, verified | — |
 | 7. Test harness + business-logic test suite | Done, verified (partial coverage - see notes) | `28d4714` |
 | 8. Migrator retarget (`XmlImporter` → new decomposed store) | Not started | — |
 | 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Not started | — |
@@ -261,6 +261,82 @@ handling the real 409-Conflict round trip from phase 2 concurrently - genuine co
 serialized-behind-a-big-lock. The `ChatKeyedLock` standalone test above gives direct evidence for the
 mechanism itself, not just "the live run didn't crash."
 
+## Phase 5 - deferred (hybrid keyboards)
+
+Revisited with the user before starting phase 6. The plan's original "hybrid keyboards" decision
+flagged a genuinely open sub-decision it hadn't resolved ("card/pack ID scheme... needs a closer
+look during phase 5, not assumed up front"), and working through the actual tradeoff surfaced a
+bigger question the plan hadn't asked: does this bot need `InlineKeyboardMarkup`/`CallbackQuery` at
+all, given `ReplyKeyboardMarkup` already works, is fully tested (phase 7), and legacy's own
+single-outstanding-question queue in `Messaging` exists specifically as a workaround for
+`ReplyKeyboardMarkup`'s "only one active keyboard per chat" limitation - i.e. the one concrete
+problem inline keyboards would actually solve already has a working mitigation in place.
+
+Discussed directly with the user: for a bot with a small, familiar player base, the benefit (cleaner
+chat history, per-message-attached buttons instead of one shared keyboard) is a real but modest UX
+nicety, not a fix for something broken - and pursuing it now would mean either touching most modules'
+keyboard call sites and rewriting all of phase 7's `TapButton`-based tests, or building bridge
+infrastructure with only one demo call site actually using it. **Decided: skip phase 5 entirely for
+now.** `ReplyKeyboardMarkup` stays exactly as legacy had it everywhere. Revisit only if the
+single-outstanding-question queueing behavior actually causes real friction in practice - at that
+point the plan file's original design (`CallbackQuery` bridged into the *same* `ExpectedReply`
+matching path, not a parallel dispatch mechanism) is still the right shape to build.
+
+## Phase 6 notes (charting: ScottPlot on legacy's own `stats.cs` data shape)
+
+**`Core/stats.cs`'s `generateImage`**: was a stub since phase 1 (chart rendering data-gathering
+logic - `statType.getSeries`, `getMatchingSeries`'s exact+regex series selection - was already
+chart-library-agnostic and kept as-is; only the actual image rendering was missing, per that
+method's own doc comment). Now builds a `ScottPlot.Plot` directly from the existing
+`List<statSeriesData>` (one `Scatter` per matched series, ordered oldest-to-newest since
+`statType.getSeries` produces points newest-first), returns PNG bytes via `GetImageBytes(1200, 600,
+...)` wrapped in a `MemoryStream` - same `Stream generateImage(List<string> series)` signature
+`mod_standard.cs`'s `/statgraph` handler already called, so that call site needed only a one-line
+filename fix (`.jpg` → `.png`, since the output format actually changed - not a legacy behavior to
+preserve, just a filename that stopped matching reality).
+
+**Rendering model reused from the abandoned rewrite branch's `StatGraphCommand.BuildPlot`/`Densify`**
+(`src/Roboto.Bot/Commands/StatGraphCommand.cs` on `rewrite/dotnet-docker-port`), per the plan's own
+direction - filled-area for cumulative (`statmode.increment`) series, plain line for gauge-like
+(`statmode.absolute`) ones, legend, title/axis labels. `Densify` itself wasn't needed: legacy's own
+`statType.getSeries` already produces a dense, evenly-spaced array (it calls `getSlice(point)` for
+every one of `graphYAxisCount` (192) points regardless of whether real data exists there, unlike the
+rewrite's sparse per-bucket dictionary), so there's no gap-filling step to port - confirmed this is
+legacy's actual existing behavior, not something newly introduced. Legacy's `granularity`/
+`graphYAxisCount` constants (15 min × 192 = 48h) already matched the window the rewrite's renderer
+was independently modeled on, so no window-size decision was needed either.
+
+**Deliberate simplification, not a legacy-fidelity loss**: `statType`'s separate `displaymode.bar`/
+`.line` flag (set per-stat-type, e.g. "Startup"/"BotAPI Timeouts"/"Chats Purged" are registered as
+`bar`, most others `line`) is not honoured in the rendered output - every series renders as a
+line/filled-area regardless. The reused rewrite model never distinguished them either, and mixing
+literal bar charts with line charts on one overlaid multi-series plot (recall `/statgraph` can chart
+several regex-matched series at once) gets visually messy for little payoff. `statSeriesData` still
+carries `displayMode` (now also `statMode`, added so `generateImage` doesn't need to re-look-up each
+series' mode from its title) for a future pass to pick back up if it turns out to matter.
+
+**`statSeriesData`** gained a `statMode` field (previously only `displayMode`) - `generateImage`
+needs to know cumulative-vs-gauge per series to decide the fill, and looking that back up from the
+matched `statType` list via title-string-parsing was fragile; carrying it on the DTO directly (like
+`displayMode` already was) is simpler and matches the existing shape.
+
+**`Roboto.csproj`**: added `ScottPlot` `5.1.59` (same version the abandoned rewrite branch used).
+`System.Drawing.Common` stays - `statType`/`statSeriesData` still store colors as
+`System.Drawing.Color` throughout the codebase (every module's `registerStatType` call), and
+`generateImage` just converts to `ScottPlot.Color` at the render boundary rather than threading a
+new color type through every call site - smaller, more contained change.
+
+**Sanity-checked by breaking something**: forced `generateImage`'s "no matching series" branch to
+always trigger (`if (matches.Count == 0)` → `if (true)`) and confirmed both
+`StatGraphWithNoArgsChartsEverythingAndSendsAPng` and `StatGraphWithAnExactSeriesNameCharts` failed
+as expected (no photo sent), then reverted and confirmed all 15 tests passed again.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (15/15, up from 12 after phase
+7). Not yet verified live against the `beefy` test bot - `/statgraph` is a read-only, deterministic
+command (no persisted state, no player-facing game logic), so the automated PNG-magic-bytes test
+plus a build was judged sufficient before a live round-trip; still worth a live check whenever the
+next live-bot session for a different phase happens anyway.
+
 ## Phase 7 notes (test harness + business-logic test suite)
 
 Explicitly scoped by the user as a partial-coverage "yardstick," not a re-derivation of the abandoned
@@ -338,11 +414,12 @@ passed again.
 
 ## What's still open
 
-Phases 5, 6, 8, 9, 10 - see the phase table above and the full plan file for what each phase actually
-involves, the four explicitly-confirmed architecture decisions (hybrid keyboards, real background
-scheduler, decomposed persistence + relational tables for whole-bot lists, carry-forward deltas), and
-the resolved/open sub-decisions (chatPriority sort - decided, implement; card/pack ID scheme - open,
-needs a decision during phase 5; daily XML backup - decided, not needed, TrueNAS snapshots instead;
-background-scheduler batching caps - decided, keep as legacy has them). Phase 7's own deferred items
-(above) are additional, narrower follow-ups within phases 5/6/8's own scope, not separately tracked
-here.
+Phases 8, 9, 10 - see the phase table above and the full plan file for what each phase actually
+involves, the confirmed architecture decisions (real background scheduler, decomposed persistence +
+relational tables for whole-bot lists, carry-forward deltas), and the resolved/open sub-decisions
+(chatPriority sort - decided, implement; daily XML backup - decided, not needed, TrueNAS snapshots
+instead; background-scheduler batching caps - decided, keep as legacy has them). Phase 5 (hybrid
+keyboards) is deliberately deferred, not blocking - see its own notes above for why, and the design
+to pick back up if it's ever revisited (which also resolves the card/pack-ID-for-callback_data
+sub-decision, since that only matters once inline keyboards exist). Phase 7's own deferred items
+(above) are additional, narrower follow-ups within phases 8's own scope, not separately tracked here.

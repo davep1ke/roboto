@@ -88,7 +88,7 @@ namespace RobotoChatBot
         public statSeriesData getSeries(DateTime startTime)
         {
             string title = this.moduleType.StartsWith("Roboto.") ? this.moduleType.Substring(7) : this.moduleType;
-            statSeriesData s = new statSeriesData(title + ">" + this.name, c, displayMode);
+            statSeriesData s = new statSeriesData(title + ">" + this.name, c, displayMode, statMode);
 
             for (int i = 0; i < stats.graphYAxisCount; i++)
             {
@@ -114,19 +114,21 @@ namespace RobotoChatBot
     }
 
     /// <summary>Plain data carried out of statType.getSeries - see that method's comment. Chart-
-    /// library-agnostic on purpose, pending the ScottPlot port.</summary>
+    /// library-agnostic on purpose - stats.generateImage is the only consumer.</summary>
     public class statSeriesData
     {
         public string title;
         public System.Drawing.Color color;
         public stats.displaymode displayMode;
+        public stats.statmode statMode;
         public List<(double hoursAgo, double value)> points = new List<(double, double)>();
 
-        public statSeriesData(string title, System.Drawing.Color color, stats.displaymode displayMode)
+        public statSeriesData(string title, System.Drawing.Color color, stats.displaymode displayMode, stats.statmode statMode)
         {
             this.title = title;
             this.color = color;
             this.displayMode = displayMode;
+            this.statMode = statMode;
         }
     }
 
@@ -328,15 +330,18 @@ namespace RobotoChatBot
         /// </summary>
         /// <param name="series"></param>
         /// <remarks>
-        /// STUB pending the ScottPlot port (this codebase's rewrite branch already has a working
-        /// ScottPlot renderer to model this on - see src/Roboto.Bot/Commands/StatGraphCommand.cs on
-        /// rewrite/dotnet-docker-port). The old System.Windows.Forms.DataVisualization.Charting
-        /// implementation (Chart/ChartArea/Series/Legend, SaveImage to a Stream) can't run outside
-        /// WinForms at all. getMatchingSeries below still does the real series-selection logic
-        /// (exact + regex match against "moduleType>name") and each match's statType.getSeries(...)
-        /// still gathers real datapoints (as statSeriesData, chart-library-agnostic) - only the
-        /// actual image rendering is missing. /statgraph (mod_standard.cs) will report "no image"
-        /// until this is filled in.
+        /// Rendering model reused from this codebase's abandoned rewrite branch's ScottPlot renderer
+        /// (src/Roboto.Bot/Commands/StatGraphCommand.cs on rewrite/dotnet-docker-port) - filled-area
+        /// for cumulative (statmode.increment) series, plain line for gauge-like (statmode.absolute)
+        /// ones, a stable per-series color. Not a port of legacy's WinForms Chart output (1200x600
+        /// JPEG, hardcoded pastel-blue plot area) - that renderer can't run outside WinForms at all,
+        /// so this is a fresh visual design on the same data. Deliberately doesn't honour statType's
+        /// separate displaymode.bar/line flag - the rewrite's model (which this reuses) never
+        /// distinguished them either, and mixing literal bar + line series on one overlaid chart
+        /// gets messy fast for little payoff; every series renders as a line/filled-area.
+        /// getMatchingSeries below still does the real series-selection logic (exact + regex match
+        /// against "moduleType>name") and each match's statType.getSeries(...) still gathers real
+        /// datapoints (as statSeriesData, chart-library-agnostic) exactly as before.
         /// </remarks>
         public Stream generateImage(List<string> series)
         {
@@ -350,8 +355,39 @@ namespace RobotoChatBot
             DateTime graphStartTime = DateTime.Now;
             List<statSeriesData> seriesData = matches.Select(m => m.getSeries(graphStartTime)).ToList();
 
-            Roboto.log.log($"generateImage: chart rendering not yet ported off WinForms - {seriesData.Count} series ready, no image produced. See this method's doc comment.", logging.loglevel.warn);
-            return null;
+            var plot = new ScottPlot.Plot();
+
+            foreach (statSeriesData s in seriesData)
+            {
+                // getSeries() adds points newest-first (i=0 is "now", i=graphYAxisCount-1 is the
+                // oldest point) - reorder oldest-to-newest so the line renders left-to-right in
+                // chronological order.
+                var ordered = s.points.OrderBy(p => p.hoursAgo).ToList();
+                double[] xs = ordered.Select(p => p.hoursAgo).ToArray();
+                double[] ys = ordered.Select(p => p.value).ToArray();
+
+                var scatter = plot.Add.Scatter(xs, ys);
+                scatter.LegendText = s.title;
+                scatter.MarkerSize = 0;
+                scatter.LineWidth = 2;
+
+                var color = new ScottPlot.Color(s.color.R, s.color.G, s.color.B, s.color.A);
+                scatter.Color = color;
+
+                if (s.statMode == statmode.increment)
+                {
+                    scatter.FillY = true;
+                    scatter.FillYColor = color.WithAlpha(0.18);
+                }
+            }
+
+            plot.Title(Roboto.Settings.botUserName + " statistics - last " + (granularity.TotalHours * graphYAxisCount).ToString("0") + "h");
+            plot.XLabel("Hours ago");
+            plot.YLabel("Value / " + granularity.TotalMinutes.ToString("0") + " min" + (granularity.TotalMinutes == 1 ? "" : "s"));
+            plot.ShowLegend();
+
+            byte[] bytes = plot.GetImageBytes(1200, 600, ScottPlot.ImageFormat.Png);
+            return new MemoryStream(bytes);
         }
 
         /// <summary>Resolves a list of "moduleType>name" exact matches / regexes (or none, meaning

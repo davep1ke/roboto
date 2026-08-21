@@ -317,7 +317,9 @@ namespace RobotoChatBot.Modules
                 //Sending image...
                 if (image != null)
                 {
-                    Messaging.SendPhoto(m.chatID, "Stats", image, "StatsGraph.jpg", "application/octet-stream", m.message_id, false);
+                    // .png, not the legacy .jpg - stats.generateImage renders via ScottPlot, which
+                    // encodes PNG (phase 6), not the old WinForms JPEG output this filename used to match.
+                    Messaging.SendPhoto(m.chatID, "Stats", image, "StatsGraph.png", "application/octet-stream", m.message_id, false);
                 }
                 else
                 {

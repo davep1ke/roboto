@@ -14,9 +14,11 @@
     <PackageReference Include="Telegram.Bot" Version="22.10.2.1" />
     <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
-    <!-- Just the Color struct, for stats.cs's chart-series colors - kept as-is until the charting
-         rework (ScottPlot) replaces this whole scheme; not a WPF/WinForms dependency. -->
+    <!-- Just the Color struct, for stats.cs's chart-series colors - stats.generateImage converts
+         to ScottPlot.Color at the render boundary rather than changing this stored type; not a
+         WPF/WinForms dependency. -->
     <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+    <PackageReference Include="ScottPlot" Version="5.1.59" />
   </ItemGroup>
 
   <ItemGroup>
