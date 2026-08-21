@@ -194,3 +194,6 @@ FakesAssemblies/
 
 # Visual Studio 6 workspace options file
 *.opt
+
+# Per-instance runtime data (bot tokens, SQLite DBs, XML exports) - never commit secrets/prod data
+/data/
