@@ -1,22 +1,32 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Linq;
-using System.Text;
-using System.IO;
-using System.Xml;
-using System.Xml.Serialization;
+using System.Text.Json.Serialization;
 using RobotoChatBot.Modules;
+using RobotoChatBot.Persistence;
 
 namespace RobotoChatBot
 {
 
-
+    /// <summary>
+    /// Ported off one big XmlSerializer round-trip of this entire object graph to one file, onto
+    /// SqliteStateStore: small/bounded state (this object's own scalar config, each chat's per-
+    /// module data, each module's own global core-data) as JSON blob rows; genuinely whole-bot-
+    /// scoped growing collections (expectedReplies, stats, RecentChatMembers) as real SQL tables -
+    /// see SqliteStateStore's own comment for why the split, and MIGRATION.md's phase 3 notes for
+    /// what's deliberately deferred (the xyzzy card/pack catalog is still one big blob for now, not
+    /// yet split into its own table; real per-mutation write-through durability for expectedReplies/
+    /// stats/etc is a separate follow-up, not delivered by this pass - both flush only at save(),
+    /// same timing model XmlSerializer always had).
+    ///
+    /// The fields below marked [JsonIgnore] are populated by load()/save() from elsewhere (their own
+    /// blob rows or real tables), not as part of this object's own blob - keeping them as real
+    /// fields on `settings` (rather than a separate DTO) means every existing Roboto.Settings.X call
+    /// site across the whole codebase keeps working unchanged; only load()/save() themselves needed
+    /// to change.
+    /// </summary>
     public class settings
     {
-        public static string foldername = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData) + @"\Roboto\";
-        private static string filename = foldername;
-
         //logging
         public bool enableFileLogging = true;
         public int rotateLogsEveryXHours = 12;
@@ -25,134 +35,144 @@ namespace RobotoChatBot
         public int purgeInactiveChatsAfterXDays = 100;
         public int chatPresenceExpiresAfterHours = 96;
 
-        
-        //stats database
+
+        //stats database - statsList itself is loaded/saved via the real `stats` table
+        //(SqliteStateStore.LoadStats/SaveStats), not part of this blob.
+        [JsonIgnore]
         public stats stats = new stats();
 
-        //public List<replacement> replacements = new List<replacement>();
-
+        //Credentials come from InstanceBootstrapper (bot.env), via Roboto.Options - not persisted
+        //in this blob at all, so there's only ever one place a token can go stale.
+        [JsonIgnore]
         public string telegramAPIURL = "https://api.telegram.org/bot";
+        [JsonIgnore]
         public string telegramAPIKey = "ENTERYOURAPIKEYHERE";
+        [JsonIgnore]
         public string botUserName = "Roboto_bot_name";
-        public int waitDuration = 60; //wait duration for long polling. 
-        public int lastUpdate = 0; //last update index, needs to be passed back with each call. 
+        public int waitDuration = 60; //wait duration for long polling.
+        public int lastUpdate = 0; //last update index, needs to be passed back with each call.
         public int maxLogItems = 50;
 
-        //generic plugin storage. NB: Chats DO want to be serialised. 
+        //generic plugin storage - loaded/saved as one blob row per (module type)/(chat, module type),
+        //not part of this blob itself. NB: Chats DO want to be persisted.
+        [JsonIgnore]
         public List<Modules.RobotoModuleDataTemplate> pluginData = new List<Modules.RobotoModuleDataTemplate>();
+        [JsonIgnore]
         public List<chat> chatData = new List<chat>();
 
         //Random generator
         static Random randGen = new Random();
 
-        //list of expected replies
+        //list of expected replies - loaded/saved via the real `expected_replies` table, not part of
+        //this blob.
+        [JsonIgnore]
         public List<ExpectedReply> expectedReplies = new List<ExpectedReply>();
+        //loaded/saved via the real `chat_presence` table, not part of this blob.
+        [JsonIgnore]
         public List<chatPresence> RecentChatMembers = new List<chatPresence>();
 
-        //is this the first time the settings file has been initialised?
+        //is this the first time the settings file has been initialised? - transient, not persisted.
+        [JsonIgnore]
         public bool isFirstTimeInitialised = false;
 
-
+        private const string ConfigKey = "settings:config";
+        private const string ChatsIndexKey = "chats:index";
 
 
         /// <summary>
-        /// Load all our data from XML
+        /// Load all our data from SQLite (was XML) - Roboto.Store must already be constructed and
+        /// initialised, and Plugins.initPluginAssemblies() must already have run (this needs to
+        /// enumerate Plugins.plugins to know which per-module/per-chat blob keys to look for, the
+        /// same ordering requirement XmlSerializer's extraTypes had).
         /// </summary>
         /// <returns></returns>
         public static settings load()
         {
-            //set the filename based on the current context (instance)
-            if (Roboto.context == null)
+            Roboto.log.log("Loading settings from " + Roboto.Options.InstanceDir, logging.loglevel.high);
+
+            var store = Roboto.Store;
+            var setts = store.Load<settings>(ConfigKey);
+            if (setts == null)
             {
-                filename += "settings.xml";
-
-
-            }
-            else { filename += Roboto.context + ".xml"; }
-
-            Roboto.log.log("Loading from " + filename, logging.loglevel.high);
-
-            //load the file
-            try
-            {
-
-                XmlSerializer deserializer = new XmlSerializer(typeof(settings), Plugins.getPluginDataTypes());
-                TextReader textReader = new StreamReader(filename);
-                settings setts = (settings)deserializer.Deserialize(textReader);
-                textReader.Close();
-                return setts;
+                setts = new settings();
+                setts.isFirstTimeInitialised = true;
             }
 
+            setts.telegramAPIKey = Roboto.Options.TelegramToken;
+            setts.botUserName = Roboto.Options.BotUsername;
 
-            catch (Exception e)
+            //module-global data - one blob row per registered module type.
+            foreach (var plugin in Plugins.plugins.Where(p => p.pluginDataType != null))
             {
-                if (e is System.IO.FileNotFoundException || e is System.IO.DirectoryNotFoundException)
+                if (store.Load(plugin.pluginDataType, ModuleDataKey(plugin.pluginDataType)) is Modules.RobotoModuleDataTemplate data)
                 {
-                    //create a new one
-                    settings sets = new settings();
-                    sets.isFirstTimeInitialised = true;
-                    return sets;
-                }
-                else
-                {
-                    Roboto.log.log("Bad XML File - please fix and restart. " + e.ToString(), logging.loglevel.critical);
+                    setts.pluginData.Add(data);
                 }
             }
-            return null;
 
+            //chats - one blob row per chat for its own scalars, plus one blob row per (chat, module
+            //type) for that chat's module data, reassembled into chat.chatData same as it always was
+            //in memory.
+            var chatIds = store.Load<List<long>>(ChatsIndexKey) ?? new List<long>();
+            foreach (var chatId in chatIds)
+            {
+                var c = store.Load<chat>(ChatCoreKey(chatId));
+                if (c == null) { continue; }
+
+                foreach (var plugin in Plugins.plugins.Where(p => p.pluginChatDataType != null))
+                {
+                    if (store.Load(plugin.pluginChatDataType, ChatModuleKey(chatId, plugin.pluginChatDataType)) is Modules.RobotoModuleChatDataTemplate cd)
+                    {
+                        c.chatData.Add(cd);
+                    }
+                }
+
+                setts.chatData.Add(c);
+            }
+
+            setts.expectedReplies = store.LoadExpectedReplies();
+            setts.RecentChatMembers = store.LoadChatPresence();
+            setts.stats.statsList = store.LoadStats();
+
+            return setts;
         }
 
 
-
-
-        
-
-
-        /*// <summary>
-        /// Make sure any reply processing is being done
-        /// </summary>
-        public void expectedReplyHousekeeping()
-        {
-
-            
-        }*/
-
-
-
         /// <summary>
-        /// Save all data to XML
+        /// Save all data to SQLite (was XML).
         /// </summary>
         public void save()
         {
             //as we are saving (and presumably exiting) we dont need to worry that this is a first time file anymore
             isFirstTimeInitialised = false;
 
-            //create folder if doesnt exist:
-            DirectoryInfo di = new DirectoryInfo(foldername);
-            if (!di.Exists)
+            var store = Roboto.Store;
+
+            store.Save(ConfigKey, this);
+
+            foreach (var data in pluginData)
             {
-                di.Create();
+                store.Save(data.GetType(), ModuleDataKey(data.GetType()), data);
             }
 
-            //use datepart to keep a file for each day. 
-            string datePart = DateTime.Now.ToString("yyyy-MM-dd") + ".xml";
+            foreach (var c in chatData)
+            {
+                store.Save(ChatCoreKey(c.chatID), c);
+                foreach (var cd in c.chatData)
+                {
+                    store.Save(cd.GetType(), ChatModuleKey(c.chatID, cd.GetType()), cd);
+                }
+            }
+            store.Save(ChatsIndexKey, chatData.Select(c => c.chatID).ToList());
 
-            //delete our old backup
-            FileInfo fi = new FileInfo(filename + "." + datePart);
-            if (fi.Exists) { fi.Delete(); }
-
-            //replace our current backup
-            FileInfo fi_backup = new FileInfo(filename);
-            if (fi_backup.Exists) { fi_backup.MoveTo(filename + "." + datePart); }
-
-
-            //write out XML
-            XmlSerializer serializer = new XmlSerializer(typeof(settings), Plugins.getPluginDataTypes());
-            TextWriter textWriter = new StreamWriter(filename);
-            serializer.Serialize(textWriter, this);
-            textWriter.Close();
+            store.SaveExpectedReplies(expectedReplies);
+            store.SaveChatPresence(RecentChatMembers);
+            store.SaveStats(stats.statsList);
         }
 
+        private static string ModuleDataKey(Type moduleDataType) => $"module:{moduleDataType.Name}";
+        private static string ChatCoreKey(long chatId) => $"chat:{chatId}";
+        private static string ChatModuleKey(long chatId, Type moduleChatDataType) => $"chat:{chatId}:{moduleChatDataType.Name}";
 
 
         public static int getRandom(int maxInt)

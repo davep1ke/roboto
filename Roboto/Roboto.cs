@@ -21,13 +21,19 @@ namespace RobotoChatBot
 
         public static settings Settings;
         public static logging log = new logging();
+        public static BotOptions Options;
+        public static Persistence.SqliteStateStore Store;
+
         /// <summary>
-        /// This is the name of the instance that we are running - and the name of the XML file we save
+        /// -plugin's module allow-list is the one CLI flag kept as-is (unrelated to instance/
+        /// credentials, low blast radius - see Core/Plugins.cs's initPluginAssemblies). -context is
+        /// gone; ROBOTO_INSTANCE/ROBOTO_DATADIR env vars pick the instance now (see BotOptions/
+        /// InstanceBootstrapper), matching the abandoned rewrite branch's own instance-identity
+        /// design rather than legacy's per-context XML filename scheme.
         /// </summary>
-        public static string context = null;
         public static List<string> pluginFilter = new List<string>();
 
-        private enum argtype {def, context, plugin };
+        private enum argtype { def, plugin };
 
         /// <summary>
         /// Was [STAThread] with a WPF LogWindow shown via ShowDialog() on the UI thread, with all
@@ -50,18 +56,10 @@ namespace RobotoChatBot
                     case argtype.def:
                         switch (arg)
                         {
-                            case "-context":
-                                mode = argtype.context;
-                                break;
                             case "-plugin":
                                 mode = argtype.plugin;
                                 break;
                         }
-                        break;
-
-                    case argtype.context:
-                        context = arg;
-                        mode = argtype.def;
                         break;
 
                     case argtype.plugin:
@@ -71,12 +69,6 @@ namespace RobotoChatBot
 
 
                 }
-            }
-
-            if (context != null)
-            {
-                log.setWindowTitle(Roboto.context);
-                log.log( context + " context", logging.loglevel.high, false, true);
             }
 
             startBackground();
@@ -96,18 +88,45 @@ namespace RobotoChatBot
 
         private static void startBackground()
         {
-            logging.longOp lo_s = new logging.longOp("Core Startup", 5);
+            logging.longOp lo_s = new logging.longOp("Core Startup", 6);
 
-            //Load plugins before XML so that we have datatypes etc.. to play with
+            //Resolve which instance we are (ROBOTO_INSTANCE, default "default"), where its data
+            //lives (ROBOTO_DATADIR, default /data), and its credentials ({DataDir}/{Instance}/
+            //bot.env) - replaces -context + %appdata%\Roboto\<context>.xml entirely.
+            var instance = Environment.GetEnvironmentVariable("ROBOTO_INSTANCE") ?? "default";
+            var dataDir = Environment.GetEnvironmentVariable("ROBOTO_DATADIR") ?? "/data";
+            log.setWindowTitle(instance);
+
+            if (!InstanceBootstrapper.TryLoad(dataDir, instance, out var telegramToken, out var botUsername, out var steamApiKey, out var bootstrapMessage))
+            {
+                log.log(bootstrapMessage, logging.loglevel.critical, false, true);
+                return;
+            }
+
+            Options = new BotOptions
+            {
+                Instance = instance,
+                DataDir = dataDir,
+                TelegramToken = telegramToken,
+                BotUsername = botUsername,
+                SteamApiKey = steamApiKey,
+            };
+            lo_s.addone();
+
+            log.log("Opening database", logging.loglevel.high);
+            Store = new Persistence.SqliteStateStore(System.IO.Path.Combine(Options.InstanceDir, "roboto.db"));
+            Store.Initialize();
+            lo_s.addone();
+
+            //Load plugins before settings so that we know which module types to look for.
             log.log("Loading Plugins", logging.loglevel.high);
             Plugins.initPluginAssemblies();
             lo_s.addone();
 
-            //Now load XML so that we have datatypes etc.. to play with
             log.log("Loading Settings & data from disk", logging.loglevel.high);
             Settings = settings.load();
             if (Settings == null) {
-                log.log("Failed to load settings file - aborting.", logging.loglevel.critical);
+                log.log("Failed to load settings - aborting.", logging.loglevel.critical);
                 return;
             } //unable to load - abort.
 
@@ -120,7 +139,9 @@ namespace RobotoChatBot
 
             log.log("I am " + Settings.botUserName, logging.loglevel.critical, false, true);
 
-            //setup TLS 1.2
+            //setup TLS 1.2 - still needed for cardCast.cs/mod_steam_steamapi.cs's own hand-rolled
+            //HttpWebRequest/WebClient calls (untouched, out of scope for this phase); Telegram.Bot's
+            //own HttpClient usage doesn't need this.
             ServicePointManager.Expect100Continue = true;
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
@@ -129,25 +150,17 @@ namespace RobotoChatBot
 
             Settings.save();
 
-            if (Settings.isFirstTimeInitialised)
-            {
-                log.log(@"New settings created - enter your API key in the config and restart.", logging.loglevel.critical, false, true);
-            }
-            else
-            {
-                log.log("Starting main thread", logging.loglevel.high);
+            log.log("Starting main thread", logging.loglevel.high);
+
+            Messaging.processUpdates();
+
+            //Perform all background processing, syncing etc..
+            Plugins.backgroundProcessing(false);
 
 
-                Messaging.processUpdates();
-
-                //Perform all background processing, syncing etc..
-                Plugins.backgroundProcessing(false);
-
-
-                log.log("Main loop finishing, saving" , logging.loglevel.high);
-                Roboto.Settings.save();
-                log.log("Saved data, exiting main loop", logging.loglevel.high);
-            }
+            log.log("Main loop finishing, saving" , logging.loglevel.high);
+            Roboto.Settings.save();
+            log.log("Saved data, exiting main loop", logging.loglevel.high);
 
 
         }

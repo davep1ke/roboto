@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Serialization;
 
 namespace RobotoChatBot
 {
@@ -15,6 +16,13 @@ namespace RobotoChatBot
         //public bool enabled = false; //assume chats are disabled until we get a /start - deprecated. Uses "muted"
         public DateTime lastupdate = DateTime.Now; //track when our last message was. Discard idle chats.
         public string chatTitle = "";
+        //Persisted as one blob row per (chat, module type) instead - see settings.load()/save() -
+        //not as part of this object's own blob row. A polymorphic List<RobotoModuleChatDataTemplate>
+        //can't round-trip through System.Text.Json without this: derived-class-specific fields would
+        //silently serialize as nothing (STJ only sees the declared base-type's own members without
+        //explicit polymorphism config) rather than throwing the way XmlSerializer did for the
+        //equivalent case - a silent data-loss bug, not just a startup crash to fix once and move on.
+        [JsonIgnore]
         public List<Modules.RobotoModuleChatDataTemplate> chatData = new List<Modules.RobotoModuleChatDataTemplate>();
         public List<long> chatAdmins = new List<long>();
         public bool muted = false;

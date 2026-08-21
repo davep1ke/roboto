@@ -371,10 +371,14 @@ namespace RobotoChatBot
 
             if (Roboto.Settings.enableFileLogging)
             {
-                //Setup our logging
+                //Setup our logging - was settings.foldername + "\Roboto\" (a literal backslash, not
+                //a real path separator on Linux - harmless-but-wrong, produced flat oddly-named
+                //files instead of a real subdirectory tree, see MIGRATION.md's phase 0 notes).
+                //Options.InstanceDir + Path.Combine fixes it as a natural side effect of moving to
+                //the per-instance folder scheme.
                 currentLogFileDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, DateTime.Now.Hour, 0, 0);
-                string logfile = settings.foldername + Roboto.Settings.botUserName + " " + DateTime.Now.ToString("yyyy-MM-dd HH") + ".log";
-                if (!Directory.Exists(settings.foldername)) { Directory.CreateDirectory(settings.foldername); }
+                if (!Directory.Exists(Roboto.Options.InstanceDir)) { Directory.CreateDirectory(Roboto.Options.InstanceDir); }
+                string logfile = Path.Combine(Roboto.Options.InstanceDir, Roboto.Settings.botUserName + " " + DateTime.Now.ToString("yyyy-MM-dd HH") + ".log");
                 textWriter = new StreamWriter(logfile, true, new UTF8Encoding(), 65536);
                 for (int i = 0; i < 10; i++) { textWriter.WriteLine(); }
                 initialised = true;
