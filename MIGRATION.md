@@ -30,7 +30,7 @@ is arbitrary.
 | 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Done, verified | `a98f277` |
 | 7. Test harness + business-logic test suite | Done, verified (partial coverage - see notes) | `28d4714` |
 | 8. Migrator retarget (`XmlImporter` → new decomposed store) | Not started | — |
-| 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Done, verified - see notes (most items were already-true-by-construction, not actual deltas) | — |
+| 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Done, verified - see notes (most items were already-true-by-construction, not actual deltas) | `abe3dea` |
 | 10. Cutover prep | Not started | — |
 
 "Verified" means actually built + run, not just "compiles" - see commit messages and in-code
