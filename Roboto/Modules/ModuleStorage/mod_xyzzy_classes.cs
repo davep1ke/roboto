@@ -32,12 +32,27 @@ namespace RobotoChatBot.Modules
         public int wins = 0;
         public List<String> cardsInHand = new List<string>();
         public List<String> selectedCards = new List<string>();
+
+        /// <summary>Added via "Add Bots" (mod_xyzzy_chatdata.addBots) - not a legacy feature at
+        /// all, legacy never had non-human players. Carried forward from the abandoned rewrite
+        /// branch's own "Add Bots" (see MIGRATION.md phase 9). playerID for a bot is a synthetic
+        /// negative value (real Telegram user IDs are always positive), an unambiguous "never try
+        /// to DM this" signal wherever askQuestion/beginJudging would otherwise message a player.</summary>
+        public bool isBot = false;
         internal mod_xyzzy_player() { }
         public mod_xyzzy_player(string name, string handle, long playerID)
         {
             this.name = name;
             this.handle = handle;
             this.playerID = playerID;
+        }
+
+        public mod_xyzzy_player(string name, long playerID, bool isBot)
+        {
+            this.name = name;
+            this.handle = "";
+            this.playerID = playerID;
+            this.isBot = isBot;
         }
 
         public override string ToString()

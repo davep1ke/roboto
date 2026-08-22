@@ -30,7 +30,7 @@ is arbitrary.
 | 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Done, verified | `a98f277` |
 | 7. Test harness + business-logic test suite | Done, verified (partial coverage - see notes) | `28d4714` |
 | 8. Migrator retarget (`XmlImporter` → new decomposed store) | Not started | — |
-| 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Not started | — |
+| 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Done, verified - see notes (most items were already-true-by-construction, not actual deltas) | — |
 | 10. Cutover prep | Not started | — |
 
 "Verified" means actually built + run, not just "compiles" - see commit messages and in-code
@@ -412,14 +412,105 @@ passed again.
   abandoned branch) - not done this pass; phase 4's own live-bot verification already gave direct
   evidence the mechanism works, so this was judged lower priority than breadth across modules.
 
+## Phase 9 notes (carry-forward deltas)
+
+The plan's one-line list of 9 "rewrite improvements" turned out to conflate several genuinely
+different situations, only clear after checking each against the abandoned rewrite branch's actual
+commits (not just its own terse phase-table wording) and against real legacy (`legacy-winforms-
+baseline`) directly. Surfaced to the user before writing any code (a genuine fork the plan hadn't
+resolved), who made two calls: keep legacy's real judge-kick/leave behavior rather than the rewrite's
+simplification, and build "Add Bots" as a real feature now rather than deferring it.
+
+**Already true here, no code needed** - these were only ever *rewrite* gaps (closed there to reach
+parity with legacy), not things legacy itself lacked, so a from-legacy port already has them:
+- **Multi-answer questions** - `mod_xyzzy_card.nrAnswers`, `logAnswer`'s multi-blank gating,
+  `judgesResponse`'s regex-based multi-blank substitution are all legacy-native, confirmed present in
+  `legacy-winforms-baseline` verbatim. Already covered by phase 7's `XyzzyGameFlowTests`.
+- **Bolded winning answer** - `judgesResponse` already wraps the winning card(s) in `*...*` and sends
+  via `Messaging.SendMessage(chatID, message, null, true)` (markdown on). Legacy-native.
+- **Kick-below-MinPlayers stops the game** - `removePlayer`'s existing `players.Count <= 2` check
+  already calls `wrapUp()` regardless of whether the removed player is a bot or human. The rewrite
+  only needed a fix here because of its own bot-auto-fill feature masking the check for bot-specific
+  kicks - a problem that doesn't exist on this branch (see "Add Bots" below - no auto-fill was built).
+- **Pack-default-semantics** - the rewrite's own commit for this (`d24a007`) is titled "revert pack
+  default-semantics to match legacy exactly" - it was fixing the *rewrite's own* inverted convention,
+  not adding anything legacy lacked. A from-legacy port never had the divergence to begin with.
+
+**Genuine legacy bugs, fixed and documented (not silently reproduced)** - matches this project's
+established "fix it and comment why" convention (`CLAUDE.md`'s two phase-0 examples):
+- **Pack-list pagination off-by-one** (`mod_xyzzy_chatdata.sendPackFilterMessage`) -
+  `totalPageCount = (count / maxPacksPerPage) + 1` produced a phantom empty trailing page whenever
+  the pack count was an exact multiple of `maxPacksPerPage` (30). Confirmed present in real legacy;
+  the rewrite's own commit explicitly called this "a bug worth just fixing, not parity-worthy" rather
+  than reproducing it. Fixed to ceiling division, `Math.Max(1, (count + maxPacksPerPage - 1) /
+  maxPacksPerPage)`. Covered by `PackListPaginationHasNoPhantomTrailingPageOnAnExactMultiple`.
+- **Abandon confirm didn't check which button was tapped** (`mod_xyzzy.cs`'s `"Abandon"` reply
+  handler) - the Yes/No confirmation dialog is legacy-real, but the handler abandoned the game on
+  *any* reply, including "No". Confirmed present in real legacy. Fixed: only abandons on "Yes", sends
+  "Not abandoned." otherwise. Covered by `AbandonConfirmOnlyAbandonsOnYes`/
+  `AbandonConfirmAbandonsOnYes`.
+
+**A deliberate no-op, not a bug fix** - **judge-kick/leave**: legacy's real behavior when the judge
+is kicked mid-round (`removePlayer`) is to re-pick a new judge and resume judging on the *same*
+round's already-collected answers (calling `beginJudging(true)` again) - this already works, is
+already ported verbatim, and needed no changes. The rewrite had replaced this with "just deal a fresh
+round" as a deliberate simplification in its own context; asked directly, the user chose to keep
+legacy's real behavior here rather than adopt that simplification, matching this branch's whole
+reason for existing (preserve legacy nuance, don't re-derive/simplify it away). Covered by
+`KickingTheJudgeMidJudgingReassignsTheSameRoundRatherThanDealingAFreshOne`.
+
+**Genuinely new features, not legacy behavior at all:**
+
+- **Bot self-de-admin** (`TelegramAPI.DispatchUpdate`) - if the bot is promoted to admin in a group,
+  immediately strips its own rights back off (`PromoteChatMember` with every permission left at its
+  default `false` - there's no separate "demote" API) and explains why
+  (`TelegramAPI.BotSelfDeAdminExplanation`). Wired off `Update.MyChatMember`, which Telegram includes
+  in `getUpdates()`'s default update set with no explicit `allowedUpdates` opt-in needed (unlike
+  `chat_member`, which covers *other* members and isn't included by default) - so no change was
+  needed to the polling call itself, only to `DispatchUpdate`'s handling. Only reacts to a fresh
+  promotion (old status not already admin), not every no-op `MyChatMember` update. Legacy had no
+  admin-only functionality and never reacted to this update type at all.
+- **"Add Bots"** (`mod_xyzzy_player.isBot`, `mod_xyzzy_chatdata.addBots`/`nextRobotName`,
+  `askAddBotsCount`) - lets a player deliberately pad a game out with computer-controlled players,
+  reachable from both the Invites setup screen and the `/xyzzy_settings` menu (blocked mid-round -
+  `Question`/`Judging` - since a bot added then would have no dealt hand and nothing would ever
+  prompt it to answer). Bot playerIDs are synthetic negative values (real Telegram user IDs are
+  always positive), an unambiguous "never DM this" signal in `askQuestion` (bots skip the DM, answer
+  immediately with a random card from their dealt hand instead, looping per the question's
+  `nrAnswers` same as a real player across several taps) and `beginJudging` (a bot judge picks a
+  random submitted answer immediately rather than being sent a keyboard). A same-process safety stop
+  (top of `askQuestion`) ends the game if every remaining player is a bot - ported from the rewrite's
+  own equivalent guard, which it confirmed load-bearing there via a real `StackOverflowException`
+  during development, not just a failed assertion; ours is untested against that specific failure
+  mode but exists for the identical reason (auto-answer -> auto-judge -> next round chaining forever
+  with nobody watching once no human remains). No `MinPlayers` auto-fill was built (unlike the
+  rewrite) - the existing `players.Count > 2` gate on the "Start" button is untouched; "Add Bots" is
+  purely opt-in padding a player chooses, not an automatic top-up. Robot-themed names ported verbatim
+  from the rewrite's own list. Covered by
+  `AddBotsLetsASoloStarterReachThreePlayersAndPlayARound` (full round: solo starter adds 2 bots,
+  starts, both bots auto-answer without ever being DMed, tzar judges and awards a bot the point).
+
+**Sanity-checked by breaking something**: disabled the Abandon "Yes" check (always abandon) and
+confirmed `AbandonConfirmOnlyAbandonsOnYes` failed; disabled the bot auto-answer loop entirely (`&&
+false`) and confirmed `AddBotsLetsASoloStarterReachThreePlayersAndPlayARound` failed (status stuck on
+`Question`, judging never triggered) - both reverted, full suite green again afterward.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (21/21, up from 15 after phase
+6). Not yet verified live against the `beefy` test bot - flagged as still worth doing before this
+phase is considered fully done, particularly for "Add Bots" (the highest-risk new logic this phase
+added) and bot self-de-admin (depends on a real Telegram group promoting the bot, not easily
+exercised any other way).
+
 ## What's still open
 
-Phases 8, 9, 10 - see the phase table above and the full plan file for what each phase actually
+Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
 involves, the confirmed architecture decisions (real background scheduler, decomposed persistence +
 relational tables for whole-bot lists, carry-forward deltas), and the resolved/open sub-decisions
 (chatPriority sort - decided, implement; daily XML backup - decided, not needed, TrueNAS snapshots
-instead; background-scheduler batching caps - decided, keep as legacy has them). Phase 5 (hybrid
-keyboards) is deliberately deferred, not blocking - see its own notes above for why, and the design
-to pick back up if it's ever revisited (which also resolves the card/pack-ID-for-callback_data
-sub-decision, since that only matters once inline keyboards exist). Phase 7's own deferred items
-(above) are additional, narrower follow-ups within phases 8's own scope, not separately tracked here.
+instead; background-scheduler batching caps - decided, keep as legacy has them). Phase 9 was done out
+of plan order (ahead of phase 8) at the user's explicit request. Phase 5 (hybrid keyboards) is
+deliberately deferred, not blocking - see its own notes above for why, and the design to pick back up
+if it's ever revisited (which also resolves the card/pack-ID-for-callback_data sub-decision, since
+that only matters once inline keyboards exist). Phase 7's own deferred items (mod_wordcraft, mod_steam's
+network-bound flows, `ChatKeyedLockTests` re-derivation) are additional, narrower follow-ups, not
+separately tracked here.

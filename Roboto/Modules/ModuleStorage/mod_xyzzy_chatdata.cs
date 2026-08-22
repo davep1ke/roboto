@@ -130,6 +130,51 @@ namespace RobotoChatBot.Modules
             return false;
         }
 
+        /// <summary>Silly robot-themed names for "Add Bots" players - not legacy wording, legacy
+        /// never had bot players at all. Ported from the abandoned rewrite branch's own list (see
+        /// MIGRATION.md phase 9).</summary>
+        private static readonly string[] robotNames = new string[]
+        {
+            "Clanky", "Rustbucket", "Botzilla", "Sir Beeps-a-Lot", "Cogsworth", "Tin Can Tony",
+            "Byte Me", "Circuit Breaker", "Metal Mickey", "Robzilla", "Wheatley Jr.", "Servo",
+            "Clank", "Bit Bot", "Automaton Prime", "Robo Ricky", "Marvin the Paranoid Droid",
+            "Botimus Prime", "Chrome Dome", "Rusty Gears", "The Great Cogsby", "Robbie Roboto",
+            "Deep Fryer 3000", "Anti-Skynet", "Grumpy Gearbox", "Roborto", "Beep Boop Bandit",
+            "Captain Cogwheel", "Sparky McSparkface", "The Malfunctioner",
+        };
+
+        /// <summary>Picks a name not already in use by another bot in this game, so two bots never
+        /// look identical in a round announcement - falls back to a numbered variant only once the
+        /// whole list is exhausted.</summary>
+        private string nextRobotName()
+        {
+            List<string> used = players.Where(p => p.isBot).Select(p => p.name).ToList();
+            List<string> available = robotNames.Where(n => !used.Contains(n)).ToList();
+            if (available.Count > 0) { return available[settings.getRandom(available.Count)]; }
+            return "Robot " + (used.Count + 1);
+        }
+
+        /// <summary>Adds `count` bot players with robot-themed names - "Add Bots" (mod_xyzzy.cs),
+        /// a carried-forward delta from the abandoned rewrite branch (see MIGRATION.md phase 9);
+        /// legacy never had non-human players at all. Bot playerIDs are synthetic negative values
+        /// (real Telegram user IDs are always positive) so they can never collide with a real
+        /// player and are an unambiguous "never try to DM this" signal in askQuestion/beginJudging.
+        /// Returns the names added so callers can echo them back without re-deriving which players
+        /// are new.</summary>
+        internal List<string> addBots(int count)
+        {
+            long nextBotID = players.Where(p => p.isBot).Select(p => p.playerID).DefaultIfEmpty(0).Min() - 1;
+            List<string> added = new List<string>();
+            for (int i = 0; i < count; i++)
+            {
+                string botName = nextRobotName();
+                players.Add(new mod_xyzzy_player(botName, nextBotID, true));
+                added.Add(botName);
+                nextBotID--;
+            }
+            return added;
+        }
+
         internal bool removePlayer(long playerID)
         {
             log("Removing " + playerID.ToString() + ". Currently " + players.Count + " players. Judge ID is pos " + lastPlayerAsked);
@@ -263,6 +308,19 @@ namespace RobotoChatBot.Modules
 
         internal void askQuestion(bool force)
         {
+            // Safety stop: if every remaining player is a bot (e.g. every real player has left via
+            // /xyzzy_leave), bots answering and judging automatically below would otherwise chain
+            // through rounds forever with nobody watching. Ported from the abandoned rewrite
+            // branch's own "all-bots-left safety stop" for "Add Bots" (MIGRATION.md phase 9),
+            // confirmed load-bearing there via a real StackOverflowException, not just a failed
+            // assertion.
+            if (players.Count > 0 && players.All(p => p.isBot))
+            {
+                Messaging.SendMessage(chatID, "Everyone left - stopping the game.");
+                wrapUp();
+                return;
+            }
+
             Roboto.Settings.stats.logStat(new statItem("Hands Played", typeof(mod_xyzzy)));
             mod_xyzzy_coredata localData = getLocalData();
             //TODO - this causes issues if someone is changing settings in the middle of a round. 
@@ -322,11 +380,15 @@ namespace RobotoChatBot.Modules
                     //loop through each player and act accordingly
                     foreach (mod_xyzzy_player player in players)
                     {
-                        //throw away old cards and select new ones. 
+                        //throw away old cards and select new ones.
                         player.selectedCards.Clear();
                         player.topUpCards(10, remainingAnswers, chatID);
                         long messageID = long.MaxValue;
-                        if (player == tzar)
+                        if (player.isBot)
+                        {
+                            //"Add Bots" player - never DMed, see the auto-answer loop below.
+                        }
+                        else if (player == tzar)
                         {
                             messageID =  Messaging.SendMessage(player.playerID, "Its your question! You ask:" + "\r\n" + question.text, player.name,  false, -1, true);
                         }
@@ -338,7 +400,7 @@ namespace RobotoChatBot.Modules
                             messageID = Messaging.SendQuestion(chatID, player.playerID, questionText, true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData));
                         }
 
-                        if (messageID == -403) //bot doesnt have access to send message. Probably blocked 
+                        if (messageID == -403) //bot doesnt have access to send message. Probably blocked
                         {
                             dormantPlayers.Add(player);
                         }
@@ -359,6 +421,27 @@ namespace RobotoChatBot.Modules
 
 
                     setStatus(xyzzy_Statuses.Question);
+
+                    // Bots never receive a DM (see the loop above) - they answer immediately with
+                    // a random card from their dealt hand instead, looping until they've submitted
+                    // the question's full nrAnswers, same as a real player would across several
+                    // taps. "Add Bots" (MIGRATION.md phase 9) - legacy never had non-human players
+                    // at all. Re-checks status each iteration: an earlier bot's answer may already
+                    // have completed the round (logAnswer calls beginJudging once everyone's in),
+                    // moving status off Question entirely - including, if the new judge is also a
+                    // bot, all the way through to a fresh Question via judgesResponse's own
+                    // askQuestion(false) call.
+                    foreach (mod_xyzzy_player botPlayer in players.Where(p => p != tzar && p.isBot).ToList())
+                    {
+                        while (status == xyzzy_Statuses.Question
+                            && botPlayer.selectedCards.Count < question.nrAnswers
+                            && botPlayer.cardsInHand.Count > 0)
+                        {
+                            string cardID = botPlayer.cardsInHand[settings.getRandom(botPlayer.cardsInHand.Count)];
+                            mod_xyzzy_card card = localData.getAnswerCard(cardID);
+                            logAnswer(botPlayer.playerID, card.text);
+                        }
+                    }
                 }
                 else
                 {
@@ -504,6 +587,9 @@ namespace RobotoChatBot.Modules
                 //question
                 message += "\r\n- " + "If the game gets stuck, you can try *Force Question* to move things along.";
                 keyboardOptions.Add("Force Question");
+                //bots ("Add Bots" - MIGRATION.md phase 9, legacy never had non-human players)
+                message += "\r\n- " + "Short on people? *Add Bots* to pad out the game with computer-controlled players.";
+                keyboardOptions.Add("Add Bots");
 
                 //NB: this needs to be done inside the admin message, to prevent non-admin users getting past this point. Any other messages should be a normal sendMessage.
                 Messaging.SendQuestion(chatID, m.userID, message, true, typeof(mod_xyzzy), "Settings", null, -1, true, TelegramAPI.createKeyboard(keyboardOptions, 2), true);
@@ -756,6 +842,15 @@ namespace RobotoChatBot.Modules
 
                 if (possibleAnswerCount > 0)
                 {
+                    if (tzar.isBot)
+                    {
+                        // "Add Bots" (MIGRATION.md phase 9) - a bot judge never receives a DM,
+                        // it picks a random submitted answer immediately instead. responses is
+                        // already each non-judge player's combined answer text, exactly what
+                        // judgesResponse expects to match against.
+                        judgesResponse(responses[settings.getRandom(responses.Count)]);
+                        return;
+                    }
 
                     long messageID = Messaging.SendQuestion(chatID, tzar.playerID, "Pick the best answer! \r\n" + q.text, true, typeof(mod_xyzzy), "Judging", null, -1, true, keyboard);
 
@@ -801,6 +896,16 @@ namespace RobotoChatBot.Modules
             playernames.Add("Cancel");
             var keyboard = TelegramAPI.createKeyboard(playernames, 2);
             Messaging.SendQuestion(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", m.userFullName, -1, true, keyboard);
+        }
+
+        /// <summary>"Add Bots" (MIGRATION.md phase 9) - reachable from both the Invites setup
+        /// screen and the /xyzzy_settings menu, which need different follow-ups once bots are
+        /// actually added (mod_xyzzy.cs's "AddBotsCount " + returnContext reply handler), so the
+        /// caller's own context ("Invites"/"Settings") rides along in messageData.</summary>
+        public void askAddBotsCount(message m, string returnContext)
+        {
+            var keyboard = TelegramAPI.createKeyboard(new List<string> { "1", "2", "3", "5", "Cancel" }, 2);
+            Messaging.SendQuestion(chatID, m.userID, "How many bots would you like to add?", true, typeof(mod_xyzzy), "AddBotsCount " + returnContext, m.userFullName, -1, true, keyboard);
         }
 
 
@@ -1655,7 +1760,13 @@ namespace RobotoChatBot.Modules
                 + "below, or click 'Continue' to carry on. You can also import packs from CRCast by clicking 'Import Pack'";
 
             
-            int totalPageCount = (localData.getPackFilterList().Count() / maxPacksPerPage) + 1;
+            // Ceiling division, not (count / maxPacksPerPage) + 1 - the old formula produced a
+            // phantom empty trailing page whenever the pack count was an exact multiple of
+            // maxPacksPerPage (e.g. exactly 30 packs -> page 2 of 2 with zero pack buttons on it).
+            // Confirmed present in real legacy; carried forward as a fix, not reproduced, per
+            // MIGRATION.md phase 9's "pagination fix" delta - Math.Max guards the zero-packs case
+            // (0 packs should still show page 1 of 1, not 1 of 0).
+            int totalPageCount = Math.Max(1, (localData.getPackFilterList().Count() + maxPacksPerPage - 1) / maxPacksPerPage);
             
 
             //is our pageNr valid? 

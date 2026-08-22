@@ -32,6 +32,11 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
     public List<SentMessage> SentMessages { get; } = [];
     public List<SentPhoto> SentPhotos { get; } = [];
 
+    /// <summary>Records every PromoteChatMember call - TelegramAPI's bot self-de-admin (phase 9)
+    /// calls this with every permission left at its default false, the only "demote" mechanism the
+    /// real API has.</summary>
+    public List<(long ChatId, long UserId)> PromoteChatMemberCalls { get; } = [];
+
     /// <summary>Chat ids that should fail to receive a DM, simulating a user who has never opened
     /// a private chat with the bot (real Telegram behaviour when you try to message such a user).</summary>
     public HashSet<long> UnreachableChatIds { get; } = [];
@@ -92,6 +97,12 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
 
             case GetChatMemberCountRequest:
                 return Task.FromResult((TResponse)(object)1);
+
+            case PromoteChatMemberRequest promote:
+                var promoteChatId = promote.ChatId.Identifier
+                    ?? throw new InvalidOperationException("FakeTelegramBotClient only supports numeric chat ids");
+                PromoteChatMemberCalls.Add((promoteChatId, promote.UserId));
+                return Task.FromResult((TResponse)(object)true);
 
             default:
                 throw new NotSupportedException(

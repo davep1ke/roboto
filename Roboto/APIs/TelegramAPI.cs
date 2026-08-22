@@ -204,10 +204,39 @@ namespace RobotoChatBot
         /// recorded as "sent". No behavior change from the extraction itself - getUpdates() still
         /// calls this once per update it fetches, in the same order, under the same per-chat lock.
         /// </summary>
+        /// <summary>Posted alongside the bot demoting itself back off admin - see DispatchUpdate's
+        /// MyChatMember handling below (MIGRATION.md phase 9's "bot self-de-admin" delta).</summary>
+        public const string BotSelfDeAdminExplanation =
+            "Bots added as admin are sent every chat message within a group - I don't need to be an admin.";
+
         public static void DispatchUpdate(Update update)
         {
             //Flag the update ID as processed.
             Roboto.Settings.lastUpdate = update.Id;
+
+            // MyChatMember fires whenever *this bot's own* membership status changes in a chat -
+            // Telegram includes it in getUpdates()'s default update set with no explicit opt-in
+            // needed (unlike chat_member, which covers *other* members and isn't included by
+            // default). Not a legacy feature at all - legacy had no admin-only functionality and
+            // never reacted to this update type. Carried forward from the abandoned rewrite
+            // branch's own "bot self-de-admin" (MIGRATION.md phase 9): if someone promotes the bot
+            // to admin, immediately strip every right back off - PromoteChatMember with every
+            // permission left at its default false is the only "demote" mechanism the API has -
+            // and explain why, so whoever promoted it isn't left wondering what happened. Only
+            // reacts to a fresh promotion (old status not already admin), not every no-op
+            // MyChatMember update.
+            if (update.MyChatMember != null)
+            {
+                if (update.MyChatMember.NewChatMember.IsAdmin && !update.MyChatMember.OldChatMember.IsAdmin)
+                {
+                    long adminChatID = update.MyChatMember.Chat.Id;
+                    long botUserID = update.MyChatMember.NewChatMember.User.Id;
+                    Roboto.log.log("Promoted to admin in " + adminChatID + " (" + update.MyChatMember.Chat.Title + ") - de-admining self", logging.loglevel.high);
+                    Client.PromoteChatMember(adminChatID, botUserID).GetAwaiter().GetResult();
+                    Client.SendMessage(adminChatID, BotSelfDeAdminExplanation).GetAwaiter().GetResult();
+                }
+                return;
+            }
 
             // Legacy generically resolved chat.id/chat.title off whatever the update's single
             // top-level payload object happened to be (it never explicitly requested non-message

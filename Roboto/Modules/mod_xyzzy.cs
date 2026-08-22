@@ -526,6 +526,20 @@ namespace RobotoChatBot.Modules
                     else if (m.text_msg == "Kick") { chatData.askKickMessage(m); }
                     else if (m.text_msg == "Mess With") { chatData.askFuckWithMessage(m); }
                     else if (m.text_msg == "Change Score") { chatData.askChangeScoreMessage(m); }
+                    else if (m.text_msg == "Add Bots")
+                    {
+                        // Blocked mid-round: a bot added now would have no hand dealt and nothing
+                        // would ever prompt it to answer, silently hanging the round until the
+                        // background timeout eventually skips it. "Add Bots" (MIGRATION.md phase 9).
+                        if (chatData.status == xyzzy_Statuses.Question || chatData.status == xyzzy_Statuses.Judging)
+                        {
+                            Messaging.SendMessage(m.userID, "Can't add bots mid-round - try again once this round finishes.");
+                        }
+                        else
+                        {
+                            chatData.askAddBotsCount(m, "Settings");
+                        }
+                    }
                     else if (m.text_msg == "Abandon")
                     {
                         Messaging.SendQuestion(chatData.chatID, m.userID, "Are you sure you want to abandon the game?", true, typeof(mod_xyzzy), "Abandon", m.userFullName, -1, true, TelegramAPI.createKeyboard(new List<string>() { "Yes", "No" }, 2));
@@ -543,7 +557,7 @@ namespace RobotoChatBot.Modules
                         //add all the q's and a's based on the previous settings / defaults if a new game. 
                         chatData.addQuestions();
                         chatData.addAllAnswers();
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                         chatData.setStatus(xyzzy_Statuses.Invites);
                     }
@@ -738,7 +752,7 @@ namespace RobotoChatBot.Modules
                     {
 
                         //Ready to start game - tell the player they can start when they want
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                         chatData.setStatus(xyzzy_Statuses.Invites);
 
@@ -779,6 +793,10 @@ namespace RobotoChatBot.Modules
                         log("Overriding player limit and starting game", logging.loglevel.high);
                         chatData.askQuestion(true);
                     }
+                    else if (m.text_msg == "Add Bots")
+                    {
+                        chatData.askAddBotsCount(m, "Invites");
+                    }
                     else if (m.text_msg == "Start" && chatData.players.Count > 2)
                     {
                         log("Starting game", logging.loglevel.verbose);
@@ -786,12 +804,12 @@ namespace RobotoChatBot.Modules
                     }
                     else if (m.text_msg == "Start")
                     {
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     }
                     else
                     {
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
                         Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                     }
 
@@ -826,13 +844,71 @@ namespace RobotoChatBot.Modules
                 //abandon game
                 else if (e.messageData == "Abandon")
                 {
-                    chatData.setStatus(xyzzy_Statuses.Stopped);
-                    Messaging.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
-                    Messaging.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game");
+                    // Legacy's own Yes/No confirm here was cosmetic-only - the reply handler never
+                    // actually checked which button was tapped, so any reply (including "No")
+                    // abandoned the game. Fixed rather than reproduced, per MIGRATION.md phase 9's
+                    // carried-forward "real Abandon confirm" delta - a real confirm that only
+                    // abandons on "Yes".
+                    if (m.text_msg == "Yes")
+                    {
+                        chatData.setStatus(xyzzy_Statuses.Stopped);
+                        Messaging.clearExpectedReplies(c.chatID, typeof(mod_xyzzy));
+                        Messaging.SendMessage(c.chatID, "Game abandoned. type /xyzzy_start to start a new game");
+                    }
+                    else
+                    {
+                        Messaging.SendMessage(m.userID, "Not abandoned.");
+                    }
                     processed = true;
                 }
 
+                //"Add Bots" (MIGRATION.md phase 9) - reachable from both the Invites setup screen
+                //and the /xyzzy_settings menu (chatData.askAddBotsCount carries which one in
+                //messageData), which need different follow-ups once bots are actually added.
+                else if (e.messageData.StartsWith("AddBotsCount"))
+                {
+                    string returnContext = e.messageData.Substring("AddBotsCount".Length).Trim();
 
+                    if (m.text_msg == "Cancel")
+                    {
+                        if (returnContext == "Invites")
+                        {
+                            var kb = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
+                            Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, kb);
+                        }
+                        else
+                        {
+                            chatData.sendSettingsMessage(m);
+                        }
+                    }
+                    else
+                    {
+                        int count;
+                        if (int.TryParse(m.text_msg, out count) && count > 0 && count <= 20)
+                        {
+                            List<string> added = chatData.addBots(count);
+                            string addedText = "Added: " + String.Join(", ", added) + ".";
+
+                            if (returnContext == "Invites")
+                            {
+                                Messaging.SendMessage(m.userID, addedText);
+                                var kb = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
+                                Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, kb);
+                            }
+                            else
+                            {
+                                Messaging.SendMessage(m.userID, addedText);
+                                Messaging.SendMessage(chatData.chatID, String.Join(", ", added) + (added.Count == 1 ? " joined the game as a bot." : " joined the game as bots."));
+                            }
+                        }
+                        else
+                        {
+                            Messaging.SendMessage(m.userID, "Not a valid number.");
+                            chatData.askAddBotsCount(m, returnContext);
+                        }
+                    }
+                    processed = true;
+                }
 
                 //kicking a player
                 else if (e.messageData == "kick")

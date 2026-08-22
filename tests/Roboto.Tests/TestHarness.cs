@@ -68,6 +68,22 @@ public sealed class TestHarness : IDisposable
 
     public void Send(Message message) => TelegramAPI.DispatchUpdate(new Update { Message = message });
 
+    /// <summary>Simulates someone promoting the bot to admin in a group - fires the same
+    /// MyChatMember update TelegramAPI.DispatchUpdate's bot self-de-admin handling (phase 9) reacts
+    /// to. BotClient.BotId is the bot's own user id, matching what TelegramAPI.Client.GetMe would
+    /// return for the real client.</summary>
+    public void PromoteBotToAdmin(long chatId, string title = "Test Group") => TelegramAPI.DispatchUpdate(new Update
+    {
+        MyChatMember = new ChatMemberUpdated
+        {
+            Chat = new Chat { Id = chatId, Type = ChatType.Group, Title = title },
+            From = new User { Id = 1, FirstName = "Someone" },
+            Date = DateTime.UtcNow,
+            OldChatMember = new ChatMemberMember { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
+            NewChatMember = new ChatMemberAdministrator { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
+        },
+    });
+
     public void SendGroupMessage(long chatId, long userId, string text, string firstName = "Test", string title = "Test Group", Message replyTo = null) =>
         Send(GroupMessage(chatId, userId, text, firstName, title, replyTo));
 
