@@ -22,6 +22,21 @@ namespace RobotoChatBot
         public List<statSlice> statSlices = new List<statSlice>();
         System.Drawing.Color c = System.Drawing.Color.Blue;
 
+        /// <summary>Grand total, tracked separately from statSlices (which get pruned to the 48h
+        /// charting window by removeOldData) - not a legacy feature at all, legacy's stats were
+        /// always a pure rolling window. Ported from the abandoned rewrite branch's own
+        /// StatsRecorder.Total. For statmode.increment this accumulates forever (e.g. "how many
+        /// games have ever been started"); for statmode.absolute it just mirrors the latest value,
+        /// same as the rewrite's Snapshot-mode handling, since summing a gauge reading wouldn't mean
+        /// anything. totalSince records when this tracking began for this stat - self-initializes on
+        /// first logStat call rather than at object-construction time, so it comes out right both for
+        /// a stat type that's brand new and one that already existed (and deserialized with total=0/
+        /// totalSince=default) before this field was added. Necessarily starts from zero at whatever
+        /// point this was deployed, not truly all-time - the pre-existing rolling window has nothing
+        /// further back to backfill from.</summary>
+        public long total = 0;
+        public DateTime totalSince = DateTime.MinValue;
+
         internal statType() { }
         public statType(string name, string moduleType, System.Drawing.Color c, stats.displaymode displayMode = stats.displaymode.line, stats.statmode statMode = stats.statmode.increment)
         {
@@ -65,14 +80,18 @@ namespace RobotoChatBot
 
         public void logStat(statItem item)
         {
+            if (totalSince == DateTime.MinValue) { totalSince = DateTime.Now; }
+
             statSlice slice = getSlice();
             if (statMode == stats.statmode.increment)
             {
                 slice.addCount(item.items);
+                total += item.items;
             }
             else if (statMode == stats.statmode.absolute)
             {
                 slice.setCount(item.items);
+                total = item.items;
             }
         }
 
@@ -269,6 +288,16 @@ namespace RobotoChatBot
             {
                 return getStatTypeUnlocked(name, moduleType);
             }
+        }
+
+        /// <summary>Grand total for a registered stat (statType.total/.totalSince) - see that
+        /// field's own comment. Returns null if the stat type isn't registered (e.g. its owning
+        /// module hasn't run startupChecks yet).</summary>
+        public (long total, DateTime since)? getGrandTotal(string name, Type moduleType)
+        {
+            statType type = getStatType(name, moduleType.ToString());
+            if (type == null) { return null; }
+            return (type.total, type.totalSince);
         }
 
         /// <summary>Lock-free inner version, for callers (registerStatType/logStat above) that

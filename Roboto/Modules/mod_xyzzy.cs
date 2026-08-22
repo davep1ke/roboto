@@ -441,6 +441,19 @@ namespace RobotoChatBot.Modules
             string result = activePlayers.ToString() + " players in " + activeGames.ToString() + " active games\r\n";
             result += localPluginData.packs.Count().ToString() + " packs loaded containing " + (localPluginData.questions.Count() + localPluginData.answers.Count()) + " cards";
 
+            // Grand totals (MIGRATION.md phase 9 addendum) - not a legacy feature, legacy's stats
+            // were always a pure 48h rolling window. See stats.cs's statType.total/.getGrandTotal.
+            var gamesTotal = Roboto.Settings.stats.getGrandTotal("New Games Started", typeof(mod_xyzzy));
+            if (gamesTotal.HasValue && gamesTotal.Value.since != DateTime.MinValue)
+            {
+                result += "\r\n" + gamesTotal.Value.total + " games started since " + gamesTotal.Value.since.ToString("yyyy-MM-dd");
+            }
+            var handsTotal = Roboto.Settings.stats.getGrandTotal("Hands Played", typeof(mod_xyzzy));
+            if (handsTotal.HasValue && handsTotal.Value.since != DateTime.MinValue)
+            {
+                result += "\r\n" + handsTotal.Value.total + " hands played since " + handsTotal.Value.since.ToString("yyyy-MM-dd");
+            }
+
             return result;
 
         }
