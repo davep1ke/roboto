@@ -5,6 +5,7 @@ using System.Text;
 using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
+using System.Text.Json.Serialization;
 
 
 namespace RobotoChatBot.Modules
@@ -39,6 +40,19 @@ namespace RobotoChatBot.Modules
         /// negative value (real Telegram user IDs are always positive), an unambiguous "never try
         /// to DM this" signal wherever askQuestion/beginJudging would otherwise message a player.</summary>
         public bool isBot = false;
+
+        // System.Text.Json's default reflection-based converter only auto-uses a constructor when
+        // there's a public parameterless one, or exactly one public parameterized one - with two
+        // public parameterized constructors and only an internal parameterless one, it has no
+        // usable candidate at all and throws NotSupportedException on every deserialize attempt.
+        // Found while building phase 8's migrator test coverage: no existing test had ever exercised
+        // a real save()-then-reload round trip with a populated players list, so this was invisible
+        // even though it's a genuine, serious bug in phase 3's SqliteStateStore persistence layer -
+        // any chat with real players in its xyzzy game would crash settings.load() entirely (not
+        // just lose that chat's data - the exception propagates past the whole load(), so it takes
+        // the bot's startup down) on any restart. [JsonConstructor] tells STJ to use this one
+        // explicitly rather than trying to infer among the ambiguous candidates.
+        [JsonConstructor]
         internal mod_xyzzy_player() { }
         public mod_xyzzy_player(string name, string handle, long playerID)
         {

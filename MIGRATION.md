@@ -29,7 +29,7 @@ is arbitrary.
 | 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Deferred - user call, see notes | — |
 | 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Done, verified | `a98f277` |
 | 7. Test harness + business-logic test suite | Done, verified (partial coverage - see notes) | `28d4714` |
-| 8. Migrator retarget (`XmlImporter` → new decomposed store) | Not started | — |
+| 8. Migrator retarget (`XmlImporter` → new decomposed store) | Done, verified against a real copy of production XML | — |
 | 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Done, verified - see notes (most items were already-true-by-construction, not actual deltas) | `abe3dea` |
 | 10. Cutover prep | Not started | — |
 
@@ -826,6 +826,116 @@ this port - left alone per this project's "don't restructure adjacent working co
 
 **Verified**: build clean after removal; `dotnet test` green (78/78, unchanged - confirms nothing
 depended on the removed files).
+
+## Phase 8 notes (migrator retarget)
+
+The plan file's own prediction held up in practice: "the importer can most likely deserialize
+straight into the real live types with `XmlSerializer(typeof(settings), Plugins.getPluginDataTypes())`
+- the exact mechanism `settings.load()` already used [before phase 3] - eliminating the shadow-class
+layer [the abandoned rewrite branch] needed." Since this branch's classes are still legacy's own
+classes (not a redesigned shape), that's exactly what `settings.loadFromLegacyXml(xmlPath)`
+(`settings.cs`) does - deserializes a legacy XML export straight into the live `settings`/`chat`/
+module-data object graph, then the *already-existing, already-tested* `settings.save()` writes it to
+the target SQLite store. No shadow classes, no separate mapping layer - the whole importer is a few
+dozen lines plus a thin CLI (`Migrator/Roboto.Migrator.csproj`, new top-level project alongside
+`Roboto/`/`tests/`, referencing `Roboto.csproj`; `Roboto/AssemblyInfo.cs` extended with
+`InternalsVisibleTo("Roboto.Migrator")` for the same reason `Roboto.Tests` already needed it -
+driving `Plugins.initPluginAssemblies()`/`getPluginDataTypes()` from a separate entry point).
+
+**Safety**: read-only against the source XML (only ever opened via `StreamReader`). Real legacy XML
+persisted the live Telegram token in `telegramAPIKey` (confirmed - `data/robotolive.xml`, a real 2021
+production export, has one) - `loadFromLegacyXml` scrubs `telegramAPIKey`/`telegramAPIURL`/
+`botUserName` back to their unconfigured defaults immediately after deserializing, on top of
+`save()` already never persisting those three fields (`JsonIgnore`'d from the SQLite blob) - two
+independent layers, not relying on either alone. The CLI (`Migrator/Program.cs`) defaults to a dry
+run (parses + reports counts, writes nothing); `--real` is required to actually write, and refuses to
+touch a target instance directory that already has data unless `--force`. Never writes a
+`TelegramToken` anywhere - the target's `bot.env` is `InstanceBootstrapper`'s normal first-run blank
+stub, left for a human to fill in with a **test** bot token by hand.
+
+**Validation**: `Roboto/Persistence/ImportReport.cs` - counts (chats, plugin-data modules, expected
+replies, recent chat members, stat types/slices, xyzzy catalog, xyzzy players, quotes, birthdays, plus
+a per-module "how many chats have this module's data" breakdown), computed identically from the
+parsed source and from a fresh `settings.load()` after a real write - `ImportReport.Diff` is what
+actually proves round-trip fidelity (CLAUDE.md's "validate with counts/checksums... rather than
+eyeballing it"), not either report alone. A real `--real` run without `--force` also refuses to
+proceed if the target already has data.
+
+**Two real, serious, previously-undetected bugs found while building this** - both in phase 3's
+SqliteStateStore persistence layer itself, not the migrator's own logic, and both invisible until now
+because no existing test had ever exercised a full `save()`-then-reload round trip with real populated
+per-chat module data (phase 7's tests all operate on in-memory state within one `TestHarness` instance
+and never call `.save()`; phase 3's own verification restarted a real process, but only checked the
+`stats` *table* specifically, which doesn't go through either of the code paths below):
+
+1. **`mod_xyzzy_player` couldn't be deserialized by `System.Text.Json` at all.** Two public
+   parameterized constructors, no public parameterless one - STJ's default reflection-based converter
+   only auto-selects a constructor when there's a public parameterless one or *exactly one* public
+   parameterized one; with two and no `[JsonConstructor]` disambiguation, it has no usable candidate
+   and throws `NotSupportedException` on every attempt. Since `mod_xyzzy_player` lives inside
+   `mod_xyzzy_chatdata.players` (a per-chat blob field), this meant **any chat with real players in
+   its xyzzy game would crash `settings.load()` entirely** on any restart - not just lose that chat's
+   data, the exception propagates past the whole method, taking startup down. Fixed with
+   `[JsonConstructor]` on the internal parameterless constructor
+   (`Modules/ModuleStorage/mod_xyzzy_classes.cs`). Audited every other class with the same
+   "internal parameterless ctor + public parameterized ctor(s)" shape across `Modules/`/`Storage/`/
+   `Core/`/`Helpers/` (17 candidates) - `mod_xyzzy_player` was the only one with *multiple* public
+   parameterized constructors; everything else has exactly one, which STJ's automatic single-ctor
+   parameter-matching already handles (independently confirmed working for `mod_xyzzy_card` by phase
+   3b's own real restart test).
+2. **Every restart silently reset every chat's per-module state to fresh defaults, for that entire
+   run.** `chat`'s only public constructor - the one STJ picks automatically, being the sole public
+   parameterized one - calls `initPlugins()`, which stub-populates `chatData` with one fresh entry per
+   registered module *before* `settings.load()`'s own per-module loop runs (`chatData` is empty at
+   that point, so `initPlugins()`'s "do we already have this module's data?" check finds nothing and
+   adds a stub for every module, real data or not). `settings.load()`'s loop then **appended** the
+   real loaded row instead of replacing the stub, leaving both in the list with the stub first - and
+   `chat.getPluginData<T>()`/`getPluginData(Type)` both return the *first* match. Net effect: every
+   module lookup after any restart silently got the fresh, empty stub instead of the real persisted
+   state, for that whole run (the real data was still sitting in the SQLite blob row underneath and
+   would resurface correctly on the *next* restart, since `save()`'s per-type-key upsert means
+   whichever of [stub, real] is last in the list - the real one, appended after - wins when it's
+   re-persisted - but every module's live behavior in between saw nothing there). Fixed:
+   `settings.load()`'s per-chat loop now does `c.chatData.RemoveAll(existing => existing.GetType() ==
+   plugin.pluginChatDataType)` before adding the loaded row, so it replaces the stub instead of
+   sitting alongside it. A module with genuinely no saved row yet (freshly added, or never touched by
+   that chat) correctly keeps its `initPlugins()` stub, unchanged.
+
+Both found and fixed via the same synthetic-fixture approach as the tests below - built a `settings`
+object programmatically (not hand-authored XML, so it stays correct as the schema evolves), serialized
+it with the exact same `XmlSerializer` shape real legacy XML uses, then drove it through
+`loadFromLegacyXml` → `save()` → `settings.load()` and asserted the counts matched. Neither bug is
+migrator-specific - both affect the *live app's own* restart behavior right now, on every instance,
+independent of any migration work. Given the severity (bug 1 crashes startup outright; bug 2 silently
+discards live game/quote/birthday state for a whole session on every restart), this needed fixing
+before any real import was trusted, not deferred as a "known limitation."
+
+**A third finding, real but benign, not a bug**: a genuine import against `data/robotolive.xml` (a
+real 2021 production export) initially reported a mismatch - 23 stat types before, 13 after. Root
+cause: 10 of those 23 had zero recorded slices (e.g. "Critical Errors", "New Games Started" - real
+production, but never actually fired). `SqliteStateStore`'s `stats` table only stores per-slice rows
+(`stat_name, module_type, time_slice` primary key) - a type with no slices has nothing to persist and
+genuinely can't survive a save+reload through this schema. Not data loss: every module re-registers
+its own stat types fresh on every startup regardless of persistence (already noted as expected in
+phase 3's own verification, for the identical reason), so an empty type just reappears from code, not
+data, on next boot. `ImportReport.StatTypeCount` now only counts types that actually carry data (an
+exact, honest metric that round-trips cleanly); `StatTypesWithNoData` tracks the rest separately and
+is reported but not diffed, so a real import doesn't cry wolf over an already-accepted, harmless gap.
+
+**Sanity-checked by breaking something**: reverted the `[JsonConstructor]` fix and confirmed the
+round-trip test failed with the exact `NotSupportedException` this closes; reverted the
+`chatData.RemoveAll` fix and confirmed the round-trip test failed with every populated module showing
+a `1 -> 2` duplicate count (plus a spurious `mod_standard_chatdata: 0 -> 1`, the stub-only case) -
+both reverted back afterward.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (83/83, up from 78). A real dry
+run against `data/robotolive.xml` (2021 production export, 6 chats, 3964 questions/8792 answers/57
+packs, 10 quotes, 13 birthdays) parsed cleanly with no crashes and no printed token. A real `--real`
+import into a fresh local `data/robotolive/` (never `data/robotolive.xml` itself modified) wrote
+successfully and round-tripped with **zero count mismatches** on reload. `data/robotolive/bot.env`
+was created with a blank `TelegramToken` (`InstanceBootstrapper`'s normal first-run stub) - filling
+that in with a **test** bot token, never production, is the operator's explicit next step, not
+something this tool does automatically.
 
 ## What's still open
 

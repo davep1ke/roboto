@@ -137,10 +137,24 @@ namespace RobotoChatBot
                 var c = store.Load<chat>(ChatCoreKey(chatId));
                 if (c == null) { continue; }
 
+                // chat's only public constructor - the one STJ's reflection-based converter picks
+                // automatically, being the sole public parameterized ctor - calls initPlugins(),
+                // which stub-populates c.chatData with one fresh entry per registered module before
+                // this loop below ever runs (chatData starts empty at that point, so initPlugins()'s
+                // own "do we already have this module's data?" check finds nothing and adds a stub
+                // for every one of them, real data or not). Real bug, found via phase 8's migrator
+                // tests (no existing test had exercised a full save()-then-reload round trip with
+                // real per-chat module data before): appending the loaded row instead of replacing
+                // the stub left both in chatData, stub first - and getPluginData<T>()/getPluginData()
+                // both return the *first* match, so every module lookup after any restart silently
+                // got the fresh stub instead of the real persisted state, for that entire run.
+                // RemoveAll first so the real row actually replaces the stub; a module with no saved
+                // row yet (freshly added, or a chat that's never touched it) correctly keeps its stub.
                 foreach (var plugin in Plugins.plugins.Where(p => p.pluginChatDataType != null))
                 {
                     if (store.Load(plugin.pluginChatDataType, ChatModuleKey(chatId, plugin.pluginChatDataType)) is Modules.RobotoModuleChatDataTemplate cd)
                     {
+                        c.chatData.RemoveAll(existing => existing.GetType() == plugin.pluginChatDataType);
                         c.chatData.Add(cd);
                     }
                 }
@@ -227,6 +241,40 @@ namespace RobotoChatBot
                 store.SaveChatPresence(recentChatMembersSnapshot);
                 store.SaveStats(statsListSnapshot);
             }
+        }
+
+        /// <summary>
+        /// Phase 8: parses a legacy XML export (the exact XmlSerializer(typeof(settings), extraTypes)
+        /// shape production ran on before phase 3 replaced it with SqliteStateStore) directly into
+        /// this branch's own live settings/chat/module-data types - the plan file's own predicted
+        /// shape ("the importer can most likely deserialize straight into the real live types...
+        /// eliminating the shadow-class layer the abandoned rewrite branch needed"), since this
+        /// branch's classes are still legacy's own classes, not a redesigned shape. Requires
+        /// Plugins.plugins already populated (Plugins.initPluginAssemblies()) - same ordering
+        /// requirement load()/save() have, since XmlSerializer needs every module's
+        /// pluginDataType/pluginChatDataType as its extraTypes to deserialize the polymorphic
+        /// pluginData/chatData lists into their real concrete subtypes. Read-only against the source
+        /// file - never opens it for anything but reading.
+        ///
+        /// Real legacy XML persisted the live Telegram token in telegramAPIKey (that field's
+        /// "ENTERYOURAPIKEYHERE" default is the unconfigured placeholder) - scrubbed back to defaults
+        /// immediately after deserializing, on top of save() already never persisting these three
+        /// fields (JsonIgnore'd from the SQLite blob). Credentials only ever come from
+        /// InstanceBootstrapper's bot.env; this import path must never become a second route for one
+        /// to travel through, even transiently.
+        /// </summary>
+        public static settings loadFromLegacyXml(string xmlPath)
+        {
+            var serializer = new System.Xml.Serialization.XmlSerializer(typeof(settings), Plugins.getPluginDataTypes());
+            using var reader = new System.IO.StreamReader(xmlPath);
+            var imported = (settings)serializer.Deserialize(reader);
+
+            imported.isFirstTimeInitialised = false;
+            imported.telegramAPIKey = "ENTERYOURAPIKEYHERE";
+            imported.telegramAPIURL = "https://api.telegram.org/bot";
+            imported.botUserName = "Roboto_bot_name";
+
+            return imported;
         }
 
         private static string ModuleDataKey(Type moduleDataType) => $"module:{moduleDataType.Name}";
