@@ -797,6 +797,36 @@ unlocked achievement came back), then reverted.
 
 **Verified**: build clean; `dotnet test` green across repeated runs (78/78, up from 77).
 
+### Tech-debt sweep (checked-in binaries, dead project files)
+
+User asked directly ("why do we have the Newtonsoft DLLs still there?") - checked the whole tree for
+similar leftovers rather than just that one file.
+
+**Removed** (unreferenced, unambiguous, confirmed by a clean build after removal):
+- `Roboto/Newtonsoft.Json.dll` / `Newtonsoft.Json.xml` (~1MB) - legacy's pre-NuGet checked-in
+  reference DLL, present since the repo's very first commit. `Roboto.csproj` already pulls
+  Newtonsoft via `PackageReference` (per CLAUDE.md's own description of the intended shape) - these
+  were dead weight nobody deleted when that switch happened.
+- `Roboto/Properties/app.manifest` - a WinForms/.NET-Framework UAC manifest, not referenced by the
+  SDK-style `Roboto.csproj` (no `<ApplicationManifest>` property) at all. Should have gone with the
+  rest of WPF/WinForms in phase 1; missed.
+
+**Checked, kept as-is by explicit user choice**: `Roboto/icons/*` (~660KB, unreferenced in code -
+possibly the bot's real uploaded Telegram profile picture / brand assets) and `Roboto/CallGraphs/*.dgml`
+(2 VS diagram exports, excluded from compile, original author's own commit flagged them "not sure if
+current" - kept anyway as a rough legacy-flow reference).
+
+**Checked, confirmed already-known/deliberately-accepted, not new debt** - not touched:
+`Plugins.pluginExists`/`typeDataExists`'s `Type`-comparison bug (phase 7 notes - flagged in-code,
+harmless in production, has a documented test-only workaround); `Roboto.sln`'s many stale
+per-instance build configurations from legacy's WinForms multi-context setup (already flagged in
+CLAUDE.md as non-load-bearing for the actual `dotnet build`/`dotnet test` workflow); the scattered
+`//TODO` comments throughout `Core/`/`Modules/` (all pre-existing in real legacy, not introduced by
+this port - left alone per this project's "don't restructure adjacent working code" convention).
+
+**Verified**: build clean after removal; `dotnet test` green (78/78, unchanged - confirms nothing
+depended on the removed files).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
