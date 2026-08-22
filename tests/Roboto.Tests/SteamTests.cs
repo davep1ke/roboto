@@ -93,4 +93,28 @@ public class SteamTests
         var chatData = (mod_steam_chat_data)Chats.getChat(ChatId).getPluginData(typeof(mod_steam_chat_data));
         Assert.DoesNotContain(chatData.players, p => p.playerName == "Incognito");
     }
+
+    [Fact]
+    public void GetAchievementsOnlyReturnsOnesThePlayerHasActuallyUnlocked()
+    {
+        // GetUserStatsForGame returns one entry per achievement *defined for the game*, each
+        // carrying its own achieved 0/1 flag - not one entry per achievement the player has
+        // earned. Found via a live round-trip against the real Steam API on the abandoned
+        // rewrite branch, confirmed present byte-for-byte in legacy: without filtering on
+        // "achieved", checkAchievements() (mod_steam.cs) treats every entry not already in a
+        // player's local chievs list as "new", so a player's very first check announced every
+        // achievement in the game, including ones they never unlocked.
+        using var bot = new TestHarness();
+        mod_steam_steamapi.HttpGetOverride = url => """
+            { "playerstats": { "achievements": [
+                { "name": "UNLOCKED_ONE", "achieved": 1 },
+                { "name": "LOCKED_ONE", "achieved": 0 }
+            ] } }
+            """;
+
+        var result = mod_steam_steamapi.getAchievements("76561197960287930", "440");
+
+        Assert.Contains("UNLOCKED_ONE", result);
+        Assert.DoesNotContain("LOCKED_ONE", result);
+    }
 }

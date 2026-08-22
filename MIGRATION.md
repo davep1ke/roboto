@@ -751,6 +751,52 @@ rather than trusting the automated tests alone.
 `beefy-livetest` instance restarted with both fixes and left running (per this project's own
 convention - never stopped on a guessed schedule) for the user's continued live verification.
 
+### Final sweep against legacy and the abandoned rewrite branch, before moving to migration
+
+With phases 5-9 done/deliberately deferred and the two live-bot bugs fixed, did one last systematic
+pass looking for anything still missing before starting phase 8 (migrator): every business-logic-
+relevant commit on the abandoned `rewrite/dotnet-docker-port` branch (all ~65 commits after its own
+"Begin major rewrite" branch point - everything before that is legacy's own history, already
+inherited here by construction) checked against real `master` and this branch's current code, split
+across two passes (recent xyzzy-specific phases 14.x-19, and module-port/earlier phases 8.x-9).
+
+**Recent-phases pass: nothing missing.** Every item checked (infinite-timeout bug, duplicated-answer
+blanks, pack selection in the setup wizard, `/xyzzy_get_settings` content, round-flow wording, chat-
+name stamping, the "3 discrepancy fixes" bundled into phase 16) turned out to be either a bug the
+*rewrite* introduced in its own from-scratch reimplementation (and legacy's real code, carried
+forward here verbatim, was already correct), or specific to the rewrite's own architecture (DmOutbox,
+its own audit-log/keyboard-column design) with no equivalent gap on this branch.
+
+**Module-ports pass: one real bug found and fixed.** `mod_steam_steamapi.getAchievements()` returned
+every achievement *defined for a game*, not just ones the player had actually unlocked - the Steam
+`GetUserStatsForGame` response carries an `achieved` 0/1 flag per entry that was never read. Confirmed
+byte-for-byte present in `legacy-winforms-baseline` (a real, pre-existing legacy bug, not introduced
+by this port), and confirmed the abandoned rewrite branch (`ccbf2852`) had explicitly found and fixed
+this exact issue rather than reproducing it. Effect: `mod_steam_player.checkAchievements()` treats
+anything not yet in a player's local `chievs` list as "new," so a player's very first check announced
+*every* achievement in the game as just-earned, including ones never unlocked. Fixed by filtering to
+`achieved == 1` before adding to the result list, matching this project's established "fix it and
+comment why" convention. Covered by
+`SteamTests.GetAchievementsOnlyReturnsOnesThePlayerHasActuallyUnlocked` (mixed achieved/locked
+fixture, asserts only the unlocked one comes back).
+
+Everything else checked in this pass (enum-by-name persistence, quiet-hours interaction with xyzzy
+timeouts, settings-menu completeness, mod_quote/mod_birthdays/mod_wordcraft command surfaces) was
+already correct/covered. Two migrator-relevant data-shape gotchas surfaced along the way, worth
+remembering once phase 8 starts (not code changes now, just noted): (1) any XML-deserialization
+shadow/mirror class needs explicit `[XmlType]` attributes matching legacy's real element names -
+without it `XmlSerializer` silently defaults to the C# class name and every count comes back as
+**zero, not an exception** (the exact bug the abandoned branch's own migrator hit); (2) reconciling
+`ExpectedReply` counts during import needs to account for stale replies attached to chats not in
+`Question`/`Judging` state, and replies referencing an already-purged chat ID with no matching chat
+record.
+
+**Sanity-checked by breaking something**: reverted the `achieved == 1` filter (made the branch
+unconditionally `false`) and confirmed the new test failed exactly as expected (both the locked and
+unlocked achievement came back), then reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (78/78, up from 77).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

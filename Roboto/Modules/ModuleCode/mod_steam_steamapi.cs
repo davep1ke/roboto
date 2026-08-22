@@ -134,6 +134,17 @@ namespace RobotoChatBot.Modules
                     string achieveName = "";
                     try
                     {
+                        // GetUserStatsForGame returns one entry per achievement *defined for the
+                        // game*, not one per achievement the player has actually earned - each
+                        // carries its own "achieved" flag (0/1). Found live: without this check,
+                        // checkAchievements() (mod_steam.cs) treats every entry not yet in a
+                        // player's local chievs list as "new", so the very first check of any
+                        // player announced every achievement in the game as just-earned, including
+                        // ones they'd never unlocked. Confirmed present in legacy verbatim - fixed
+                        // here, not preserved, since this is a genuine bug rather than
+                        // legacy-intended behavior.
+                        if (token.SelectToken("achieved")?.Value<int>() != 1) continue;
+
                         //get the message details
                         achieveName = token.SelectToken("name").Value<string>();
                         result.Add(achieveName);
