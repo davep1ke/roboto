@@ -147,7 +147,17 @@ public class XyzzyCarriedForwardDeltasTests
         Assert.Equal(xyzzy_Statuses.Judging, chatData.status);
         Assert.DoesNotContain(bot.BotClient.SentMessages, m => m.ChatId == -1 || m.ChatId == -2);
 
+        // Both bots must actually get a turn to answer, not just "judging eventually starts" -
+        // logAnswer's old outstandingResponses()-based completion check couldn't see bot players at
+        // all (they never get a real ExpectedReply/DM), so with zero other real players it read
+        // "everyone's answered" the instant the *first* bot in the auto-answer loop submitted,
+        // before the second bot's turn - which this test's earlier version didn't catch, since it
+        // only asserted Judging was reached and *a* winner could be picked, not that both bots'
+        // answers were actually collected. Found via a live round-trip against the beefy test bot.
         var judgingKeyboard = bot.LastKeyboardMessageTo(Alice).KeyboardRows!;
+        Assert.Equal(2, judgingKeyboard.SelectMany(r => r).Count());
+        Assert.DoesNotContain(bot.BotClient.SentMessages, m => m.Text.Contains("Skipped these chumps"));
+
         string winningAnswer = judgingKeyboard[0][0].Text;
         bot.TapButton(Alice, winningAnswer, "Alice");
 

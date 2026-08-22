@@ -686,6 +686,71 @@ always either returns or throws, left over in both `cardCast.sendPOST` and `mod_
 sendPOST` by the `HttpGetOverride` refactor earlier in this same session. Removed from both; rebuilt
 and reran the full test suite (74/74 still green) to confirm the cleanup was inert.
 
+### Live round-trip against `beefy` - two real bugs found and fixed
+
+Ran the actual current build live, for real, against Telegram (`ROBOTO_INSTANCE=beefy-livetest`, a
+fresh local instance so this branch's SQLite schema never touched the abandoned rewrite branch's own
+stale `data/beefy/roboto.db`). Had to stop two leftover processes first - a bare `dotnet Roboto.Bot.dll`
+process (running since Aug 20) and a `docker compose`-managed container (`roboto-roboto-bot-1`, up 2
+days), both from the abandoned branch and both still holding the one active long-poll slot Telegram
+allows per bot token (409 Conflict until cleared). Confirmed with the user before stopping either,
+since a memory note from a prior session says not to proactively stop a running test bot - that
+guidance was about not tearing down a session's *own* deliberately-left-running instance, not a
+blanket rule blocking all future live testing; the user confirmed stopping the stale ones was fine.
+Startup itself came up clean (real Telegram auth, no errors, background scheduler + main thread both
+started) with no code changes needed - the first genuinely-live verification since phase 4.
+
+The user then drove real interactive testing (game start, join, "Add Bots", answer, judge) directly
+against the running bot and found two real bugs neither the automated suite nor the author had caught:
+
+**1. "Skipped these chumps" for a bot that never got a turn.** Root cause: `logAnswer`'s "is
+everyone done, start judging" check used `outstandingResponses()` - which counts `ExpectedReply`
+objects - but bot players (`mod_xyzzy_player.isBot`, "Add Bots", phase 9) never get one at all, since
+they're deliberately never DMed. In a solo-player-plus-bots game (no other humans), that meant the
+check read "everyone's answered" the instant the *first* bot in the auto-answer loop submitted -
+before later bots in that same loop had gone - because there were zero real ExpectedReplies left to
+be "outstanding" regardless of what the bots had actually done. `allPlayersAnswered()` (used
+elsewhere, e.g. `check()`) already does this correctly, checking each non-judge player's real
+`selectedCards` count instead - bot-agnostic by construction. Swapped `logAnswer` to use it too.
+While fixing this, found and fixed a second, latent instance of the identical root cause a few lines
+above it: the "pick your next card" prompt for a multi-answer question was sent unconditionally,
+without an `isBot` guard (unlike `askQuestion`'s own dealing loop, which does guard it) - harmless
+for the single-answer questions exercised so far, but would have tried to DM a bot's synthetic
+negative player ID the first time a multi-answer question came up with bots in play. Both fixed
+together; `AddBotsLetsASoloStarterReachThreePlayersAndPlayARound` (previously a false-negative - it
+only asserted *a* winner could be picked, not that both bots actually got to answer) strengthened to
+assert both bots' answers appear in the judging keyboard and no one is listed as skipped. Sanity-
+checked by reverting to the old `outstandingResponses()`-based check and confirming the strengthened
+test failed with exactly the shape reported live (1 judging option instead of 2), then reverted.
+
+**2. Missing spacing around a blank glued directly to its neighbouring words.** `judgesResponse`'s
+win-message formatting (`Regex "_+"` substitution) pasted the winning answer straight into the
+question text with no added spacing - confirmed byte-for-byte identical in `legacy-winforms-baseline`,
+so this predates the port, but the user asked for a genuine improvement here, not preservation. Real
+imported pack data is inconsistent about whether a blank already has spaces around it
+("I found ___ when I was cleaning" vs "I found_when I was cleaning", the shape the user's own live
+pack actually produced) - a blind space-insertion would have double-spaced the already-correct case.
+Fixed with a targeted heuristic per the user's explicit caution ("pack data is very hit and miss," "if
+the `_` is followed by a full stop, we don't want to space that out"): only insert a space where the
+character immediately adjacent to the blank is a letter/digit glued on with nothing in between -
+already-spaced cards are untouched (the neighbour is already a space), and a blank immediately before
+punctuation (e.g. "I like to ___.") never gets a space wrongly inserted before it, since punctuation
+isn't a letter/digit. 3 new tests: the glued case (spaces added both sides), the already-spaced case
+(no double-space - narrowly asserted around the substitution itself, not the whole message, since the
+winner-name line has its own unrelated pre-existing quirk, a trailing space from `userFullName`'s
+`firstName + " " + emptySurname` construction colliding with the literal `" wins a point!"` that
+follows it), and the trailing-punctuation case (no space before the period). Sanity-checked by
+disabling both space-insertion branches and confirming the two spacing-sensitive tests failed (the
+punctuation test correctly did not, since nothing about that path changed), then reverted.
+
+Both fixes verified against the live bot itself, not just the test suite: killed and restarted the
+`beefy-livetest` instance with the fixes applied so the user could re-verify against the real thing
+rather than trusting the automated tests alone.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (77/77, up from 74). Live
+`beefy-livetest` instance restarted with both fixes and left running (per this project's own
+convention - never stopped on a guessed schedule) for the user's continued live verification.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

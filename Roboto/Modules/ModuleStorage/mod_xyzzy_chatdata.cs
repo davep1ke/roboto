@@ -506,16 +506,30 @@ namespace RobotoChatBot.Modules
                 else
                 {
                     //just check if this needs more responses:
-                    if (player.selectedCards.Count != question.nrAnswers)
+                    // !player.isBot guard: a bot mid-multi-answer-question never gets DMed here
+                    // either, matching askQuestion's own dealing loop - the bot auto-answer while
+                    // loop (askQuestion) keeps calling logAnswer for the same bot until it's
+                    // selected enough cards, so no prompt is needed. Found alongside the
+                    // allPlayersAnswered() fix above (same root cause: bot players don't have a
+                    // real Telegram chat to message) while investigating a live-bot report - see
+                    // MIGRATION.md. Latent until now since it only bites multi-answer questions.
+                    if (!player.isBot && player.selectedCards.Count != question.nrAnswers)
                     {
                         Messaging.SendQuestion(chatID, player.playerID, "Pick your next card", true, typeof(mod_xyzzy), "Question", null, -1, true, player.getAnswerKeyboard(localData),false,false,true);
                     }
                 }
             }
 
-            //are we ready to start judging? 
-            int outstanding = outstandingResponses().Count;
-            if (outstanding == 0)
+            //are we ready to start judging?
+            // allPlayersAnswered() checks each non-judge player's real selectedCards count, not
+            // outstandingResponses()'s ExpectedReply-based tracking - bot players ("Add Bots",
+            // MIGRATION.md phase 9) never get a DM/ExpectedReply at all, so outstandingResponses()
+            // structurally can't see them. In a game with no other real players left to answer, that
+            // meant judging fired the instant the *first* bot answered - outstandingResponses()
+            // read zero (no humans outstanding) while later bots in the same auto-answer loop
+            // hadn't gone yet, showing them as having "skipped" in the judging message. Found via a
+            // live round-trip against the beefy test bot (solo player + 2 bots) - see MIGRATION.md.
+            if (allPlayersAnswered())
             {
                 log("All answers received, judging", logging.loglevel.verbose);
                 beginJudging();
@@ -1220,12 +1234,32 @@ namespace RobotoChatBot.Modules
                         {
                             //add the text up to this point
                             formattedquestion += q.text.Substring(origstringpos, m.Index - origstringpos);
+
+                            // Imported pack data is inconsistent about whether a blank already has
+                            // spaces around it - "I found ___ when I was cleaning" (fine as-is) vs
+                            // "I found_when I was cleaning" (glues the answer straight onto the
+                            // surrounding words once substituted). Only add a space where the
+                            // neighbouring character is a letter/digit glued directly onto the
+                            // blank with nothing in between - an already-spaced card is untouched
+                            // (no double space), and a blank immediately before punctuation (e.g.
+                            // "I like to ___.") doesn't get a space wrongly inserted before the
+                            // period, since punctuation isn't a letter/digit.
+                            if (formattedquestion.Length > 0 && char.IsLetterOrDigit(formattedquestion[formattedquestion.Length - 1]))
+                            {
+                                formattedquestion += " ";
+                            }
+
                             //add the answer
                             formattedquestion += "*" + localData.getAnswerCard(winner.selectedCards[answernr]).text + "*";
 
                             //move our indexes along.
                             origstringpos = m.Index + m.Length;
                             answernr++;
+
+                            if (origstringpos < q.text.Length && char.IsLetterOrDigit(q.text[origstringpos]))
+                            {
+                                formattedquestion += " ";
+                            }
                         }
                         //spool the end of the string
                         formattedquestion += q.text.Substring(origstringpos);

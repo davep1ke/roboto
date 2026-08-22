@@ -146,6 +146,94 @@ public class XyzzyGameFlowTests
     }
 
     [Fact]
+    public void WinMessageAddsSpacesAroundABlankGluedToSurroundingWordsInImportedPackData()
+    {
+        // Imported pack data is inconsistent about whether a blank has spaces around it - this
+        // question text (glued "found_when", no spaces) is the shape a real live-tested pack
+        // actually produced. judgesResponse's substitution used to paste the answer straight in
+        // with no added spacing, gluing it to both neighbouring words.
+        using var bot = new TestHarness();
+        var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
+        var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
+        coreData.questions.Clear();
+        coreData.answers.Clear();
+        coreData.questions.Add(new mod_xyzzy_card("I found_when I was cleaning", mod_xyzzy.primaryPackID, 1));
+        coreData.answers.Add(new mod_xyzzy_card("a spider", mod_xyzzy.primaryPackID));
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
+        // Override (legacy's own existing escape hatch) rather than joining a third player - only
+        // one non-judge player needed to keep this deterministic.
+        bot.TapButton(Alice, "Override", "Alice");
+
+        string bobsAnswer = bot.LastKeyboardMessageTo(Bob).KeyboardRows![0][0].Text;
+        bot.TapButton(Bob, bobsAnswer, "Bob");
+        string winningAnswer = bot.LastKeyboardMessageTo(Alice).KeyboardRows![0][0].Text;
+        bot.TapButton(Alice, winningAnswer, "Alice");
+
+        var winMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId && m.Text.Contains("wins a point!"));
+        Assert.Contains("I found *a spider* when I was cleaning", winMessage.Text);
+    }
+
+    [Fact]
+    public void WinMessageDoesNotDoubleSpaceABlankThatsAlreadyProperlyFormatted()
+    {
+        using var bot = new TestHarness();
+        var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
+        var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
+        coreData.questions.Clear();
+        coreData.answers.Clear();
+        coreData.questions.Add(new mod_xyzzy_card("I found ___ when I was cleaning", mod_xyzzy.primaryPackID, 1));
+        coreData.answers.Add(new mod_xyzzy_card("a spider", mod_xyzzy.primaryPackID));
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
+        bot.TapButton(Alice, "Override", "Alice");
+
+        string bobsAnswer = bot.LastKeyboardMessageTo(Bob).KeyboardRows![0][0].Text;
+        bot.TapButton(Bob, bobsAnswer, "Bob");
+        string winningAnswer = bot.LastKeyboardMessageTo(Alice).KeyboardRows![0][0].Text;
+        bot.TapButton(Alice, winningAnswer, "Alice");
+
+        var winMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId && m.Text.Contains("wins a point!"));
+        // Exact-match on the substituted sentence, not a blanket "no double space anywhere in the
+        // message" check - the winner name line has its own unrelated pre-existing quirk (a
+        // trailing space from userFullName's firstName + " " + emptySurname construction collides
+        // with the literal " wins a point!" that follows it, e.g. "Bob  wins a point!") that has
+        // nothing to do with this substitution logic.
+        Assert.Contains("I found *a spider* when I was cleaning", winMessage.Text);
+        Assert.DoesNotContain("*a spider*  when", winMessage.Text);
+        Assert.DoesNotContain("found  *a spider*", winMessage.Text);
+    }
+
+    [Fact]
+    public void WinMessageDoesNotInsertASpaceBeforeTrailingPunctuation()
+    {
+        using var bot = new TestHarness();
+        var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
+        var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
+        coreData.questions.Clear();
+        coreData.answers.Clear();
+        coreData.questions.Add(new mod_xyzzy_card("I like to___.", mod_xyzzy.primaryPackID, 1));
+        coreData.answers.Add(new mod_xyzzy_card("nap", mod_xyzzy.primaryPackID));
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
+        bot.TapButton(Alice, "Override", "Alice");
+
+        string bobsAnswer = bot.LastKeyboardMessageTo(Bob).KeyboardRows![0][0].Text;
+        bot.TapButton(Bob, bobsAnswer, "Bob");
+        string winningAnswer = bot.LastKeyboardMessageTo(Alice).KeyboardRows![0][0].Text;
+        bot.TapButton(Alice, winningAnswer, "Alice");
+
+        var winMessage = bot.BotClient.SentMessages.Last(m => m.ChatId == ChatId && m.Text.Contains("wins a point!"));
+        Assert.Contains("I like to *nap*.", winMessage.Text);
+    }
+
+    [Fact]
     public void JoiningTwiceIsIdempotent()
     {
         using var bot = new TestHarness();
