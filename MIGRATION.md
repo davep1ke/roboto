@@ -597,6 +597,49 @@ combined `" >> "` answer), then reverted.
 **Verified**: build clean; `dotnet test` green across repeated runs (70/70, up from 53). Not yet
 verified live against the `beefy` test bot.
 
+### Third pass: fake HTTP seam for Steam/CardCast, and a real cross-platform crash found by using it
+
+Closes the last named test gap - `mod_steam`'s network-calling paths and actually importing a
+CardCast pack (not just cancelling), both previously deferred for lack of a fake HTTP client.
+
+**`mod_steam_steamapi.HttpGetOverride` / `cardCast.HttpGetOverride`** (both `internal static
+Func<string, string>`, `null` in production): both modules' real HTTP calls already funnelled
+through one `sendPOST` chokepoint each (same shape in both files - build a URL, GET it, parse JSON),
+so the fix mirrors `TelegramAPI.SetClientForTesting`'s existing pattern exactly - when set, `sendPOST`
+calls the override with the fully-built request URL and treats the return value as the raw JSON
+response body, skipping the real `HttpWebRequest`/`HttpWebResponse` path entirely. `TestHarness`
+resets both to `null` before each test (same "process-global static, reset per test" convention as
+`Plugins.ResetPluginDataForTesting`), so a test that doesn't touch either never sees a previous test's
+override leak in.
+
+**A real, confirmed production bug found while wiring this up, not a test-only issue**: both
+`sendPOST` methods compute `Encoding enc = Encoding.GetEncoding(1252)` unconditionally, verbatim from
+legacy. The very first attempt at a fake-backed Steam test threw
+`NotSupportedException: No data is available for encoding 1252` immediately - confirmed this isn't a
+test artifact by checking `legacy-winforms-baseline` directly (byte-for-byte identical code): it only
+ever worked because legacy ran on .NET Framework on Windows, where code page 1252 is registered by
+default. Modern .NET on Linux - this branch's actual deployment target - doesn't have it registered,
+so **every real call to either the Steam Web API or the CardCast/CrCast API would crash on first
+contact in production**, encoding-provider-missing, before even reaching the parsing logic. Neither
+integration had ever been exercised end-to-end before this pass, so this had never surfaced. Fixed to
+`Encoding.UTF8` (what both APIs actually encode JSON responses as, and what virtually every modern
+REST API uses) in both files - a genuine cross-platform port gap being closed, not a legacy behavior
+worth preserving. Also removed a dead, never-referenced `WebClient client = new WebClient();` line in
+`mod_steam_steamapi.cs` while in the same spot (legacy-verbatim leftover from before
+`HttpWebRequest` was the real mechanism there).
+
+**Coverage added**: `SteamTests` +2 (`/steam_addplayer` with a public profile - added, achievement
+tracking confirmed; with a private profile - rejected, not added); `XyzzySettingsTests` +2
+(CardCast import of a genuinely new pack - pack/questions/answers all land in
+`mod_xyzzy_coredata`, its filter auto-enabled for the importing chat; an API-level failure - reprompts
+cleanly rather than crashing).
+
+**Sanity-checked by breaking something**: reverted `mod_steam_steamapi.cs`'s encoding fix back to
+`Encoding.GetEncoding(1252)` and confirmed both new `SteamTests` failed with the exact
+`NotSupportedException` this fix closes, then reverted back to `Encoding.UTF8`.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (74/74, up from 70).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

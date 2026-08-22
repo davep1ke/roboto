@@ -17,6 +17,12 @@ namespace RobotoChatBot.Modules
     /// </summary>
     static class mod_steam_steamapi
     {
+        /// <summary>Test-only hook: when set, sendPOST calls this instead of making a real HTTP
+        /// request, passing the fully-built request URL and expecting the raw JSON response body
+        /// back. Mirrors TelegramAPI.SetClientForTesting's pattern - null in production, so the real
+        /// WebRequest path below is completely unchanged when nothing overrides it.</summary>
+        internal static Func<string, string> HttpGetOverride = null;
+
         private static mod_steam_core_data getLocalData()
         {
             mod_steam_core_data localData = (mod_steam_core_data)Plugins.getPluginData<mod_steam_core_data>();
@@ -205,10 +211,15 @@ namespace RobotoChatBot.Modules
             pairs["key"] = localData.steamAPIKey;
             string finalString = localData.steamCoreURL + methodURL;
 
-            //sort out encodings and clients.
-            Encoding enc = Encoding.GetEncoding(1252);
-            WebClient client = new WebClient();
-
+            // Encoding.GetEncoding(1252) (legacy-verbatim) only ever worked because legacy ran on
+            // .NET Framework on Windows, where code page 1252 is registered by default - modern
+            // .NET on Linux (this branch's actual deployment target) doesn't have it registered and
+            // throws NotSupportedException on every single call, real or faked. UTF-8 is what the
+            // Steam Web API (and virtually every modern REST API) actually encodes JSON responses
+            // as, so this is a genuine cross-platform port gap being fixed, not a legacy behavior
+            // worth preserving - confirmed via a real HttpGetOverride-backed test crashing on this
+            // exact line before the fix (see MIGRATION.md).
+            Encoding enc = Encoding.UTF8;
 
             //now move the params across
             bool first = true;
@@ -227,36 +238,40 @@ namespace RobotoChatBot.Modules
             }
 
 
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
-            request.Method = "GET";
-            request.ContentType = "application/json";
-            Roboto.log.log("Calling Steam API:\n\r" + request.RequestUri.ToString(), logging.loglevel.low);
+            Roboto.log.log("Calling Steam API:\n\r" + finalString, logging.loglevel.low);
             try
             {
-
-                HttpWebResponse webResponse = (HttpWebResponse)request.GetResponse();
-
-                if (webResponse != null)
+                string response;
+                if (HttpGetOverride != null)
                 {
-                    StreamReader responseSR = new StreamReader(webResponse.GetResponseStream(), enc);
-                    string response = responseSR.ReadToEnd();
-
-                    JObject jo = JObject.Parse(response);
-
-                    //success
-                    //TODO - for Steam this is a "success" object that should return "true". Not the first item.
-                    string path = jo.First.Path;
-
-                    //if (path != "ok" || result != "True")
-                    //{
-                    //    Console.WriteLine("Error received sending message!");
-                    //throw new WebException("Failure code from web service");
-
-                    //}
-                    Roboto.log.log("Message Success", logging.loglevel.low);
-                    return jo;
-
+                    response = HttpGetOverride(finalString);
                 }
+                else
+                {
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
+                    request.Method = "GET";
+                    request.ContentType = "application/json";
+                    HttpWebResponse webResponse = (HttpWebResponse)request.GetResponse();
+                    if (webResponse == null) { return null; }
+
+                    StreamReader responseSR = new StreamReader(webResponse.GetResponseStream(), enc);
+                    response = responseSR.ReadToEnd();
+                }
+
+                JObject jo = JObject.Parse(response);
+
+                //success
+                //TODO - for Steam this is a "success" object that should return "true". Not the first item.
+                string path = jo.First.Path;
+
+                //if (path != "ok" || result != "True")
+                //{
+                //    Console.WriteLine("Error received sending message!");
+                //throw new WebException("Failure code from web service");
+
+                //}
+                Roboto.log.log("Message Success", logging.loglevel.low);
+                return jo;
             }
             catch (Exception e)
             {

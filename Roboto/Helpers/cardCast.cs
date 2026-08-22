@@ -100,6 +100,12 @@ namespace RobotoChatBot.Helpers
     {
         const string cardCastURL = "https://api.crcast.cc/cc/decks/"; // "https://api.cardcastgame.com/v1/decks/"; //Switch to using CRCAST for API calls.
 
+        /// <summary>Test-only hook: when set, sendPOST calls this instead of making a real HTTP
+        /// request, passing the fully-built request URL and expecting the raw JSON response body
+        /// back. Mirrors mod_steam_steamapi.HttpGetOverride's identical pattern (same sendPOST
+        /// shape in both places) - null in production, so the real WebRequest path is unchanged.</summary>
+        internal static Func<string, string> HttpGetOverride = null;
+
         /// <summary>
         /// Boilerplate text for working with cardcast packs
         /// </summary>
@@ -230,40 +236,48 @@ namespace RobotoChatBot.Helpers
         {
             string finalString = cardCastURL + methodURL;
 
-            //sort out encodings and clients.
-            Encoding enc = Encoding.GetEncoding(1252);
-            WebClient client = new WebClient();
-            
-            HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
-            request.Method = "GET";
-            request.ContentType = "application/json";
-            Roboto.log.log("Calling CardCast API: " + request.RequestUri.ToString(), logging.loglevel.low);
+            // Encoding.GetEncoding(1252) (legacy-verbatim) only ever worked on legacy's .NET
+            // Framework/Windows target, where code page 1252 is registered by default - modern .NET
+            // on Linux doesn't have it and throws NotSupportedException on every call. UTF-8 is what
+            // CardCast/CrCast actually encode JSON responses as - see mod_steam_steamapi.cs's
+            // identical fix/comment for the full reasoning (same bug, same sendPOST shape, found via
+            // the same HttpGetOverride-backed test work - see MIGRATION.md).
+            Encoding enc = Encoding.UTF8;
+
+            Roboto.log.log("Calling CardCast API: " + finalString, logging.loglevel.low);
             try
             {
-
-                HttpWebResponse webResponse = (HttpWebResponse)request.GetResponse();
-
-                if (webResponse != null)
+                string response;
+                if (HttpGetOverride != null)
                 {
-                    StreamReader responseSR = new StreamReader(webResponse.GetResponseStream(), enc);
-                    string response = responseSR.ReadToEnd();
-
-                    JObject jo = JObject.Parse(response);
-
-                    //success
-                    //TODO - for Steam this is a "success" object that should return "true". Not the first item.
-                    string path = jo.First.Path;
-
-                    //if (path != "ok" || result != "True")
-                    //{
-                    //    Console.WriteLine("Error received sending message!");
-                    //throw new WebException("Failure code from web service");
-
-                    //}
-                    Roboto.log.log("Message Success", logging.loglevel.low);
-                    return jo;
-
+                    response = HttpGetOverride(finalString);
                 }
+                else
+                {
+                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(finalString);
+                    request.Method = "GET";
+                    request.ContentType = "application/json";
+                    HttpWebResponse webResponse = (HttpWebResponse)request.GetResponse();
+                    if (webResponse == null) { return null; }
+
+                    StreamReader responseSR = new StreamReader(webResponse.GetResponseStream(), enc);
+                    response = responseSR.ReadToEnd();
+                }
+
+                JObject jo = JObject.Parse(response);
+
+                //success
+                //TODO - for Steam this is a "success" object that should return "true". Not the first item.
+                string path = jo.First.Path;
+
+                //if (path != "ok" || result != "True")
+                //{
+                //    Console.WriteLine("Error received sending message!");
+                //throw new WebException("Failure code from web service");
+
+                //}
+                Roboto.log.log("Message Success", logging.loglevel.low);
+                return jo;
             }
             catch (Exception e)
             {

@@ -1,10 +1,14 @@
+using System.Linq;
+using RobotoChatBot;
+using RobotoChatBot.Modules;
+
 namespace RobotoTests;
 
 /// <summary>
 /// mod_steam's core flows (/steam_addplayer, /steam_check) call the real Steam Web API
-/// synchronously (see mod_steam_steamapi.cs's WebClient calls) - no fake HTTP client exists yet, so
-/// only the network-free commands are covered here. Exercising the rest needs a fake Steam API
-/// client, deferred rather than attempted against the real network from a test.
+/// synchronously via mod_steam_steamapi.sendPOST's single chokepoint. mod_steam_steamapi.
+/// HttpGetOverride (mirroring TelegramAPI.SetClientForTesting's pattern) lets these tests fake that
+/// chokepoint instead of hitting the real network - TestHarness resets it to null before each test.
 /// </summary>
 public class SteamTests
 {
@@ -56,5 +60,37 @@ public class SteamTests
         bot.TapButton(Alice, "Cancel", "Alice");
 
         Assert.DoesNotContain("is not a valid playerID", bot.BotClient.SentMessages[^1].Text);
+    }
+
+    [Fact]
+    public void AddPlayerWithAPublicProfileAddsThemAndAnnouncesAchievementTracking()
+    {
+        using var bot = new TestHarness();
+        mod_steam_steamapi.HttpGetOverride = url => """
+            { "response": { "players": [ { "personaname": "Gaben", "communityvisibilitystate": 3 } ] } }
+            """;
+
+        bot.SendGroupMessage(ChatId, Alice, "/steam_addplayer", "Alice");
+        bot.TapButton(Alice, "76561197960287930", "Alice");
+
+        Assert.Contains("Added Gaben. Any steam achievements will be announced.", bot.BotClient.SentMessages[^1].Text);
+        var chatData = (mod_steam_chat_data)Chats.getChat(ChatId).getPluginData(typeof(mod_steam_chat_data));
+        Assert.Contains(chatData.players, p => p.playerName == "Gaben");
+    }
+
+    [Fact]
+    public void AddPlayerWithAPrivateProfileIsRejected()
+    {
+        using var bot = new TestHarness();
+        mod_steam_steamapi.HttpGetOverride = url => """
+            { "response": { "players": [ { "personaname": "Incognito", "communityvisibilitystate": 1 } ] } }
+            """;
+
+        bot.SendGroupMessage(ChatId, Alice, "/steam_addplayer", "Alice");
+        bot.TapButton(Alice, "76561197960287930", "Alice");
+
+        Assert.Contains("Couldn't add Incognito as their profile is set to private", bot.BotClient.SentMessages[^1].Text);
+        var chatData = (mod_steam_chat_data)Chats.getChat(ChatId).getPluginData(typeof(mod_steam_chat_data));
+        Assert.DoesNotContain(chatData.players, p => p.playerName == "Incognito");
     }
 }

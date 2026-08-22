@@ -203,11 +203,6 @@ public class XyzzySettingsTests
     [Fact]
     public void CardCastImportCancelReturnsToThePackFilterScreenWithoutImportingAnything()
     {
-        // Only the Cancel path is covered - actually importing a pack calls the real CardCast/
-        // CrCast API (mod_xyzzy_coredata.importCardCastPack -> Helpers.cardCast.getPackCards) with
-        // no local validation before the network call, so there's no safe non-network way to
-        // exercise a real import or its invalid-code retry without a fake HTTP client (same
-        // constraint already noted for mod_steam's achievement flows).
         using var bot = StartThreePlayerGame();
         var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
         var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
@@ -222,5 +217,52 @@ public class XyzzySettingsTests
 
         Assert.Equal(packCountBefore, coreData.packs.Count);
         Assert.Contains("following packs", bot.BotClient.SentMessages[^1].Text);
+    }
+
+    [Fact]
+    public void CardCastImportSuccessfullyAddsANewPackAndEnablesItsFilter()
+    {
+        // cardCast.HttpGetOverride (mirroring TelegramAPI.SetClientForTesting's pattern) fakes
+        // Helpers.cardCast.sendPOST's single chokepoint - getPackCards calls it twice per import
+        // (pack info, then "<code>/cards"), so the fake switches on the URL suffix.
+        using var bot = StartThreePlayerGame();
+        cardCast.HttpGetOverride = url => url.EndsWith("/cards")
+            ? """{ "calls": [ { "text": ["Roses are red, ", "."] } ], "responses": [ { "text": ["violets"] }, { "text": ["daisies"] } ] }"""
+            : """{ "name": "Test Pack", "description": "A pack for testing" }""";
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_settings", "Alice");
+        bot.TapButton(Alice, "Change Packs", "Alice");
+        bot.TapButton(Alice, "Import Pack", "Alice");
+        bot.TapButton(Alice, "TESTCODE", "Alice");
+
+        var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
+        var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
+        Assert.Contains(coreData.packs, p => p.name == "Test Pack");
+        Assert.Contains(coreData.questions, q => q.text.Contains("Roses are red"));
+        Assert.Contains(coreData.answers, a => a.text == "violets");
+        Assert.Contains(coreData.answers, a => a.text == "daisies");
+
+        var importedPack = coreData.packs.Single(p => p.name == "Test Pack");
+        Assert.True(ChatData().packEnabled(importedPack.packID));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.Text.Contains("Importing fresh pack"));
+    }
+
+    [Fact]
+    public void CardCastImportWithAnInvalidCodeRepromptsWithoutCrashing()
+    {
+        using var bot = StartThreePlayerGame();
+        // getPackCards' own regex check on the pack code runs before any network call, so an empty/
+        // malformed override response is never actually parsed here - this exercises the "the API
+        // call itself reported failure" retry path (importMessage set, success:false), not a parse
+        // error.
+        cardCast.HttpGetOverride = url => "null";
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_settings", "Alice");
+        bot.TapButton(Alice, "Change Packs", "Alice");
+        bot.TapButton(Alice, "Import Pack", "Alice");
+        bot.TapButton(Alice, "BADCODE", "Alice");
+
+        Assert.Contains("Couldn't add the pack", bot.BotClient.SentMessages[^1].Text);
+        Assert.Contains("enter the pack code", bot.BotClient.SentMessages[^1].Text);
     }
 }

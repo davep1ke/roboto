@@ -1,4 +1,6 @@
 using RobotoChatBot;
+using RobotoChatBot.Helpers;
+using RobotoChatBot.Modules;
 using RobotoChatBot.Persistence;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
@@ -49,6 +51,11 @@ public sealed class TestHarness : IDisposable
         Roboto.Store.Initialize();
 
         TelegramAPI.SetClientForTesting(BotClient);
+
+        // Both are process-global static hooks (see their own doc comments) - reset to null here so
+        // a test that doesn't touch either never sees a previous test's override leak in.
+        mod_steam_steamapi.HttpGetOverride = null;
+        cardCast.HttpGetOverride = null;
 
         // Mirrors Roboto.cs's startBackground() ordering, minus log.load() (file logging - not
         // needed for tests, console+DB logging already works via logging's own static-field-
