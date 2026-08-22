@@ -222,10 +222,13 @@ namespace RobotoChatBot.Modules
                     options.Add("Set Duration");
                     options.Add("Toggle automatic quotes");
                     var keyboard = TelegramAPI.createKeyboard(options, 1);
+                    // isPrivateMessage:true, not false - see Messaging.processNewExpectedReply's
+                    // own comment on why a group-targeted question never actually worked (this
+                    // command was completely non-functional before that fix - see MIGRATION.md).
                     Messaging.SendQuestion(c.chatID, m.userID,
-                        "Quotes are currently " + (localChatData.autoQuoteEnabled == true? "enabled" : "disabled") 
+                        "Quotes are currently " + (localChatData.autoQuoteEnabled == true? "enabled" : "disabled")
                         + " and set to announce every " + localChatData.autoQuoteHours.ToString() + " hours"
-                        , false, typeof(mod_quote), "CONFIG", m.userFullName, m.message_id, true, keyboard);
+                        , true, typeof(mod_quote), "CONFIG", m.userFullName, m.message_id, true, keyboard);
                 }
                 else if (m.text_msg.StartsWith("/quote"))
                 {
@@ -372,7 +375,8 @@ namespace RobotoChatBot.Modules
             {
                 if (m.text_msg == "Set Duration")
                 {
-                    Messaging.SendQuestion(e.chatID, m.userID, "How long between updates?" + m.text_msg, false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
+                    // isPrivateMessage:true - see the CONFIG prompt's own comment above.
+                    Messaging.SendQuestion(e.chatID, m.userID, "How long between updates?" + m.text_msg, true, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
                     return true;
                 }
                 else if (m.text_msg == "Toggle automatic quotes")
@@ -394,7 +398,8 @@ namespace RobotoChatBot.Modules
                 }
                 else if (m.text_msg != "Cancel")
                 {
-                    Messaging.SendQuestion(e.chatID, m.userID, "Not a number. How many hours between updates, or 'Cancel' to cancel" + m.text_msg ,false, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
+                    // isPrivateMessage:true - see the CONFIG prompt's own comment above.
+                    Messaging.SendQuestion(e.chatID, m.userID, "Not a number. How many hours between updates, or 'Cancel' to cancel" + m.text_msg ,true, typeof(mod_quote), "DURATION" + m.text_msg, m.userFullName, m.message_id, true);
                 }
                 return true;
 

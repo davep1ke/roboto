@@ -501,6 +501,59 @@ phase is considered fully done, particularly for "Add Bots" (the highest-risk ne
 added) and bot self-de-admin (depends on a real Telegram group promoting the bot, not easily
 exercised any other way).
 
+## Post-phase-9 addenda: grand-total stats, and a broad test-coverage push
+
+With the port itself functionally complete (phases 5-9 done or deliberately deferred; only phase 8
+(migrator) and phase 10 (cutover) remain, both squarely "data migration" work rather than porting),
+two follow-up requests: a stats feature the user recalled from the abandoned branch that hadn't
+landed here, and a push to close as much of the phase-7/9 test-coverage gap as reasonably possible
+before moving on to migration.
+
+**Grand-total stats** (`Core/stats.cs`): legacy's stats were always a pure 15-min/48h rolling window
+(`statSlices`, pruned by `removeOldData`) - there was never a genuine all-time counter. Confirmed via
+the abandoned branch's own "Phase 14.2: stats engine dual-track" commit message: *"a genuine all-time
+Total (the rewrite's own addition, legacy never had this)"*. Added the same idea onto legacy's
+`statType` shape: a `total` field that accumulates forever for `statmode.increment` stats (mirrors
+the latest value for `statmode.absolute` gauges, where summing wouldn't mean anything), plus
+`totalSince`, which self-initializes on first `logStat` call so it comes out right for both a
+brand-new stat type and one that already existed with `total=0` before this field existed. Surfaced
+via `mod_xyzzy.getStats()` (already `/stats`' per-module contributor) as two new lines: total games
+started and total hands played, "since &lt;date&gt;" - necessarily starting from zero at deploy time,
+since the pre-existing rolling window has nothing further back to backfill from. 3 tests.
+
+**Broader test coverage** (24 -> 53 tests): `ChatKeyedLockTests` (3, direct coverage of phase 4's
+primitive - couldn't reuse the abandoned branch's own version, which tests a different AsyncLocal-
+based reentrant design this branch deliberately didn't port); `WordcraftTests` (3, mod_wordcraft had
+zero coverage before this); `XyzzySettingsTests` (9: Kick, Change Score, Mess With, Reset, Extend,
+Re-deal, Force Question, pack filtering All/None/toggle); `XyzzyMoreCoverageTests` (6: Timeout/Delay
+settings, the background `check()` timeout-skip path via a backdated `statusChangedTime` rather than
+real wall-clock time, pack-pagination Next/Prev, both `/xyzzy_leave` variants);
+`QuoteMoreCoverageTests` (4: `/quote_conv` multi-line conversations, `/quote_config`, the auto-quote
+background announcement); `SteamTests` gained 2 more; `StatsGrandTotalTests` (3) and
+`MessagingGuardTests` (2) cover the two items above.
+
+**A real bug found and fixed along the way, not just tested around**: `Messaging.
+processNewExpectedReply`'s group-targeted-question branch (`isPrivateMessage:false`) sent the message
+but never registered the `ExpectedReply` for matching - any reply to it was silently lost. Confirmed
+byte-for-byte present in `legacy-winforms-baseline` (including the original author's own `//TODO -
+doesnt handle group PMs` comment marking it incomplete), so this predates the port entirely - a live
+production bug, not something introduced here. Affected 5 call sites, leaving `mod_quote`'s
+`/quote_config` (Set Duration + its retry) and `mod_steam`'s `/steam_addplayer` **completely
+non-functional end-to-end** - including `/steam_addplayer`'s very first prompt, not just its retry,
+meaning nobody had ever been able to successfully add a Steam player through this command. Discussed
+directly with the user (this is a real behavior change, not just a test addition) - all 5 call sites
+migrated to `isPrivateMessage:true`, and a `NotImplementedException` guard added to the broken branch
+itself (fires only when `expectsReply:true` - ordinary fire-and-forget group messages, the
+overwhelming majority of traffic, are unaffected) so the same mistake can't be silently reintroduced.
+Sanity-checked by disabling the guard and confirming `MessagingGuardTests` caught it, then reverted.
+
+**Sanity-checked by breaking something** (this addendum's own new logic, beyond what's noted per-item
+above): disabled the grand-total `total +=` line and confirmed all 3 `StatsGrandTotalTests` failed;
+disabled the `Messaging.cs` guard and confirmed `MessagingGuardTests` caught it. Both reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (53/53). Not yet verified live
+against the `beefy` test bot.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

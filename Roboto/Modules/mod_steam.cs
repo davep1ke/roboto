@@ -369,9 +369,14 @@ namespace RobotoChatBot.Modules
 
                 if (m.text_msg.StartsWith("/steam_addplayer"))
                 {
+                    // isPrivateMessage:true, not false - see Messaging.processNewExpectedReply's
+                    // own comment on why a group-targeted question never actually worked. This
+                    // command was completely non-functional before this fix - a reply to this very
+                    // first prompt was already silently lost, so nobody had ever been able to
+                    // successfully add a Steam player at all (see MIGRATION.md).
                     Messaging.SendQuestion(c.chatID, m.userID
                         , "Enter the steamID of the player you want to add. /steam_help to find out how to get this."
-                        , false
+                        , true
                         , typeof(mod_steam)
                         , "ADDPLAYER", m.userFullName, m.message_id, true);
                     processed = true;
@@ -488,7 +493,8 @@ namespace RobotoChatBot.Modules
                 }
                 else if (m.text_msg.ToUpper() != "CANCEL")
                 {
-                    Messaging.SendQuestion(m.chatID, m.userID, m.text_msg + " is not a valid playerID. Enter a valid playerID or 'Cancel'", false, typeof(mod_steam), "ADDPLAYER", m.userFullName, m.message_id, true);
+                    // isPrivateMessage:true - see the initial /steam_addplayer prompt's own comment.
+                    Messaging.SendQuestion(m.chatID, m.userID, m.text_msg + " is not a valid playerID. Enter a valid playerID or 'Cancel'", true, typeof(mod_steam), "ADDPLAYER", m.userFullName, m.message_id, true);
                 }
                 processed = true;
             }

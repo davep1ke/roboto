@@ -28,4 +28,33 @@ public class SteamTests
         bot.SendGroupMessage(ChatId, Alice, "/steam_stats", "Alice");
         Assert.Contains("Tracking 0 achievements", bot.BotClient.SentMessages[^1].Text);
     }
+
+    [Fact]
+    public void AddPlayerRejectsANonNumericIdAndAsksAgain()
+    {
+        // Doesn't reach mod_steam_steamapi.getPlayerInfo's real Steam Web API call (only a
+        // successfully-parsed numeric id does) - proves /steam_addplayer's reply is actually
+        // reaching replyReceived at all, which it never did before the isPrivateMessage:true fix
+        // (Messaging.processNewExpectedReply never registered a group-targeted question for
+        // matching, so this whole command was silently dead - see MIGRATION.md).
+        using var bot = new TestHarness();
+
+        bot.SendGroupMessage(ChatId, Alice, "/steam_addplayer", "Alice");
+        Assert.Contains("Enter the steamID", bot.BotClient.SentMessages[^1].Text);
+
+        bot.TapButton(Alice, "not-a-steam-id", "Alice");
+
+        Assert.Contains("is not a valid playerID", bot.BotClient.SentMessages[^1].Text);
+    }
+
+    [Fact]
+    public void AddPlayerCancelStopsAskingWithoutError()
+    {
+        using var bot = new TestHarness();
+
+        bot.SendGroupMessage(ChatId, Alice, "/steam_addplayer", "Alice");
+        bot.TapButton(Alice, "Cancel", "Alice");
+
+        Assert.DoesNotContain("is not a valid playerID", bot.BotClient.SentMessages[^1].Text);
+    }
 }

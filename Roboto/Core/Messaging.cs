@@ -235,14 +235,32 @@ namespace RobotoChatBot
 
             //check if we can send it? Get the messageID back
             long messageID = -1;
-            //is this a message to a group? 
+            //is this a message to a group?
             if (!e.isPrivateMessage)
             {
+                // A group-targeted question (expectsReply=true, e.g. SendQuestion with
+                // isPrivateMessage:false) was a real, confirmed-live bug in legacy: this branch
+                // sends the message but - unlike both branches below - never adds `e` to
+                // Roboto.Settings.expectedReplies, so parseExpectedReplies can never match a reply
+                // to it. The reply is just silently lost; legacy's own "TODO - doesnt handle group
+                // PMs" comment (still present in legacy-winforms-baseline) shows the original author
+                // knew this path was incomplete. Confirmed via testing to have left mod_quote's
+                // /quote_config (Set Duration + its retry) and mod_steam's /steam_addplayer
+                // (including its very first prompt, not just the retry) completely non-functional -
+                // every one of those was migrated to isPrivateMessage:true instead of teaching this
+                // branch to also queue (see MIGRATION.md). Guarding here rather than silently fixing
+                // it, since "group message expecting a reply" was never a working, exercised code
+                // path in the first place - anything reaching this again is almost certainly the
+                // same mistake, not a deliberate new use worth silently supporting.
+                if (e.expectsReply)
+                {
+                    throw new NotImplementedException("SendQuestion/ExpectedReply with isPrivateMessage:false never actually registers the reply for matching (see this branch's own comment) - every real call site has been migrated to isPrivateMessage:true instead. Use that, or fix the underlying queueing gap here first.");
+                }
+
                 //send, dont queue.
-                //TODO - doesnt handle group PMs
                 messageID = e.sendMessage();
             }
-            
+
             else if (
                 //this is a PM. Does the user have anything actively asked that would block us from sending a message immediately?                
                 (trySendImmediately && !userHasOutstandingQuestions(e.userID))
