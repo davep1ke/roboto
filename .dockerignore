@@ -1,0 +1,18 @@
+# VS-specific solution file, stale for the SDK-style csproj this Dockerfile actually builds - not
+# needed for the CLI-driven dotnet build/publish this project uses.
+Roboto.sln
+
+# Test project - dev-time only, the Dockerfile never builds or needs it.
+tests/
+
+.git/
+.vs/
+**/bin/
+**/obj/
+**/.vscode/
+
+# Per-instance runtime data (bot tokens, SQLite DBs, XML exports) - never bake secrets/prod data
+# into an image; mounted in at runtime instead (see docker-compose.yml's ./data:/data).
+data/
+
+*.md

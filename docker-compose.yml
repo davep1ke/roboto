@@ -1,0 +1,21 @@
+services:
+  roboto-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # The Dockerfile's baked-in non-root user owns /data inside the image, but ./data:/data below
+    # is a bind mount - it overlays that with the host directory's own ownership instead. Run as
+    # the host user so the container can actually write into it. Defaults to 1000:1000 (by far the
+    # most common single-user Linux desktop uid/gid); override with DOCKER_UID/DOCKER_GID if yours
+    # differs (`id -u`/`id -g`).
+    user: "${DOCKER_UID:-1000}:${DOCKER_GID:-1000}"
+    environment:
+      # The only thing that varies per bot identity. Its config (bot.env, self-created on first
+      # run if missing) and SQLite state both live under data/<instance>/ (Roboto.cs's
+      # startBackground, BotOptions.InstanceDir) - same shared /data mount for every instance, no
+      # per-instance volume path to get wrong.
+      #   ROBOTO_INSTANCE=beefy docker compose up --build
+      ROBOTO_INSTANCE: ${ROBOTO_INSTANCE:-default}
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

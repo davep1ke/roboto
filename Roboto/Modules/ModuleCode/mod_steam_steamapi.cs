@@ -278,8 +278,6 @@ namespace RobotoChatBot.Modules
                 Roboto.log.log("Steam API Call failed " + e.ToString(), logging.loglevel.critical);
                 throw new WebException("Error during method call", e);
             }
-
-            return null;
         }
 
 

@@ -640,6 +640,52 @@ cleanly rather than crashing).
 
 **Verified**: build clean; `dotnet test` green across repeated runs (74/74, up from 70).
 
+### Docker: `Dockerfile` / `docker-compose.yml` / `.dockerignore`
+
+No Docker setup existed on this branch at all until now, despite it being part of this project's own
+established phase-verification checklist. Adapted from the abandoned rewrite branch's own
+`Dockerfile`/`docker-compose.yml` (reusing the *idiom* - multi-stage build, non-root `$APP_UID`,
+`/data` bind mount, `ROBOTO_INSTANCE` env var - not its architecture), retargeted at this branch's
+actual layout: `Roboto/Roboto.csproj` (not `src/Roboto.Bot/`), assembly `Roboto.dll`.
+
+**Multi-stage build**: `mcr.microsoft.com/dotnet/sdk:10.0` to restore/publish, `mcr.microsoft.com/
+dotnet/runtime:10.0` (Debian-based, not `-alpine` - musl + SkiaSharp native deps is a known pain
+point there) for the final image. Restore is its own layer (copies just the `.csproj` first) so
+dependency layers cache across code-only changes.
+
+**Carried over directly because it applies here too, not just copied for convenience**: the
+abandoned branch's runtime-image fontconfig/`fonts-dejavu-core` install. ScottPlot (phase 6's
+`/statgraph`) renders through SkiaSharp - confirmed a direct transitive dependency here
+(`~/.nuget/packages/skiasharp*`) - and the bare runtime image ships no fonts at all, so without this
+every chart's title/axis labels/legend would silently render blank in a real container (SkiaSharp
+doesn't error when it can't find a font, it just draws no text) even though local dev testing always
+looks fine (a normal desktop Linux already has system fonts installed). This exact failure mode is
+why the abandoned branch added the fix in the first place, and it applies identically here since
+this branch's phase 6 landed on the same ScottPlot/SkiaSharp stack independently.
+
+**`docker-compose.yml`**: single `roboto-bot` service, `ROBOTO_INSTANCE` env var (default `default`,
+matching `Roboto.cs`'s own `Environment.GetEnvironmentVariable("ROBOTO_INSTANCE") ?? "default"`),
+`./data:/data` bind mount (matching `BotOptions.DataDir`'s own `/data` default and
+`InstanceBootstrapper`'s `{DataDir}/{Instance}/bot.env` layout), and a `user:` override
+(`${DOCKER_UID:-1000}:${DOCKER_GID:-1000}`) so the container can actually write into the bind-mounted
+directory - the Dockerfile's baked-in non-root user owns `/data` *inside the image*, but the bind
+mount overlays that with the host directory's own ownership instead.
+
+**Verified for real, not just "should work"**: `docker compose build` succeeds cleanly (confirmed
+twice, including after the unreachable-code cleanup below). `docker compose run --rm -e
+ROBOTO_INSTANCE=smoketest -v <scratch-dir>:/data roboto-bot` against a throwaway host directory (not
+`./data`) actually starts the container, resolves the instance/data-dir env vars, and exercises
+`InstanceBootstrapper.TryLoad`'s real first-run path end-to-end: creates `smoketest/bot.env` with the
+expected stub content, logs `"No config found for instance 'smoketest'..."`, and exits cleanly (no
+crash, no hang) - and the created file is owned by the host user (1000:1000), confirming the
+bind-mount permission handling actually works, not just builds. Scratch directory discarded after.
+
+**Incidental cleanup found via the build**: `docker compose build`'s own warning output surfaced two
+`CS0162: Unreachable code detected` warnings - a trailing `return null;` after a try/catch that
+always either returns or throws, left over in both `cardCast.sendPOST` and `mod_steam_steamapi.
+sendPOST` by the `HttpGetOverride` refactor earlier in this same session. Removed from both; rebuilt
+and reran the full test suite (74/74 still green) to confirm the cleanup was inert.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

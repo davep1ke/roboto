@@ -284,8 +284,6 @@ namespace RobotoChatBot.Helpers
                 Roboto.log.log("CardCast Call failed " + e.ToString(), logging.loglevel.critical);
                 throw new WebException("Error during method call", e);
             }
-
-            return null;
         }
 
     }
