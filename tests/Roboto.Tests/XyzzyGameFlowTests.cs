@@ -95,6 +95,57 @@ public class XyzzyGameFlowTests
     }
 
     [Fact]
+    public void MultiAnswerQuestionRequiresTwoCardsPerPlayerAndCombinesThemForJudging()
+    {
+        // "Pick 2" questions (mod_xyzzy_card.nrAnswers > 1) are legacy-native (confirmed present in
+        // legacy-winforms-baseline verbatim - see MIGRATION.md phase 9's notes on why this delta was
+        // already-true-by-construction here), but hadn't had a dedicated round-loop test until now -
+        // FullRoundAwardsAPointAndStartsTheNextRound only exercises the single-answer case.
+        using var bot = new TestHarness();
+        var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
+        var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
+        coreData.questions.Clear();
+        coreData.answers.Clear();
+        coreData.questions.Add(new mod_xyzzy_card("First: ___. Second: ___.", mod_xyzzy.primaryPackID, 2));
+        for (int i = 0; i < 40; i++) { coreData.answers.Add(new mod_xyzzy_card("Answer " + i, mod_xyzzy.primaryPackID)); }
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
+        bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
+        bot.TapButton(Alice, "Start", "Alice");
+
+        var chatData = (mod_xyzzy_chatdata)Chats.getChat(ChatId).getPluginData(typeof(mod_xyzzy_chatdata), true);
+        Assert.Equal(xyzzy_Statuses.Question, chatData.status);
+
+        string bobsFirst = bot.LastKeyboardMessageTo(Bob).KeyboardRows![0][0].Text;
+        bot.TapButton(Bob, bobsFirst, "Bob");
+        Assert.Contains("Pick your next card", bot.BotClient.SentMessages[^1].Text);
+        string bobsSecond = bot.LastKeyboardMessageTo(Bob).KeyboardRows![0][0].Text;
+        bot.TapButton(Bob, bobsSecond, "Bob");
+
+        string carolsFirst = bot.LastKeyboardMessageTo(Carol).KeyboardRows![0][0].Text;
+        bot.TapButton(Carol, carolsFirst, "Carol");
+        string carolsSecond = bot.LastKeyboardMessageTo(Carol).KeyboardRows![0][0].Text;
+        bot.TapButton(Carol, carolsSecond, "Carol");
+
+        // Both players have submitted their full 2-card answer, so judging starts automatically -
+        // the judging keyboard shows each player's two cards joined with " >> ".
+        Assert.Equal(xyzzy_Statuses.Judging, chatData.status);
+        string bobsCombined = bobsFirst + " >> " + bobsSecond;
+        string carolsCombined = carolsFirst + " >> " + carolsSecond;
+        var judgingKeyboard = bot.LastKeyboardMessageTo(Alice).KeyboardRows!;
+        string winningAnswer = judgingKeyboard[0][0].Text;
+        Assert.Contains(new[] { bobsCombined, carolsCombined }, a => a == winningAnswer);
+
+        bot.TapButton(Alice, winningAnswer, "Alice");
+
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins a point!"));
+        var winner = chatData.players.Single(p => p.wins == 1);
+        Assert.Contains(winner.name.Trim(), new[] { "Bob", "Carol" });
+    }
+
+    [Fact]
     public void JoiningTwiceIsIdempotent()
     {
         using var bot = new TestHarness();

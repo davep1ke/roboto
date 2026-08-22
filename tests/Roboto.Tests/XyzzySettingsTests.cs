@@ -199,4 +199,28 @@ public class XyzzySettingsTests
 
         Assert.True(chatData.packEnabled(extraPack.packID));
     }
+
+    [Fact]
+    public void CardCastImportCancelReturnsToThePackFilterScreenWithoutImportingAnything()
+    {
+        // Only the Cancel path is covered - actually importing a pack calls the real CardCast/
+        // CrCast API (mod_xyzzy_coredata.importCardCastPack -> Helpers.cardCast.getPackCards) with
+        // no local validation before the network call, so there's no safe non-network way to
+        // exercise a real import or its invalid-code retry without a fake HTTP client (same
+        // constraint already noted for mod_steam's achievement flows).
+        using var bot = StartThreePlayerGame();
+        var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
+        var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
+        int packCountBefore = coreData.packs.Count;
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_settings", "Alice");
+        bot.TapButton(Alice, "Change Packs", "Alice");
+        bot.TapButton(Alice, "Import Pack", "Alice");
+        Assert.Contains("enter the pack code", bot.BotClient.SentMessages[^1].Text);
+
+        bot.TapButton(Alice, "Cancel", "Alice");
+
+        Assert.Equal(packCountBefore, coreData.packs.Count);
+        Assert.Contains("following packs", bot.BotClient.SentMessages[^1].Text);
+    }
 }

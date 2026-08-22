@@ -554,6 +554,49 @@ disabled the `Messaging.cs` guard and confirmed `MessagingGuardTests` caught it.
 **Verified**: build clean; `dotnet test` green across repeated runs (53/53). Not yet verified live
 against the `beefy` test bot.
 
+### Second coverage pass: birthdays background, admin/quiet-hours, multi-answer round, background reconcilers
+
+Continuing the same push, working through the remaining named gaps one at a time (53 -> 70 tests):
+
+- **`mod_birthdays` background announcement** (3 tests): the day-of `Happy Birthday` message,
+  confirmed silent on a non-matching day, and confirmed it doesn't double-announce if
+  `backgroundProcessing` runs twice the same day (`lastDayProcessed` gating).
+- **`mod_standard` admin/quiet-hours** (9 tests, `AdminCommandsTests`): `/help`'s own explicit mute
+  check (separate from `chatIfMuted`'s chatEvent-level exemption); the default `/start` welcome
+  message; full quiet-hours set/disable/invalid-retry flow; `/addadmin`'s existing-admins keyboard
+  picker; `/removeadmin` (successful pick, and the no-admins-yet case).
+- **Multi-answer ("Pick 2") round** (1 test, `XyzzyGameFlowTests`): a full round with a 2-answer
+  question - each non-judge player prompted for a second card, judging combines both cards per
+  player with `" >> "`, matching `logAnswer`'s existing (legacy-native) multi-answer gating that
+  only had single-answer coverage until now.
+- **CardCast import cancel** (1 test, `XyzzySettingsTests`): the network-free half of "Import Pack" -
+  actually importing needs the real CardCast/CrCast API with no local validation before the network
+  call, so (matching the same constraint already noted for `mod_steam`) only Cancel is covered.
+- **Background reconcilers** (4 tests, new `BackgroundReconcilersTests`): `SqliteStateStore`'s
+  `logs`-table 30-day purge (`PurgeLogsOlderThan`, both "removes only rows past the cutoff" and
+  idempotency once they're already gone) and `Chats.removeDormantChats`.
+
+**A second real, notable finding** (not a bug to fix, just worth documenting - and now covered by a
+test rather than only living in a comment): `mod_birthdays.chatEvent` unconditionally fetches
+`c.getPluginData<mod_birthday_data>()` at the top, for *every* message regardless of which command
+matched - confirmed byte-for-byte identical in `legacy-winforms-baseline`. Since
+`mod_birthday_data.isPurgable()` is unconditionally `false` ("Never purge chats with birthday data")
+and `chat.tryPurgeData()` only purges when *every* module's chat data reports purgable, this means
+**any chat that has ever exchanged a single message can never actually be dormant-purged** - the
+`removeDormantChats` feature is reachable in the unit-test sense (confirmed via
+`ChatDataThatIsAllPurgableGetsRemovedByTryPurgeData`, which strips the auto-created birthday data to
+test the mechanism in isolation) but not in practice for any real chat. No `TODO` or similar comment
+marks this one (unlike the group-question bug) - it reads as an emergent interaction between two
+independently-reasonable module decisions, not a known-incomplete path. Flagged, not changed.
+
+**Sanity-checked by breaking something**: disabled the multi-answer "ask for next card" gate
+(`player.selectedCards.Count != question.nrAnswers` → `false`) in `logAnswer` and confirmed
+`MultiAnswerQuestionRequiresTwoCardsPerPlayerAndCombinesThemForJudging` failed (judge never saw a
+combined `" >> "` answer), then reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (70/70, up from 53). Not yet
+verified live against the `beefy` test bot.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
