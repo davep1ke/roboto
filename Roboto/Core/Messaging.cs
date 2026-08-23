@@ -580,13 +580,35 @@ namespace RobotoChatBot
             }
             else
             {
-                bool pluginProcessed = pluginToCall.replyReceived(er, null, true);
+                // A failed send has no real incoming message to hand to the plugin - every
+                // module's replyReceived override unconditionally dereferences fields off m (e.g.
+                // m.text_msg.ToLower()) with no null check of its own, so passing null crashed the
+                // whole main loop with a NullReferenceException the first time a send genuinely
+                // failed (confirmed live: mod_quote's /quote_config flow, Telegram rejecting the
+                // send with "message to be replied not found" - a stale reply-to target, an
+                // occasional real-world case, not something fixable at the send layer). Confirmed
+                // present byte-for-byte in legacy - passing null here is original design, just
+                // never exercised until a send genuinely failed against a module that dereferences
+                // m unconditionally. A minimal synthetic message built from the ExpectedReply's own
+                // fields (chatID/userID/userName) keeps every module's existing dereferences safe
+                // without auditing/fixing each one individually - string fields default to empty,
+                // not null, specifically for this.
+                message synthetic = new message
+                {
+                    chatID = er.chatID,
+                    userID = er.userID,
+                    userFullName = er.userName ?? "",
+                };
+                bool pluginProcessed = pluginToCall.replyReceived(er, synthetic, true);
 
                 if (!pluginProcessed)
                 {
-                    Roboto.log.log("Plugin " + pluginToCall.GetType().ToString() + " didnt process the message it expected a reply to!", logging.loglevel.high);
-                    throw new InvalidProgramException("Plugin didnt process the message it expected a reply to!");
-
+                    // Not exceptional enough to crash over - a plugin not having a specific branch
+                    // for "the message I wanted to send never arrived" is a soft, expected-to-
+                    // sometimes-happen case, not a programming defect. This used to throw
+                    // InvalidProgramException here, which - combined with the null-m crash above -
+                    // meant a failed send was effectively guaranteed to take the main loop down.
+                    Roboto.log.log("Plugin " + pluginToCall.GetType().ToString() + " didnt have a specific branch for a failed reply - ignoring.", logging.loglevel.normal);
                 }
             }
 

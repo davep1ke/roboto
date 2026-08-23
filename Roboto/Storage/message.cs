@@ -23,6 +23,21 @@ namespace RobotoChatBot
         public String replyOrigUser = "";
         public long replyMessageID = -1;
 
+        /// <summary>For Messaging.parseFailedReply's synthetic "the send itself failed, there's no
+        /// real incoming message" case - see its own comment for why. text_msg/userFirstName/
+        /// userSurname/userFullName/chatName have no field initializer (default null, unlike
+        /// userHandle/replyOrigMessage/replyOrigUser above) - explicitly emptied here rather than
+        /// left null, since every module's replyReceived unconditionally calls things like
+        /// m.text_msg.ToLower() with no null check of its own.</summary>
+        internal message()
+        {
+            text_msg = "";
+            userFirstName = "";
+            userSurname = "";
+            userFullName = "";
+            chatName = "";
+        }
+
         /// <summary>Ported off hand-parsing a raw JToken (Newtonsoft) onto reading a typed
         /// Telegram.Bot.Types.Message directly - same field mapping, just via strongly-typed
         /// properties instead of SelectToken string paths.</summary>

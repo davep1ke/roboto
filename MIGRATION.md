@@ -1133,6 +1133,46 @@ listing alongside `/stats`.
 confirming `abc1234` is actually present in it (not just "builds without error"); `docker compose
 build` (no build-arg, matching a real local/manual build) still succeeds cleanly.
 
+### Live-on-`chat_mangler_bot` bug report: `/quote_config` crashing the main loop on a failed send
+
+Real production crash, `NullReferenceException` inside `mod_quote.replyReceived`, taking down the
+whole message loop (recovered on the next poll cycle via `getUpdates()`'s own top-level catch, but
+the `/quote_config` request itself was silently lost). Root cause was two layers deep, both confirmed
+present byte-for-byte in legacy - genuine pre-existing bugs, just rarely exercised (needs an actual
+failed send, which needs a real Telegram-side error, e.g. the live trigger: `400 - Bad Request:
+message to be replied not found`, a stale reply-to target):
+
+1. **`Messaging.parseFailedReply`** (called whenever `TelegramAPI.postExpectedReplyToPlayer` catches
+   a real send failure) calls `pluginToCall.replyReceived(er, null, true)` - passing `null` for the
+   message, since there's no genuine incoming message for a failed *outbound* send. Every module's
+   `replyReceived` override (`mod_quote`, `mod_xyzzy`, `mod_birthdays`, `mod_steam`, `mod_standard`,
+   `mod_wordcraft` - checked all six) unconditionally dereferences fields off it (`m.text_msg.
+   ToLower()`, string concatenation, etc.) with no null check of its own - `mod_quote`'s `/quote_config`
+   CONFIG-menu flow was just the first to actually hit it live.
+2. Even past that, `parseFailedReply` **threw `InvalidProgramException`** if the plugin's
+   `replyReceived` didn't return `true` for a failed-send callback - which a synthetic, mostly-empty
+   message practically guarantees for any branch keyed on real user input (`m.text_msg == "Set
+   Duration"` never matches an empty string). Combined with (1), a failed send was effectively
+   guaranteed to crash the main loop, one way or another.
+
+**Fixed at the single call site** (`Messaging.parseFailedReply`) rather than auditing/patching all six
+modules' many branches individually: builds a minimal synthetic `message` from the `ExpectedReply`'s
+own fields (`chatID`/`userID`/`userName`) - `message` gained an `internal message()` constructor for
+this, explicitly emptying (not leaving null) the string fields that had no field initializer
+(`text_msg`/`userFirstName`/`userSurname`/`userFullName`/`chatName`) - and the `throw` became a plain
+log line, since a plugin not having a specific branch for "the message I wanted to send never
+arrived" is an expected, soft case, not a programming defect worth crashing over.
+
+**Sanity-checked by breaking something**: reverted to `replyReceived(er, null, true)` and confirmed
+`QuoteConfigDoesNotCrashTheMainLoopWhenTheDmFailsToSend` failed with the exact `NullReferenceException`
+shape seen live; separately restored just the `throw` (with the null fix still in place) and confirmed
+it *still* failed, proving both halves of the fix are independently necessary. Both reverted back
+afterward.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (91/91, up from 90). Not yet
+re-verified live - needs the fix to ship to `chat_mangler_bot` (and `robotolive`, since this affects
+every module, not just `mod_quote`) first.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
