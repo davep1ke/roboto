@@ -1264,6 +1264,40 @@ then reverted.
 
 **Verified**: build clean; `dotnet test` green across repeated runs (97/97, up from 96).
 
+### Removed the reactive `MyChatMember` de-admin path entirely
+
+User's explicit call, after watching two real promotions both go uncaught by the reactive event and
+only ever get picked up by the background sweep: "let's assume the MyChatMember doesn't work and
+remove that logic." Root cause never chased down (a live archaeology detour into Telegram's own
+"sticky `allowed_updates`" behavior turned out not to explain it cleanly, and wasn't worth pursuing
+further once the sweep + weekly throttle already covered the actual need) - removed rather than kept
+as unreliable/dead code.
+
+`DispatchUpdate`'s whole `if (update.MyChatMember != null) { ... }` block is gone, including the chat-
+registration side effect added earlier this same session (moot if the event triggering it never
+fires) - confirmed safe to remove outright, not just comment out: the very next check
+(`if (update.Message == null || update.Message.Text == null) { ...; return; }`) already handles a
+message-less update gracefully, so a stray `MyChatMember` update (if Telegram ever does deliver one)
+still can't crash anything. `TelegramAPI.EnsureNotAdminInAnyChat()` (the background sweep, called from
+`mod_standard.backgroundProcessing()`) is now the sole mechanism for bot self-de-admin.
+
+**Accepted trade-off, stated plainly**: a chat where the bot is *only* ever promoted to admin, with
+literally no other message ever exchanged, won't be registered/swept - the same narrow gap the
+now-removed registration fix had closed, reopened by removing the whole path it lived in. Judged
+acceptable - a chat with zero other activity ever is a vanishingly rare real-world case (mostly just
+this session's own `Beef Test`).
+
+Test fallout: `PromoteBotToAdmin`/the four tests built around the reactive event were replaced with
+`MarkBotAsAdminIn` (registers via a real message + marks admin status directly, matching how the sweep
+actually observes state) and equivalent sweep-driven tests; `PromotionRegistersTheChatEvenWithNoOther
+MessageEverSent` was deleted outright since the behavior it tested no longer exists, by design, not
+regression. Added `AStrayMyChatMemberUpdateDoesNotCrashDispatchUpdate` - proves the removal itself is
+safe (a stray event, if one ever arrives, still can't crash `DispatchUpdate`), not just that the sweep
+works.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (96/96, up from 95 net of the
+test consolidation - 5 old tests -> 4 new ones, minus one deleted outright, plus this one).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

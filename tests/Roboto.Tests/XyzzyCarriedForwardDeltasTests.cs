@@ -112,18 +112,25 @@ public class XyzzyCarriedForwardDeltasTests
     }
 
     [Fact]
-    public void PromotingTheBotToAdminStripsItsRightsBackOffAndExplainsWhy()
+    public void BackgroundSweepStripsAdminRightsInASupergroupAndExplainsWhy()
     {
+        // Bot self-de-admin used to react to a MyChatMember event the instant someone promoted the
+        // bot - removed entirely (per explicit user call, "assume MyChatMember doesn't work, remove
+        // that logic"): confirmed live, twice, that the event genuinely never arrived in practice,
+        // both real promotions only ever caught by this sweep. EnsureNotAdminInAnyChat, called from
+        // mod_standard.backgroundProcessing(), is now the only mechanism.
         using var bot = new TestHarness();
+        bot.MarkBotAsAdminIn(ChatId);
 
-        bot.PromoteBotToAdmin(ChatId);
+        TelegramAPI.EnsureNotAdminInAnyChat();
 
         Assert.Contains((ChatId, bot.BotClient.BotId), bot.BotClient.PromoteChatMemberCalls);
         Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text == TelegramAPI.BotSelfDeAdminExplanation);
+        Assert.DoesNotContain(ChatId, bot.BotClient.ChatsWhereBotIsAdmin);
     }
 
     [Fact]
-    public void PromotingTheBotToAdminInABasicGroupExplainsInsteadOfCrashing()
+    public void BackgroundSweepExplainsInsteadOfCrashingInABasicGroup()
     {
         // Real live bug: PromoteChatMember (the only "demote" mechanism the Bot API has) only
         // works for supergroups/channels - a basic (non-super) group has no per-member admin
@@ -131,15 +138,39 @@ public class XyzzyCarriedForwardDeltasTests
         // there through the Telegram app's own UI. This used to be attempted unconditionally and
         // crashed the whole update loop with an unhandled ApiRequestException ("400 Bad Request:
         // method is available for supergroup and channel chats only") - confirmed live against a
-        // real basic group. TestHarness.PromoteBotToAdmin drives TelegramAPI.DispatchUpdate
-        // directly with no top-level catch of its own, so this test simply not throwing is the
-        // proof the crash is fixed.
+        // real basic group.
         using var bot = new TestHarness();
+        bot.MarkBotAsAdminIn(ChatId, basicGroup: true);
 
-        bot.PromoteBotToAdmin(ChatId, chatType: Telegram.Bot.Types.Enums.ChatType.Group);
+        TelegramAPI.EnsureNotAdminInAnyChat();
 
         Assert.DoesNotContain((ChatId, bot.BotClient.BotId), bot.BotClient.PromoteChatMemberCalls);
         Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text == TelegramAPI.BotSelfDeAdminBasicGroupExplanation);
+    }
+
+    [Fact]
+    public void AStrayMyChatMemberUpdateDoesNotCrashDispatchUpdate()
+    {
+        // Proves the removal itself is safe, not just that the sweep works: DispatchUpdate no
+        // longer has any explicit MyChatMember handling at all, relying on the existing "no text in
+        // update" fallback below it - if Telegram ever does deliver one of these despite the
+        // "assume it doesn't work" call, this must not throw.
+        using var bot = new TestHarness();
+
+        TelegramAPI.DispatchUpdate(new Telegram.Bot.Types.Update
+        {
+            MyChatMember = new Telegram.Bot.Types.ChatMemberUpdated
+            {
+                Chat = new Telegram.Bot.Types.Chat { Id = ChatId, Type = Telegram.Bot.Types.Enums.ChatType.Supergroup, Title = "Test Group" },
+                From = new Telegram.Bot.Types.User { Id = 1, FirstName = "Someone" },
+                Date = DateTime.UtcNow,
+                OldChatMember = new Telegram.Bot.Types.ChatMemberMember { User = new Telegram.Bot.Types.User { Id = bot.BotClient.BotId, IsBot = true } },
+                NewChatMember = new Telegram.Bot.Types.ChatMemberAdministrator { User = new Telegram.Bot.Types.User { Id = bot.BotClient.BotId, IsBot = true } },
+            },
+        });
+
+        Assert.Null(Chats.getChat(ChatId));
+        Assert.Empty(bot.BotClient.SentMessages);
     }
 
     [Fact]
@@ -151,49 +182,15 @@ public class XyzzyCarriedForwardDeltasTests
         // there - confirmed live, and explicitly not what the user wants (a once-a-week reminder
         // instead - their own call, not a one-time-only warning or a constant nag).
         using var bot = new TestHarness();
-        bot.PromoteBotToAdmin(ChatId, chatType: Telegram.Bot.Types.Enums.ChatType.Group);
+        bot.MarkBotAsAdminIn(ChatId, basicGroup: true);
+        TelegramAPI.EnsureNotAdminInAnyChat();
         Assert.Single(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text == TelegramAPI.BotSelfDeAdminBasicGroupExplanation);
 
-        // Simulate the sweep running again shortly after (well within the week) - same shape as
-        // EnsureNotAdminInAnyChat finding the bot still admin on its next pass.
+        // The sweep running again shortly after (well within the week), same as any other pass.
         bot.BotClient.ChatsWhereBotIsAdmin.Add(ChatId);
         TelegramAPI.EnsureNotAdminInAnyChat();
 
         Assert.Single(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text == TelegramAPI.BotSelfDeAdminBasicGroupExplanation);
-    }
-
-    [Fact]
-    public void PromotionRegistersTheChatEvenWithNoOtherMessageEverSent()
-    {
-        // Real gap found live while verifying the background sweep: a chat where the bot is added
-        // and promoted straight to admin, with no other message ever exchanged, was never in
-        // Roboto.Settings.chatData at all (chat registration used to only happen off a real text
-        // message) - so EnsureNotAdminInAnyChat's sweep, which only checks known chats, could never
-        // see it. No SendGroupMessage here at all - PromoteBotToAdmin is the *only* interaction.
-        using var bot = new TestHarness();
-
-        bot.PromoteBotToAdmin(ChatId);
-
-        Assert.NotNull(Chats.getChat(ChatId));
-    }
-
-    [Fact]
-    public void BackgroundSweepDeAdminsAChatTheReactiveEventMissed()
-    {
-        // Added alongside the reactive MyChatMember event (TelegramAPI.DispatchUpdate), not
-        // instead of it, per explicit user request - a safety net in case a promotion's event was
-        // ever missed (e.g. a restart racing it). Simulates that directly: the chat is registered
-        // (a real message was seen) and the bot is currently admin there per a live GetChatMember
-        // check, without ever going through the MyChatMember event path at all.
-        using var bot = new TestHarness();
-        bot.SendGroupMessage(ChatId, Alice, "hello", "Alice");
-        bot.BotClient.ChatsWhereBotIsAdmin.Add(ChatId);
-
-        TelegramAPI.EnsureNotAdminInAnyChat();
-
-        Assert.Contains((ChatId, bot.BotClient.BotId), bot.BotClient.PromoteChatMemberCalls);
-        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text == TelegramAPI.BotSelfDeAdminExplanation);
-        Assert.DoesNotContain(ChatId, bot.BotClient.ChatsWhereBotIsAdmin);
     }
 
     [Fact]

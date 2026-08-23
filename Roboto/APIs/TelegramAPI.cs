@@ -226,7 +226,7 @@ namespace RobotoChatBot
         /// <summary>Sent instead of BotSelfDeAdminExplanation when the chat is a basic (non-super)
         /// group - see DeAdminSelf's own comment for why nothing can actually be stripped there.</summary>
         public const string BotSelfDeAdminBasicGroupExplanation =
-            "Bots added as admin are sent every chat message within a group - I don't need to be an admin."
+            "Bots added as admin are sent every chat message within a group - I don't need to be an admin. "
             + "Please remove my admin rights manually.";
 
         /// <summary>PromoteChatMember (the only "demote" mechanism the Bot API has - there's no
@@ -305,40 +305,18 @@ namespace RobotoChatBot
             //Flag the update ID as processed.
             Roboto.Settings.lastUpdate = update.Id;
 
-            // MyChatMember fires whenever *this bot's own* membership status changes in a chat -
-            // Telegram includes it in getUpdates()'s default update set with no explicit opt-in
-            // needed (unlike chat_member, which covers *other* members and isn't included by
-            // default). Not a legacy feature at all - legacy had no admin-only functionality and
-            // never reacted to this update type. Carried forward from the abandoned rewrite
-            // branch's own "bot self-de-admin" (MIGRATION.md phase 9): if someone promotes the bot
-            // to admin, immediately strip every right back off - and explain why, so whoever
-            // promoted it isn't left wondering what happened. Only reacts to a fresh promotion (old
-            // status not already admin), not every no-op MyChatMember update.
-            if (update.MyChatMember != null)
-            {
-                long chatId = update.MyChatMember.Chat.Id;
-
-                // Register the chat here too, not just on the first real text message (below) -
-                // found via a live gap while adding EnsureNotAdminInAnyChat's background sweep: a
-                // chat where the bot is added and promoted straight to admin, with no other message
-                // ever exchanged, was never in Roboto.Settings.chatData at all, so the sweep (which
-                // only checks known chats) could never see it. MyChatMember fires for every
-                // membership change (added, promoted, demoted, removed), so this is the right place
-                // to make sure the bot always knows about every chat it's actually a member of.
-                using (ChatKeyedLock.Acquire(chatId))
-                {
-                    if (Chats.getChat(chatId) == null)
-                    {
-                        Chats.addChat(chatId, update.MyChatMember.Chat.Title);
-                    }
-                }
-
-                if (update.MyChatMember.NewChatMember.IsAdmin && !update.MyChatMember.OldChatMember.IsAdmin)
-                {
-                    DeAdminSelf(chatId, update.MyChatMember.Chat.Title);
-                }
-                return;
-            }
+            // MyChatMember (fires whenever *this bot's own* membership status changes in a chat)
+            // used to be handled reactively here - a fresh promotion to admin triggered an
+            // immediate DeAdminSelf call, and any membership change registered the chat. Removed:
+            // confirmed live, twice, that the event genuinely never arrived in practice (both real
+            // promotions were only ever caught by EnsureNotAdminInAnyChat's background sweep, up to
+            // 5 minutes later, never this reactive path) - root cause not chased down further, per
+            // explicit user call ("assume MyChatMember doesn't work, remove that logic") rather than
+            // keeping dead/unreliable code around. The sweep alone now covers bot self-de-admin
+            // (mod_standard.backgroundProcessing -> EnsureNotAdminInAnyChat); a chat that only ever
+            // gets the bot promoted, with literally no other message ever exchanged, won't be swept
+            // (nothing to register it) - a narrower gap than the crash this whole feature started
+            // from, accepted rather than solved by keeping the unreliable reactive path around.
 
             // Legacy generically resolved chat.id/chat.title off whatever the update's single
             // top-level payload object happened to be (it never explicitly requested non-message

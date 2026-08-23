@@ -75,29 +75,19 @@ public sealed class TestHarness : IDisposable
 
     public void Send(Message message) => TelegramAPI.DispatchUpdate(new Update { Message = message });
 
-    /// <summary>Simulates someone promoting the bot to admin in a group - fires the same
-    /// MyChatMember update TelegramAPI.DispatchUpdate's bot self-de-admin handling (phase 9) reacts
-    /// to. BotClient.BotId is the bot's own user id, matching what TelegramAPI.Client.GetMe would
-    /// return for the real client.</summary>
-    /// <summary>Defaults to Supergroup - the type that actually supports PromoteChatMember (the
-    /// only "demote" mechanism the Bot API has). Pass ChatType.Group to simulate a basic (non-super)
-    /// group, which registers the chat in BotClient.BasicGroupChatIds so PromoteChatMemberRequest
-    /// fails the same way it genuinely does on real Telegram there.</summary>
-    public void PromoteBotToAdmin(long chatId, string title = "Test Group", ChatType chatType = ChatType.Supergroup)
+    /// <summary>Registers the chat (a real message, same as any chat's first contact) and marks
+    /// the bot as currently admin there, for TelegramAPI.EnsureNotAdminInAnyChat's background-sweep
+    /// tests - the only mechanism bot self-de-admin uses now. The reactive MyChatMember event this
+    /// used to simulate was removed: confirmed live, twice, that it never actually arrived in
+    /// practice (both real promotions were only ever caught by the sweep, never that reactive path)
+    /// - see MIGRATION.md. Pass basicGroup:true to simulate a basic (non-super) group, which
+    /// registers the chat in BotClient.BasicGroupChatIds so PromoteChatMemberRequest fails the same
+    /// way it genuinely does on real Telegram there.</summary>
+    public void MarkBotAsAdminIn(long chatId, string title = "Test Group", bool basicGroup = false)
     {
-        if (chatType == ChatType.Group) { BotClient.BasicGroupChatIds.Add(chatId); }
-
-        TelegramAPI.DispatchUpdate(new Update
-        {
-            MyChatMember = new ChatMemberUpdated
-            {
-                Chat = new Chat { Id = chatId, Type = chatType, Title = title },
-                From = new User { Id = 1, FirstName = "Someone" },
-                Date = DateTime.UtcNow,
-                OldChatMember = new ChatMemberMember { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
-                NewChatMember = new ChatMemberAdministrator { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
-            },
-        });
+        SendGroupMessage(chatId, 1, "hello", "Someone", title);
+        if (basicGroup) { BotClient.BasicGroupChatIds.Add(chatId); }
+        BotClient.ChatsWhereBotIsAdmin.Add(chatId);
     }
 
     public void SendGroupMessage(long chatId, long userId, string text, string firstName = "Test", string title = "Test Group", Message replyTo = null) =>
