@@ -861,7 +861,17 @@ namespace RobotoChatBot.Modules
                         // "Add Bots" (MIGRATION.md phase 9) - a bot judge never receives a DM,
                         // it picks a random submitted answer immediately instead. responses is
                         // already each non-judge player's combined answer text, exactly what
-                        // judgesResponse expects to match against.
+                        // judgesResponse expects to match against. Still send the same "All
+                        // answers received!" group announcement the human-judge path below sends
+                        // (respecting judgesMessageOnly the same way) - found missing via a live
+                        // user report: with a bot judge, the group went straight from "everyone's
+                        // answered" to "a winner's been picked" with no announcement of what the
+                        // answers even were in between, since this branch returned before ever
+                        // reaching the human-judge path's chatMsg send below.
+                        if (!judgesMessageOnly)
+                        {
+                            Messaging.SendMessage(chatID, chatMsg);
+                        }
                         judgesResponse(responses[settings.getRandom(responses.Count)]);
                         return;
                     }

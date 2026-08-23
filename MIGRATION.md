@@ -951,6 +951,40 @@ this branch's build from then on. Pushing itself has to happen from the user's o
 sandboxed session has no GitHub credentials (checked SSH keys, env vars, `.netrc`, git credential
 helpers, `gh` CLI - none present).
 
+### Live-on-`robotolive` bug report: bot-judge round skips the "All answers received!" announcement
+
+First real bug report from the actual cutover instance (`robotolive`, running real production data via
+phase 8's import). The user also asked about `/statsgraph` returning the plain `/stats` message -
+not a bug: the real command is `/statgraph` (no `s` before `graph`); `/statsgraph` (with the extra
+`s`) genuinely does start with `/stats`, so `mod_standard.cs`'s `StartsWith("/stats")` check matches
+it first, same as it would for any other typo starting with those 6 characters - confirmed by reading
+the dispatch order and char-by-char comparing both strings, not by guessing.
+
+**The real bug**: `beginJudging`'s bot-judge branch (`tzar.isBot`, "Add Bots" - phase 9, not a legacy
+feature at all) picked a random answer and called `judgesResponse` immediately, returning before ever
+reaching the `Messaging.SendMessage(chatID, chatMsg)` call that sends the "All answers received!..."
+group announcement - that send only lived inside the human-judge branch's `SendQuestion` result
+handling, below the bot-judge branch's early `return`. Effect: whenever the *judge* for a round
+happened to be a bot (not just a non-judge player, which phase 9's own tests already covered), the
+chat went straight from "everyone's answered" to "a winner's been picked" with no announcement of
+what the answers even were in between. Never caught before because `AddBotsLetsASoloStarterReachThree
+PlayersAndPlayARound` only played round 1, where the starter (always human, by construction) is
+tzar - round 2 (where `lastPlayerAsked` rotates to the first added bot) is the first round with a bot
+judge, and nothing had exercised it until this live report.
+
+Fixed: the bot-judge branch now sends the same `chatMsg`, gated by the same `judgesMessageOnly` flag
+the human-judge path already respects (so re-judging after a kicked judge, phase 9's own no-op
+decision, still correctly suppresses a duplicate announcement for the same round). Extended the
+existing add-bots test to play into round 2 and assert the announcement is sent for both rounds.
+
+**Sanity-checked by breaking something**: disabled the new send (`if (false && !judgesMessageOnly)`)
+and confirmed the extended test failed (1 announcement instead of 2), then reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (83/83, unchanged - extended an
+existing test rather than adding a new one). Not yet re-verified live against `robotolive` - the fix
+needs to ship there (rebuild + redeploy) before the user can confirm round 2+ with a bot judge now
+announces correctly.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

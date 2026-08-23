@@ -164,6 +164,25 @@ public class XyzzyCarriedForwardDeltasTests
         Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins a point!"));
         var winner = chatData.players.Single(p => p.wins == 1);
         Assert.True(winner.isBot);
+
+        // Round 2 auto-starts with lastPlayerAsked rotated to players[1] - the first bot added -
+        // making it the judge. Alice (players[0]) and the second bot (players[2]) are non-judge;
+        // the second bot auto-answers immediately same as round 1, so only Alice's real answer is
+        // needed to complete the round and trigger the bot judge's auto-pick.
+        //
+        // beginJudging's bot-judge branch (tzar.isBot) used to return before ever sending the
+        // group's "All answers received!" announcement - only the human-judge path sent it, so with
+        // a bot judge the chat went straight from "everyone's answered" to "a winner's been picked"
+        // with no announcement of what the answers even were in between. Found via a live user
+        // report (round 2 of a real game, not round 1 - round 1's judge here is always human Alice,
+        // the starter, so this needed a second round to surface at all).
+        Assert.Equal(xyzzy_Statuses.Question, chatData.status);
+        Assert.Equal(1, chatData.lastPlayerAsked);
+        string alicesAnswer = bot.LastKeyboardMessageTo(Alice).KeyboardRows![0][0].Text;
+        bot.TapButton(Alice, alicesAnswer, "Alice");
+
+        Assert.Equal(2, bot.BotClient.SentMessages.Count(m => m.ChatId == ChatId && m.Text.Contains("All answers received!")));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("wins a point!"));
     }
 
     [Fact]
