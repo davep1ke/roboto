@@ -143,6 +143,26 @@ public class XyzzyCarriedForwardDeltasTests
     }
 
     [Fact]
+    public void BasicGroupAdminExplanationIsThrottledToOnceAWeekNotEveryCheck()
+    {
+        // PromoteChatMember can never actually succeed for a basic (non-super) group, so without
+        // this throttle EnsureNotAdminInAnyChat's sweep would re-send the exact same explanation
+        // every time it runs (every 5 minutes in production) for as long as the bot stays admin
+        // there - confirmed live, and explicitly not what the user wants (a once-a-week reminder
+        // instead - their own call, not a one-time-only warning or a constant nag).
+        using var bot = new TestHarness();
+        bot.PromoteBotToAdmin(ChatId, chatType: Telegram.Bot.Types.Enums.ChatType.Group);
+        Assert.Single(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text == TelegramAPI.BotSelfDeAdminBasicGroupExplanation);
+
+        // Simulate the sweep running again shortly after (well within the week) - same shape as
+        // EnsureNotAdminInAnyChat finding the bot still admin on its next pass.
+        bot.BotClient.ChatsWhereBotIsAdmin.Add(ChatId);
+        TelegramAPI.EnsureNotAdminInAnyChat();
+
+        Assert.Single(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text == TelegramAPI.BotSelfDeAdminBasicGroupExplanation);
+    }
+
+    [Fact]
     public void PromotionRegistersTheChatEvenWithNoOtherMessageEverSent()
     {
         // Real gap found live while verifying the background sweep: a chat where the bot is added

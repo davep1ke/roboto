@@ -23,9 +23,19 @@ namespace RobotoChatBot.Modules
     [Serializable]
     public class mod_standard_chatdata : RobotoModuleChatDataTemplate
     {
-        //Timespan won't serialise, so need to use a backing "long" to store the actual value. 
+        //Timespan won't serialise, so need to use a backing "long" to store the actual value.
         public long x_quietHoursStartTime = TimeSpan.MinValue.Ticks;
         public long x_quietHoursEndTime = TimeSpan.MinValue.Ticks;
+
+        /// <summary>TelegramAPI.DeAdminSelf's basic-group explanation is throttled to once a week,
+        /// not sent on every check - PromoteChatMember can never actually succeed for a basic
+        /// (non-super) group, so EnsureNotAdminInAnyChat's background sweep would otherwise re-send
+        /// the exact same message every 5 minutes forever, as long as the bot stays admin there
+        /// (confirmed live - found by the user asking "does this fire repeatedly, or just once").
+        /// A gentle periodic reminder rather than either a one-time warning (easy to miss/forget)
+        /// or a constant nag - user's explicit call. DateTime.MinValue (never warned) always
+        /// triggers immediately, same as this project's other lastXDateTime throttles.</summary>
+        public DateTime lastBasicGroupAdminWarningDateTime = DateTime.MinValue;
 
         [XmlIgnore]
         public TimeSpan quietHoursStartTime

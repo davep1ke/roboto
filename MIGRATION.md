@@ -1241,6 +1241,29 @@ entirely on its own, independent of whether the reactive path ever fires - exact
 
 **Verified**: build clean; `dotnet test` green across repeated runs (96/96, up from 91).
 
+### Basic-group admin explanation was re-firing every 5 minutes forever
+
+Found by the user's own question after watching the live fix above fire twice, 5 minutes apart:
+"does that background logic fire repeatedly until someone removes the admin rights, or just once and
+then stops?" Answer, and the actual behavior at the time: repeatedly, forever, for a basic (non-super)
+group specifically - `PromoteChatMember` can never succeed there, so every `EnsureNotAdminInAnyChat`
+sweep pass (every 5 minutes, `mod_standard`'s own `backgroundMins`) found the bot still admin and
+re-sent the identical explanation. (A supergroup is self-limiting - the strip actually succeeds, so
+the next pass sees "not admin" and does nothing further.)
+
+**Fix, user's explicit call** ("let's have it fire at most once per week" - after briefly considering
+a one-time-only warning, which risks being missed/forgotten entirely): `mod_standard_chatdata` gained
+`lastBasicGroupAdminWarningDateTime`, same throttle-field convention this module already uses
+(`lastSaveToDiskDateTime`, `lastLogPurgeDateTime`). `DeAdminSelf`'s basic-group branch checks it before
+sending - `DateTime.MinValue` (never warned) always fires immediately, matching every other throttle
+in this codebase.
+
+**Sanity-checked by breaking something**: disabled the throttle check and confirmed
+`BasicGroupAdminExplanationIsThrottledToOnceAWeekNotEveryCheck` failed (2 messages sent instead of 1),
+then reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (97/97, up from 96).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

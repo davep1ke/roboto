@@ -7,6 +7,7 @@ using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using RobotoChatBot.Modules;
 
 namespace RobotoChatBot
 {
@@ -225,9 +226,8 @@ namespace RobotoChatBot
         /// <summary>Sent instead of BotSelfDeAdminExplanation when the chat is a basic (non-super)
         /// group - see DeAdminSelf's own comment for why nothing can actually be stripped there.</summary>
         public const string BotSelfDeAdminBasicGroupExplanation =
-            "I've been made an admin here, but Telegram's Bot API has no way to demote a member in " +
-            "a regular (non-super) group - only in supergroups and channels. I don't need to be an " +
-            "admin - please remove my admin rights manually if you'd like.";
+            "Bots added as admin are sent every chat message within a group - I don't need to be an admin."
+            + "Please remove my admin rights manually.";
 
         /// <summary>PromoteChatMember (the only "demote" mechanism the Bot API has - there's no
         /// separate "remove admin" call) only works for supergroups/channels. A basic (non-super)
@@ -249,8 +249,24 @@ namespace RobotoChatBot
             }
             catch (ApiRequestException ex) when (ex.Message.Contains("supergroup and channel", StringComparison.OrdinalIgnoreCase))
             {
+                // Can never actually succeed here (see this method's own doc comment), so without
+                // throttling, EnsureNotAdminInAnyChat's sweep would re-send this same explanation
+                // every 5 minutes forever, as long as the bot stays admin in this chat - confirmed
+                // live. Throttled to once a week - a gentle periodic reminder (user's explicit
+                // call), not a one-time warning that's easy to miss, and not a constant nag either.
+                mod_standard_chatdata chatData = Chats.getChat(chatId)?.getPluginData<mod_standard_chatdata>();
+                if (chatData != null && chatData.lastBasicGroupAdminWarningDateTime.AddDays(7) > DateTime.Now)
+                {
+                    Roboto.log.log("Still admin in " + chatId + " (" + chatTitle + ") - a basic (non-super) group, warned within the last week already, not re-sending.", logging.loglevel.low);
+                    return;
+                }
+
                 Roboto.log.log("Promoted to admin in " + chatId + " (" + chatTitle + "), but it's a basic (non-super) group - nothing to strip via the API. Explaining instead.", logging.loglevel.high);
-                try { Client.SendMessage(chatId, BotSelfDeAdminBasicGroupExplanation).GetAwaiter().GetResult(); }
+                try
+                {
+                    Client.SendMessage(chatId, BotSelfDeAdminBasicGroupExplanation).GetAwaiter().GetResult();
+                    if (chatData != null) { chatData.lastBasicGroupAdminWarningDateTime = DateTime.Now; }
+                }
                 catch (Exception ex2) { Roboto.log.log("Failed to send basic-group admin explanation to " + chatId + ": " + ex2.Message, logging.loglevel.high); }
             }
             catch (Exception ex)
