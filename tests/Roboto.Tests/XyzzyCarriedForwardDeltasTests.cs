@@ -186,6 +186,42 @@ public class XyzzyCarriedForwardDeltasTests
     }
 
     [Fact]
+    public void SettingsMenuQueuedBehindAnOutstandingAnswerSurvivesIntoTheNextRound()
+    {
+        // Legacy's own TODO in askQuestion() ("this causes issues if someone is changing settings
+        // in the middle of a round") called this exact bug out, unfixed since. Reproduces the real
+        // live shape: Alice requests /xyzzy_settings while she still has an outstanding "Question"
+        // reply for round 2 (bot1 is judge here - lastPlayerAsked rotates to players[1] after round
+        // 1) - Messaging's per-user single-outstanding-message queue holds the Settings reply
+        // behind it, unsent. Answering completes the round, triggering bot1's auto-judge (no human
+        // wait) and dealing round 3 immediately - askQuestion()'s clearExpectedReplies used to
+        // blanket-clear every mod_xyzzy ExpectedReply for the chat at that point, silently deleting
+        // the still-queued Settings reply before it ever got a chance to send.
+        using var bot = new TestHarness();
+        SeedCards();
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice");
+        bot.TapButton(Alice, "2", "Alice");
+        bot.TapButton(Alice, "Start", "Alice");
+
+        var chatData = (mod_xyzzy_chatdata)Chats.getChat(ChatId).getPluginData(typeof(mod_xyzzy_chatdata), true);
+        // Round 1: Alice (players[0], the starter) is tzar - judge immediately so round 2 starts.
+        var judgingKeyboard = bot.LastKeyboardMessageTo(Alice).KeyboardRows!;
+        bot.TapButton(Alice, judgingKeyboard[0][0].Text, "Alice");
+        Assert.Equal(1, chatData.lastPlayerAsked);
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_settings", "Alice");
+        Assert.DoesNotContain(bot.BotClient.SentMessages, m => m.Text.Contains("This allows you to change the game settings"));
+
+        string alicesAnswer = bot.LastKeyboardMessageTo(Alice).KeyboardRows![0][0].Text;
+        bot.TapButton(Alice, alicesAnswer, "Alice");
+
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == Alice && m.Text.Contains("This allows you to change the game settings"));
+    }
+
+    [Fact]
     public void KickingTheJudgeMidJudgingReassignsTheSameRoundRatherThanDealingAFreshOne()
     {
         // Confirms the deliberate no-op decision (MIGRATION.md phase 9): legacy's real behavior -

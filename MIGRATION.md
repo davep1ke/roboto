@@ -985,6 +985,37 @@ existing test rather than adding a new one). Not yet re-verified live against `r
 needs to ship there (rebuild + redeploy) before the user can confirm round 2+ with a bot judge now
 announces correctly.
 
+### Live-on-`robotolive` bug report: `/xyzzy_settings` silently vanishing mid-round
+
+A genuine legacy bug, not something this port introduced - `askQuestion()`'s own comment already
+called it out: `//TODO - this causes issues if someone is changing settings in the middle of a
+round.` Never fixed, in any version checked, until now.
+
+**Root cause**: `Messaging.clearExpectedReplies(chat_id, pluginType)` clears *every* `ExpectedReply`
+for the given chat and plugin type, with no awareness of which conversation each one belongs to.
+`askQuestion()` calls this unconditionally at the start of every round (originally meant to clean up
+a previous round's unanswered "Question" replies) - so if a player's `/xyzzy_settings` request was
+still queued behind their own outstanding "Question" reply (`Messaging`'s per-user single-
+outstanding-message serialization) when a new round dealt immediately after judging - e.g. a bot
+judge auto-deciding with no human wait, exactly the shape confirmed live on `robotolive` - this call
+deleted the still-queued, not-yet-sent Settings menu before it ever got a chance to send. From the
+user's own perspective: `/xyzzy_settings` just silently did nothing.
+
+**Fix**: `clearExpectedReplies` gained an optional `messageDataFilter` parameter (default `""`,
+unchanged blanket-clear behavior for every other call site) - `askQuestion()`'s call now passes
+`"Question"`, so it only clears the stale state it actually exists to clean up, leaving unrelated
+queued conversations (Settings, and anything else) for other users/contexts alone. The other
+`clearExpectedReplies` call sites (`reset()`, wrapUp, judging-phase invalid-reply cleanup, force-
+question) are all genuine "wipe everything for this chat" moments (game reset, game over, actively
+correcting a broken judging state) where a blanket clear is the intended behavior, not the same bug -
+left as-is, not swept up into this fix.
+
+**Sanity-checked by breaking something**: reverted `askQuestion()`'s call back to the unfiltered
+blanket clear and confirmed the new test failed (`/xyzzy_settings`' menu never sent), then reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (84/84, up from 83). Not yet
+re-verified live against `robotolive` - needs the fix to actually ship there first.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

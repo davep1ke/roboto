@@ -323,8 +323,18 @@ namespace RobotoChatBot.Modules
 
             Roboto.Settings.stats.logStat(new statItem("Hands Played", typeof(mod_xyzzy)));
             mod_xyzzy_coredata localData = getLocalData();
-            //TODO - this causes issues if someone is changing settings in the middle of a round. 
-            Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy)  ); //shouldnt be needed, but handy if we are forcing a question in debug.
+            // Legacy's own TODO here ("this causes issues if someone is changing settings in the
+            // middle of a round") called this exact bug out, unfixed since. Confirmed live: a
+            // player's /xyzzy_settings request queues an ExpectedReply behind their still-
+            // outstanding "Question" one (Messaging's per-user single-outstanding-message
+            // serialization) - once they finish answering and a new round deals immediately (a bot
+            // judge auto-decides with no human wait, or any other same-tick round advance), this
+            // call used to blanket-clear *every* mod_xyzzy ExpectedReply for the chat regardless of
+            // messageData, wiping the still-queued, not-yet-sent Settings menu before it ever got a
+            // chance to send. Scoped to "Question" only - the actual stale state this call exists
+            // to clean up (a previous round's unanswered players) - so unrelated queued
+            // conversations for other messageData contexts survive into the new round instead.
+            Messaging.clearExpectedReplies(chatID, typeof(mod_xyzzy), "Question");
 
             
             //check that the question card still exists. Remove any dead cards

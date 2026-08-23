@@ -162,7 +162,13 @@ namespace RobotoChatBot
         /// </summary>
         /// <param name="chat_id"></param>
         /// <param name="pluginType"></param>
-        public static void clearExpectedReplies(long chat_id, Type pluginType)
+        /// <param name="messageDataFilter">When non-empty, only clears replies whose messageData
+        /// matches this - see the call from mod_xyzzy_chatdata.askQuestion for why this matters:
+        /// without it, this clears *every* ExpectedReply for the plugin/chat regardless of what
+        /// conversation it belongs to, including ones for a completely unrelated, still-outstanding
+        /// flow for a different user (e.g. a queued /xyzzy_settings menu, sitting unsent behind that
+        /// user's own in-progress answer) that just happens to share the same chat and plugin type.</param>
+        public static void clearExpectedReplies(long chat_id, Type pluginType, string messageDataFilter = "")
         {
             using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
@@ -170,7 +176,11 @@ namespace RobotoChatBot
                 List<ExpectedReply> repliesToRemove = new List<ExpectedReply>();
                 foreach (ExpectedReply reply in Roboto.Settings.expectedReplies)
                 {
-                    if (reply.chatID == chat_id && reply.isOfType(pluginType)) { repliesToRemove.Add(reply); }
+                    if (reply.chatID == chat_id && reply.isOfType(pluginType)
+                        && (messageDataFilter == "" || reply.messageData == messageDataFilter))
+                    {
+                        repliesToRemove.Add(reply);
+                    }
                 }
                 //now remove them
                 foreach (ExpectedReply reply in repliesToRemove)
