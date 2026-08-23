@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace RobotoChatBot
 {
@@ -24,9 +25,17 @@ namespace RobotoChatBot
             # set (a Steam Web API key, from https://steamcommunity.com/dev/apikey). Leaving it blank is
             # fine; nothing else in the bot depends on it.
             SteamApiKey=
+
+            # Optional - which modules this instance loads, comma-separated class names (mod_xyzzy,
+            # mod_quote, mod_birthday, mod_standard, mod_steam, mod_wordcraft). Leave blank to load
+            # every module (the default). mod_standard handles /start, /stop, /addadmin, mute, and
+            # quiet hours - almost every instance wants it. This lives here rather than as a
+            # docker-compose/launch-command argument so it stays with every other per-instance
+            # setting, independent of however the container actually gets started.
+            Plugins=
             """;
 
-        public static bool TryLoad(string dataDir, string instance, out string telegramToken, out string botUsername, out string steamApiKey, out string message)
+        public static bool TryLoad(string dataDir, string instance, out string telegramToken, out string botUsername, out string steamApiKey, out List<string> plugins, out string message)
         {
             var instanceDir = Path.Combine(dataDir, instance);
             var configPath = Path.Combine(instanceDir, "bot.env");
@@ -39,6 +48,7 @@ namespace RobotoChatBot
                 telegramToken = "";
                 botUsername = "";
                 steamApiKey = "";
+                plugins = new List<string>();
                 message = $"No config found for instance '{instance}'. Created a starter file at " +
                           $"{configPath} - fill in TelegramToken and restart.";
                 return false;
@@ -48,6 +58,9 @@ namespace RobotoChatBot
             telegramToken = values.TryGetValue("TelegramToken", out var t) ? t : "";
             botUsername = values.TryGetValue("BotUsername", out var b) ? b : "";
             steamApiKey = values.TryGetValue("SteamApiKey", out var s) ? s : "";
+            plugins = values.TryGetValue("Plugins", out var p)
+                ? p.Split(',', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries).ToList()
+                : new List<string>();
 
             if (string.IsNullOrWhiteSpace(telegramToken))
             {

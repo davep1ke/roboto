@@ -1057,6 +1057,37 @@ exactly the mismatch shape seen live, then reverted.
 against `data/chat_mangler_bot.xml` now reports "Counts match" cleanly. `data/chat_mangler_bot/`
 (`roboto.db` + a blank-token `bot.env`) is the result, same as `robotolive`'s.
 
+### Module allow-list moved from a launch-time flag to `bot.env`
+
+The user asked how to configure `chat_mangler_bot`'s module allow-list (it should only load
+`mod_wordcraft`, `mod_standard`, `mod_quote`, `mod_birthday` - not `mod_xyzzy`/`mod_steam`), which
+legacy always set via a `-plugin` CLI arg per launch. That flag still works exactly as before (kept,
+per CLAUDE.md's own note, as low-blast-radius/unrelated) - but for a real multi-instance Docker/
+TrueNAS deployment, a launch-command argument is awkward: it has to be remembered and maintained
+separately from every other per-instance setting, and survives however the container happens to get
+started rather than living with the instance's own data.
+
+**Decision, discussed with the user rather than assumed**: `bot.env` gained an optional `Plugins=`
+line (comma-separated module class names, blank = load everything - today's default, unchanged) -
+`InstanceBootstrapper.TryLoad` parses it into `BotOptions.Plugins`, merged into `Roboto.pluginFilter`
+alongside (not instead of) whatever `-plugin` CLI args are also passed, so both mechanisms keep
+working together. Chosen over a docker-compose `command:` override because it colocates with every
+other per-instance setting (token, username, Steam key) that already lives in this same file, and
+because each instance genuinely does get its own separate compose/app config on this user's TrueNAS
+setup (confirmed directly, not assumed) - so there was no actual constraint forcing the CLI-arg route,
+just legacy's own original mechanism carried forward out of habit.
+
+`data/chat_mangler_bot/bot.env` (already existed from the earlier import, predating this change, so it
+didn't get the new stub content automatically) updated directly with `Plugins=mod_wordcraft,mod_standard,
+mod_quote,mod_birthday`.
+
+**Sanity-checked by breaking something**: reverted the `Plugins=` parsing to always return an empty
+list and confirmed `ConfiguredPluginsLineParsesIntoATrimmedList` failed, then reverted.
+
+**Verified**: build clean (both `Roboto.csproj` and `Migrator.csproj` - `InstanceBootstrapper.TryLoad`'s
+signature grew a parameter, updated its one other call site in `Migrator/Program.cs`); `dotnet test`
+green across repeated runs (89/89, up from 86).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

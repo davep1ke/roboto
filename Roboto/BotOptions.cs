@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 
 namespace RobotoChatBot
@@ -24,6 +25,11 @@ namespace RobotoChatBot
         /// commands/background job just degrade to "not configured" rather than treating it as
         /// fatal, since most instances won't set it.</summary>
         public string SteamApiKey { get; set; } = "";
+
+        /// <summary>Optional module allow-list (bot.env's "Plugins" line) - empty means every module
+        /// loads (the default). Merged with any -plugin CLI args into Roboto.pluginFilter at
+        /// startup, not read directly by module code.</summary>
+        public List<string> Plugins { get; set; } = new List<string>();
 
         /// <summary>
         /// {DataDir}/{Instance} - holds bot.env and roboto.db. InstanceBootstrapper computes this

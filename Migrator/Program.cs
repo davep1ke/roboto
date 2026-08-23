@@ -86,7 +86,7 @@ namespace RobotoChatBot.Migrator
             // InstanceBootstrapper.TryLoad creates the stub bot.env on first run (leaving
             // TelegramToken blank) as a side effect and returns false for a blank token - expected
             // and fine here, the migrator never needs a real token itself.
-            InstanceBootstrapper.TryLoad(dataDir, instance, out _, out _, out _, out _);
+            InstanceBootstrapper.TryLoad(dataDir, instance, out _, out _, out _, out _, out _);
 
             Roboto.Options = new BotOptions { Instance = instance, DataDir = dataDir };
             Roboto.Store = new SqliteStateStore(dbPath);

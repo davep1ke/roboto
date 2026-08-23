@@ -97,7 +97,7 @@ namespace RobotoChatBot
             var dataDir = Environment.GetEnvironmentVariable("ROBOTO_DATADIR") ?? "/data";
             log.setWindowTitle(instance);
 
-            if (!InstanceBootstrapper.TryLoad(dataDir, instance, out var telegramToken, out var botUsername, out var steamApiKey, out var bootstrapMessage))
+            if (!InstanceBootstrapper.TryLoad(dataDir, instance, out var telegramToken, out var botUsername, out var steamApiKey, out var plugins, out var bootstrapMessage))
             {
                 log.log(bootstrapMessage, logging.loglevel.critical, false, true);
                 return;
@@ -110,7 +110,13 @@ namespace RobotoChatBot
                 TelegramToken = telegramToken,
                 BotUsername = botUsername,
                 SteamApiKey = steamApiKey,
+                Plugins = plugins,
             };
+            // bot.env's Plugins= is the persistent, per-instance way to set this (survives however
+            // the container actually gets launched); -plugin CLI args (parsed in Main, above) still
+            // work too, merged into the same filter - handy for a quick local override without
+            // touching the instance's own config.
+            pluginFilter.AddRange(plugins);
             lo_s.addone();
 
             log.log("Opening database", logging.loglevel.high);
