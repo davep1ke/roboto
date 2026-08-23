@@ -1088,6 +1088,51 @@ list and confirmed `ConfiguredPluginsLineParsesIntoATrimmedList` failed, then re
 signature grew a parameter, updated its one other call site in `Migrator/Program.cs`); `dotnet test`
 green across repeated runs (89/89, up from 86).
 
+### `/version` (mod_standard) - tracing a running instance back to its actual build
+
+The user asked for a way to check which build TrueNAS is actually running, since it's otherwise
+opaque once an image is deployed. There's no separate version-numbering scheme in this project (never
+was, in legacy or here) - a real git commit *is* the version, so `/version` reports the exact commit
+and build timestamp baked into the running assembly, not an invented build-counter.
+
+**`Roboto.csproj`**: `GitCommit` is a real MSBuild property, embedded via `AssemblyMetadata` items so
+it's compiled into the assembly itself (survives however the container gets launched, unlike an env
+var read at runtime). `-p:GitCommit=<sha>` wins if passed in (the Docker/CI path - see below); a
+`SetGitCommit` target falls back to running `git rev-parse --short HEAD` itself otherwise, for local
+dev builds where the working tree's own repo is right there.
+
+**Real MSBuild gotcha, cost real debugging time**: `AssemblyMetadata` items need to be added *inside*
+a `<Target>`, not a bare top-level `<ItemGroup>` - the latter evaluates once at project-load time,
+before any target has run, so `Value="$(GitCommit)"` would always see it as still empty. Even inside a
+target, the hook point matters: `BeforeTargets="GenerateAssemblyInfo"` and even
+`BeforeTargets="CoreGenerateAssemblyInfo"` both fired too late - `GetAssemblyAttributes` is the actual
+target that converts `@(AssemblyMetadata)` into the attribute list `CoreGenerateAssemblyInfo` writes
+out, and it runs *before* `CoreGenerateAssemblyInfo` in the dependency graph. Confirmed correct only
+by inspecting the SDK's own `Microsoft.NET.GenerateAssemblyInfo.targets` file directly and tracing the
+real per-target execution order with `-v:diag`, not by guessing from the target names - `BeforeTargets=
+"GetAssemblyAttributes"` is the one that actually works. Verified for real: extracted the compiled
+`Roboto.dll` from a real `docker build --build-arg GIT_COMMIT=abc1234` image and confirmed `abc1234`
+is actually embedded, not just present in a local (non-Docker) build.
+
+**Docker/CI wiring**: `Dockerfile` gained `ARG GIT_COMMIT=unknown`, threaded into `dotnet publish
+-p:GitCommit=$GIT_COMMIT`; `.dockerignore` already excludes `.git/` deliberately (secrets/build-context
+hygiene, predates this), so the SDK build stage has no repo to fall back on itself - a manual `docker
+compose build` with no `--build-arg` honestly reports "unknown" rather than guessing. `.github/workflows/
+docker-publish.yml` passes `build-args: GIT_COMMIT=${{ github.sha }}` - the real checked-out commit
+from the actual CI build, more trustworthy than anything computed inside the build stage.
+
+**`Core/BuildInfo.cs`**: small reflection-based reader for the two `AssemblyMetadataAttribute`s.
+`mod_standard.cs`'s `/version` command reports both; added to `getMethodDescriptions()`'s `/help`
+listing alongside `/stats`.
+
+**Sanity-checked by breaking something**: renamed the command check to `/versionx` and confirmed
+`VersionReportsTheGitCommitAndBuildDateBakedIntoTheAssembly` failed, then reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (90/90, up from 89); `docker build
+--build-arg GIT_COMMIT=abc1234` then extracting the compiled DLL from the resulting image and
+confirming `abc1234` is actually present in it (not just "builds without error"); `docker compose
+build` (no build-arg, matching a real local/manual build) still succeeds cleanly.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

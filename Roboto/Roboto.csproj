@@ -26,4 +26,36 @@
     <None Remove="CallGraphs\**" />
   </ItemGroup>
 
+  <!-- /version (mod_standard) - embeds the git commit + build timestamp into the assembly so a
+       running instance can be traced back to what's actually deployed (the recurring "which build
+       is TrueNAS actually running" problem). GitCommit is a real MSBuild property, not just an
+       env var read at runtime, so it's baked in at compile time and survives however the container
+       gets launched. -p:GitCommit=<sha> (passed by the GHA workflow via a Docker build ARG - see
+       Dockerfile/docker-publish.yml) wins if set; SetGitCommit below only runs `git rev-parse`
+       itself as a fallback for local dev builds, where the working tree's own git repo is right
+       there. A local `docker compose build` with no ARG falls back further, to "unknown" - .git
+       isn't copied into the Docker build context at all, deliberately (see Dockerfile), so there's
+       nothing for git to read from inside that build. -->
+  <!-- The AssemblyMetadata items are added inside this target (not a bare top-level ItemGroup)
+       deliberately - a top-level ItemGroup's Value="$(GitCommit)" would bind at project-evaluation
+       time, before any target (including this one) has run, and would always see GitCommit as
+       empty. Adding the items during target execution, after GitCommit is actually set below, is
+       what makes $(GitCommit) resolve to the real value. -->
+  <Target Name="SetGitCommit" BeforeTargets="GetAssemblyAttributes" Condition="'$(GitCommit)' == ''">
+    <Exec Command="git rev-parse --short HEAD" ConsoleToMSBuild="true" ContinueOnError="true" StandardOutputImportance="low" EchoOff="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="GitCommitFromRepo" />
+    </Exec>
+    <PropertyGroup>
+      <GitCommit Condition="'$(GitCommitFromRepo)' != ''">$(GitCommitFromRepo)</GitCommit>
+      <GitCommit Condition="'$(GitCommit)' == ''">unknown</GitCommit>
+    </PropertyGroup>
+  </Target>
+
+  <Target Name="AddBuildInfoAssemblyMetadata" BeforeTargets="GetAssemblyAttributes" AfterTargets="SetGitCommit">
+    <ItemGroup>
+      <AssemblyMetadata Include="GitCommit" Value="$(GitCommit)" />
+      <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString(&quot;yyyy-MM-dd HH:mm:ss&quot;))Z" />
+    </ItemGroup>
+  </Target>
+
 </Project>

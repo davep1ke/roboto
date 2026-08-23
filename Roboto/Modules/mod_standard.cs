@@ -99,6 +99,7 @@ namespace RobotoChatBot.Modules
                 "stop - Stops listening to the chat, until a START is entered." + "\r\n" +
                 "save - Saves any outstanding in memory stuff to disk." + "\r\n" +
                 "stats - Returns an overview of the currently loaded plugins." + "\r\n" +
+                "version - Returns the git commit and build date this instance is running." + "\r\n" +
                 "setquiethours - Sets quiet hours for the chat." + "\r\n" +
                 "addadmin - adds an chat administrator" + "\r\n" +
                 "removeadmin - removes a chat administrator"
@@ -232,6 +233,19 @@ namespace RobotoChatBot.Modules
                 }
 
                 Messaging.SendMessage(m.chatID, statstxt, m.userFullName, true);
+                processed = true;
+            }
+            else if (m.text_msg.StartsWith("/version"))
+            {
+                // Answers "which build is actually running" - real deployments are traced back to
+                // an exact git commit (Roboto.csproj embeds it at compile time via AssemblyMetadata,
+                // baked into the assembly itself so it survives however the container gets
+                // launched), not a separately-maintained version number - there's no versioning
+                // scheme in this project beyond the commit history itself.
+                Messaging.SendMessage(m.chatID,
+                    "Git commit: " + RobotoChatBot.BuildInfo.GitCommit + "\r\n" +
+                    "Built: " + RobotoChatBot.BuildInfo.BuildDate,
+                    m.userFullName, true);
                 processed = true;
             }
             else if (m.text_msg.StartsWith("/addadmin") && c != null)

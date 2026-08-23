@@ -8,7 +8,15 @@ COPY Roboto/Roboto.csproj Roboto/
 RUN dotnet restore Roboto/Roboto.csproj
 
 COPY Roboto/ Roboto/
-RUN dotnet publish Roboto/Roboto.csproj -c Release --no-restore -o /app
+
+# /version (mod_standard) needs to know which commit it's actually running - passed in from the
+# GHA workflow's real checkout (github.sha) rather than relying on git being available/accurate
+# inside this build stage. .git is deliberately never COPYed into the build context (see
+# .dockerignore), so Roboto.csproj's own git-rev-parse fallback (for local dev builds) can't see
+# anything here anyway - GIT_COMMIT staying "unknown" is the correct, honest result for a manual
+# `docker compose build` with no ARG passed.
+ARG GIT_COMMIT=unknown
+RUN dotnet publish Roboto/Roboto.csproj -c Release --no-restore -o /app -p:GitCommit=$GIT_COMMIT
 
 # Default runtime image is Debian-based - deliberately not the -alpine variant. musl + native deps
 # (SkiaSharp, ScottPlot's renderer for /statgraph) is a known source of pain there.

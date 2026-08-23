@@ -11,6 +11,22 @@ public class AdminCommandsTests
     private const long Bob = 2;
 
     [Fact]
+    public void VersionReportsTheGitCommitAndBuildDateBakedIntoTheAssembly()
+    {
+        // Answers "which build is actually running" against a real deployed instance - GitCommit/
+        // BuildDate come from Roboto.csproj's own MSBuild-time AssemblyMetadata (BuildInfo.cs reads
+        // them via reflection), not anything runtime-configurable, so this just proves the plumbing
+        // reaches the chat rather than asserting a specific commit value.
+        using var bot = new TestHarness();
+
+        bot.SendGroupMessage(ChatId, Alice, "/version", "Alice");
+
+        var text = bot.BotClient.SentMessages[^1].Text;
+        Assert.Contains("Git commit: " + BuildInfo.GitCommit, text);
+        Assert.Contains("Built: " + BuildInfo.BuildDate, text);
+    }
+
+    [Fact]
     public void StopMutesTheChatAndStartUnmutesIt()
     {
         using var bot = new TestHarness();

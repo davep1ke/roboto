@@ -64,5 +64,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Threaded through to Roboto.csproj's own GitCommit MSBuild property (embedded into the
+          # assembly, read at runtime by mod_standard's /version command) - github.sha here is the
+          # real checked-out commit, more reliable than anything the build stage could work out for
+          # itself (.git is never copied into the build context - see .dockerignore).
+          build-args: |
+            GIT_COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
