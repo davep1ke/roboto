@@ -20,7 +20,8 @@ public sealed record SentPhoto(long ChatId, string? Caption, byte[] Content);
 /// this is adapted from). Faking that one method covers everything built on top of it.
 ///
 /// Only supports what TelegramAPI.cs actually calls today (GetMe, SendMessage, SendPhoto,
-/// GetChatMemberCount) - add a case as soon as something needs it, don't pre-build speculatively.
+/// GetChatMemberCount, PromoteChatMember, GetChatMember) - add a case as soon as something needs
+/// it, don't pre-build speculatively.
 /// Keeps the full keyboard row structure (unlike the old rewrite's fake, which flattened rows - see
 /// KeyboardColumnLayoutTests on that branch for why that mattered there) since this codebase's
 /// button-tap "taps" are actually simulated as typed replies (ReplyKeyboardMarkup, not
@@ -40,6 +41,17 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
     /// <summary>Chat ids that should fail to receive a DM, simulating a user who has never opened
     /// a private chat with the bot (real Telegram behaviour when you try to message such a user).</summary>
     public HashSet<long> UnreachableChatIds { get; } = [];
+
+    /// <summary>Chat ids that are basic (non-super) groups - PromoteChatMemberRequest genuinely
+    /// fails for these on real Telegram (the live "400 Bad Request: method is available for
+    /// supergroup and channel chats only" this project hit), even though a human can still make
+    /// the bot admin there through the Telegram app's own UI.</summary>
+    public HashSet<long> BasicGroupChatIds { get; } = [];
+
+    /// <summary>Chat ids where GetChatMemberRequest should report the bot itself as currently an
+    /// administrator - for EnsureNotAdminInAnyChat's background-sweep tests. PromoteChatMemberRequest
+    /// removes a chat from this set (successfully de-admining, same as real Telegram).</summary>
+    public HashSet<long> ChatsWhereBotIsAdmin { get; } = [];
 
     public bool LocalBotServer => false;
     public long BotId => 999;
@@ -101,8 +113,21 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
             case PromoteChatMemberRequest promote:
                 var promoteChatId = promote.ChatId.Identifier
                     ?? throw new InvalidOperationException("FakeTelegramBotClient only supports numeric chat ids");
+                if (BasicGroupChatIds.Contains(promoteChatId))
+                {
+                    throw new ApiRequestException("Bad Request: method is available for supergroup and channel chats only", 400);
+                }
                 PromoteChatMemberCalls.Add((promoteChatId, promote.UserId));
+                ChatsWhereBotIsAdmin.Remove(promoteChatId);
                 return Task.FromResult((TResponse)(object)true);
+
+            case GetChatMemberRequest getMember:
+                var getMemberChatId = getMember.ChatId.Identifier
+                    ?? throw new InvalidOperationException("FakeTelegramBotClient only supports numeric chat ids");
+                ChatMember member = ChatsWhereBotIsAdmin.Contains(getMemberChatId)
+                    ? new ChatMemberAdministrator { User = new User { Id = getMember.UserId, IsBot = true } }
+                    : new ChatMemberMember { User = new User { Id = getMember.UserId, IsBot = true } };
+                return Task.FromResult((TResponse)(object)member);
 
             default:
                 throw new NotSupportedException(

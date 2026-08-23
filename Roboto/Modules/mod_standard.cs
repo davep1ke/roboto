@@ -147,6 +147,9 @@ namespace RobotoChatBot.Modules
             Roboto.Settings.stats.houseKeeping();
             Presence.backgroundProcessing();
             Messaging.backgroundProcessing();
+            // Safety-net for bot self-de-admin (TelegramAPI's MyChatMember reactive handler,
+            // phase 9) - added alongside it, not instead, per explicit request.
+            TelegramAPI.EnsureNotAdminInAnyChat();
             Chats.removeDormantChats();
 
             //purge the logs table of anything older than 30 days - once a day is plenty (see

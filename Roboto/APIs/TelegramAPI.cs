@@ -30,7 +30,11 @@ namespace RobotoChatBot
         /// SendRequest - faking that one method covers everything built on top of it) so tests never
         /// make a real network call. Production code never calls this; Client's own getter lazily
         /// constructs the real TelegramBotClient exactly as before.</summary>
-        internal static void SetClientForTesting(ITelegramBotClient client) => _client = client;
+        internal static void SetClientForTesting(ITelegramBotClient client)
+        {
+            _client = client;
+            _botId = null;
+        }
 
         /// <summary>Lazily built, cached for the process lifetime - Roboto.Settings.telegramAPIKey
         /// is only ever set once at startup (from the XML config), never reassigned live, so there's
@@ -39,6 +43,15 @@ namespace RobotoChatBot
         /// caller that needs the raw client, for the multipart photo upload) can reuse the same
         /// cached instance instead of constructing its own.</summary>
         internal static ITelegramBotClient Client => _client ??= new TelegramBotClient(Roboto.Settings.telegramAPIKey);
+
+        private static long? _botId;
+
+        /// <summary>Cached for the process lifetime same as Client itself - GetMe is a real API
+        /// call, no reason to repeat it on every use (the bot self-de-admin background sweep,
+        /// below, needs its own ID once per chat it checks). Reset alongside Client in
+        /// SetClientForTesting so each test starts fresh rather than trusting a previous test's
+        /// fake bot ID.</summary>
+        internal static long BotId => _botId ??= Client.GetMe().GetAwaiter().GetResult().Id;
 
         /// <summary>
         /// Send the message in the expected reply. Should only be called from the expectedReply Class. May or may not expect a reply.
@@ -209,6 +222,68 @@ namespace RobotoChatBot
         public const string BotSelfDeAdminExplanation =
             "Bots added as admin are sent every chat message within a group - I don't need to be an admin.";
 
+        /// <summary>Sent instead of BotSelfDeAdminExplanation when the chat is a basic (non-super)
+        /// group - see DeAdminSelf's own comment for why nothing can actually be stripped there.</summary>
+        public const string BotSelfDeAdminBasicGroupExplanation =
+            "I've been made an admin here, but Telegram's Bot API has no way to demote a member in " +
+            "a regular (non-super) group - only in supergroups and channels. I don't need to be an " +
+            "admin - please remove my admin rights manually if you'd like.";
+
+        /// <summary>PromoteChatMember (the only "demote" mechanism the Bot API has - there's no
+        /// separate "remove admin" call) only works for supergroups/channels. A basic (non-super)
+        /// group has no per-member admin distinction at all via the Bot API, even though a human
+        /// can still make the bot admin there through the Telegram app's own UI - found live: this
+        /// used to be attempted unconditionally and crashed the whole update loop with an unhandled
+        /// ApiRequestException ("400 Bad Request: method is available for supergroup and channel
+        /// chats only") whenever that happened. Shared between the reactive MyChatMember handler
+        /// below (which gets the chat's type for free off the update) and EnsureNotAdminInAnyChat's
+        /// background sweep (which doesn't, and so discovers the same failure via the exception
+        /// instead) - not duplicated per caller.</summary>
+        private static void DeAdminSelf(long chatId, string chatTitle)
+        {
+            try
+            {
+                Client.PromoteChatMember(chatId, BotId).GetAwaiter().GetResult();
+                Roboto.log.log("Promoted to admin in " + chatId + " (" + chatTitle + ") - de-admined self", logging.loglevel.high);
+                Client.SendMessage(chatId, BotSelfDeAdminExplanation).GetAwaiter().GetResult();
+            }
+            catch (ApiRequestException ex) when (ex.Message.Contains("supergroup and channel", StringComparison.OrdinalIgnoreCase))
+            {
+                Roboto.log.log("Promoted to admin in " + chatId + " (" + chatTitle + "), but it's a basic (non-super) group - nothing to strip via the API. Explaining instead.", logging.loglevel.high);
+                try { Client.SendMessage(chatId, BotSelfDeAdminBasicGroupExplanation).GetAwaiter().GetResult(); }
+                catch (Exception ex2) { Roboto.log.log("Failed to send basic-group admin explanation to " + chatId + ": " + ex2.Message, logging.loglevel.high); }
+            }
+            catch (Exception ex)
+            {
+                Roboto.log.log("Failed to de-admin self in " + chatId + ": " + ex.Message, logging.loglevel.high);
+            }
+        }
+
+        /// <summary>Safety-net sweep for mod_standard's backgroundProcessing() - checks every known
+        /// chat's current membership status directly, rather than relying solely on the reactive
+        /// MyChatMember event below (kept, not replaced - added alongside it per explicit request,
+        /// in case a promotion's event was ever missed, e.g. a restart racing it). One GetChatMember
+        /// call per known chat per pass - accepted cost of a real live check rather than trusting an
+        /// event stream alone.</summary>
+        public static void EnsureNotAdminInAnyChat()
+        {
+            foreach (chat c in Roboto.Settings.chatData.ToList())
+            {
+                try
+                {
+                    ChatMember member = Client.GetChatMember(c.chatID, BotId).GetAwaiter().GetResult();
+                    if (member is ChatMemberAdministrator)
+                    {
+                        DeAdminSelf(c.chatID, c.chatTitle);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Roboto.log.log("Couldn't check own admin status for chat " + c.chatID + ": " + ex.Message, logging.loglevel.low);
+                }
+            }
+        }
+
         public static void DispatchUpdate(Update update)
         {
             //Flag the update ID as processed.
@@ -220,20 +295,31 @@ namespace RobotoChatBot
             // default). Not a legacy feature at all - legacy had no admin-only functionality and
             // never reacted to this update type. Carried forward from the abandoned rewrite
             // branch's own "bot self-de-admin" (MIGRATION.md phase 9): if someone promotes the bot
-            // to admin, immediately strip every right back off - PromoteChatMember with every
-            // permission left at its default false is the only "demote" mechanism the API has -
-            // and explain why, so whoever promoted it isn't left wondering what happened. Only
-            // reacts to a fresh promotion (old status not already admin), not every no-op
-            // MyChatMember update.
+            // to admin, immediately strip every right back off - and explain why, so whoever
+            // promoted it isn't left wondering what happened. Only reacts to a fresh promotion (old
+            // status not already admin), not every no-op MyChatMember update.
             if (update.MyChatMember != null)
             {
+                long chatId = update.MyChatMember.Chat.Id;
+
+                // Register the chat here too, not just on the first real text message (below) -
+                // found via a live gap while adding EnsureNotAdminInAnyChat's background sweep: a
+                // chat where the bot is added and promoted straight to admin, with no other message
+                // ever exchanged, was never in Roboto.Settings.chatData at all, so the sweep (which
+                // only checks known chats) could never see it. MyChatMember fires for every
+                // membership change (added, promoted, demoted, removed), so this is the right place
+                // to make sure the bot always knows about every chat it's actually a member of.
+                using (ChatKeyedLock.Acquire(chatId))
+                {
+                    if (Chats.getChat(chatId) == null)
+                    {
+                        Chats.addChat(chatId, update.MyChatMember.Chat.Title);
+                    }
+                }
+
                 if (update.MyChatMember.NewChatMember.IsAdmin && !update.MyChatMember.OldChatMember.IsAdmin)
                 {
-                    long adminChatID = update.MyChatMember.Chat.Id;
-                    long botUserID = update.MyChatMember.NewChatMember.User.Id;
-                    Roboto.log.log("Promoted to admin in " + adminChatID + " (" + update.MyChatMember.Chat.Title + ") - de-admining self", logging.loglevel.high);
-                    Client.PromoteChatMember(adminChatID, botUserID).GetAwaiter().GetResult();
-                    Client.SendMessage(adminChatID, BotSelfDeAdminExplanation).GetAwaiter().GetResult();
+                    DeAdminSelf(chatId, update.MyChatMember.Chat.Title);
                 }
                 return;
             }

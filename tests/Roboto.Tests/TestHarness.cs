@@ -79,17 +79,26 @@ public sealed class TestHarness : IDisposable
     /// MyChatMember update TelegramAPI.DispatchUpdate's bot self-de-admin handling (phase 9) reacts
     /// to. BotClient.BotId is the bot's own user id, matching what TelegramAPI.Client.GetMe would
     /// return for the real client.</summary>
-    public void PromoteBotToAdmin(long chatId, string title = "Test Group") => TelegramAPI.DispatchUpdate(new Update
+    /// <summary>Defaults to Supergroup - the type that actually supports PromoteChatMember (the
+    /// only "demote" mechanism the Bot API has). Pass ChatType.Group to simulate a basic (non-super)
+    /// group, which registers the chat in BotClient.BasicGroupChatIds so PromoteChatMemberRequest
+    /// fails the same way it genuinely does on real Telegram there.</summary>
+    public void PromoteBotToAdmin(long chatId, string title = "Test Group", ChatType chatType = ChatType.Supergroup)
     {
-        MyChatMember = new ChatMemberUpdated
+        if (chatType == ChatType.Group) { BotClient.BasicGroupChatIds.Add(chatId); }
+
+        TelegramAPI.DispatchUpdate(new Update
         {
-            Chat = new Chat { Id = chatId, Type = ChatType.Group, Title = title },
-            From = new User { Id = 1, FirstName = "Someone" },
-            Date = DateTime.UtcNow,
-            OldChatMember = new ChatMemberMember { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
-            NewChatMember = new ChatMemberAdministrator { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
-        },
-    });
+            MyChatMember = new ChatMemberUpdated
+            {
+                Chat = new Chat { Id = chatId, Type = chatType, Title = title },
+                From = new User { Id = 1, FirstName = "Someone" },
+                Date = DateTime.UtcNow,
+                OldChatMember = new ChatMemberMember { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
+                NewChatMember = new ChatMemberAdministrator { User = new User { Id = BotClient.BotId, IsBot = true, FirstName = "TestBot" } },
+            },
+        });
+    }
 
     public void SendGroupMessage(long chatId, long userId, string text, string firstName = "Test", string title = "Test Group", Message replyTo = null) =>
         Send(GroupMessage(chatId, userId, text, firstName, title, replyTo));

@@ -1173,6 +1173,74 @@ afterward.
 re-verified live - needs the fix to ship to `chat_mangler_bot` (and `robotolive`, since this affects
 every module, not just `mod_quote`) first.
 
+### Live-on-`beefy` bug report: bot self-de-admin crashing in a basic (non-super) group, plus a real background sweep
+
+**Crash**: `PromoteChatMember` (the only "demote" mechanism the Bot API has - there's no separate
+"remove admin" call) only works for supergroups/channels. A basic (non-super) group has no per-member
+admin distinction via the Bot API at all, even though a human can still make the bot admin there
+through the Telegram app's own UI - confirmed live: promoting the bot to admin in "Beef Test" (a
+basic group) crashed the whole update loop with an unhandled `ApiRequestException` ("400 Bad Request:
+method is available for supergroup and channel chats only"). Not a legacy bug - legacy never had any
+admin-only functionality (see phase 9 notes); this is entirely within the "bot self-de-admin" delta
+itself, just never tested against a basic group before now.
+
+**Fix**: `TelegramAPI.DeAdminSelf` (extracted as a shared method - see below) tries `PromoteChatMember`
+in a try/catch; on the specific "supergroup and channel" error it sends
+`BotSelfDeAdminBasicGroupExplanation` instead ("I've been made an admin here, but Telegram's Bot API
+has no way to demote a member in a regular group... please remove my admin rights manually") rather
+than crashing; any other failure just logs.
+
+**User's explicit ask**: "we are doing this by checking for an event from telegram - can we bake this
+into the rolling background checks instead" - then revised mid-turn to "actually, let's leave the
+existing check and add the background check as well". `TelegramAPI.EnsureNotAdminInAnyChat()` -
+called from `mod_standard.backgroundProcessing()`, the established home for whole-bot janitorial work
+- checks every known chat's current membership via `GetChatMember` and applies the same `DeAdminSelf`
+logic if it finds the bot is currently an administrator. Kept the reactive `MyChatMember` handler
+exactly as it was (just refactored to share `DeAdminSelf`), added the sweep alongside it as a safety
+net for a promotion whose event was ever missed (e.g. a restart racing it) - not a replacement.
+
+**A second real gap, found while verifying the sweep, not assumed**: `Roboto.Settings.chatData`
+only ever gained an entry via a real text message - a chat where the bot is added and promoted
+straight to admin, with *no* other message ever exchanged, was invisible to
+`EnsureNotAdminInAnyChat()` entirely, since the sweep only checks known chats. Confirmed live: the
+local `beefy-livetest` instance (a fresh instance, `chats:index` genuinely empty) had never seen a
+single message from "Beef Test," despite already being an admin there from the earlier crash.
+Fixed: `DispatchUpdate`'s `MyChatMember` handling now registers the chat (`Chats.getChat`/`addChat`,
+same get-or-create pattern the real message-dispatch path already uses) for *any* membership change,
+not just promotions - the bot should always know about every chat it's actually a member of.
+
+**Also, incidentally**: added `TelegramAPI.BotId` (lazily cached `Client.GetMe()`, reset alongside
+`Client` in `SetClientForTesting`) - the sweep needs the bot's own user ID per chat it checks, and
+nothing had needed to cache it before this.
+
+**Test fidelity gap found and fixed alongside this**: the existing
+`PromotingTheBotToAdminStripsItsRightsBackOffAndExplainsWhy` test used `ChatType.Group` (a basic
+group) for what it asserted was a *successful* strip - unrealistic, since real Telegram would have
+failed exactly the way this bug did; `FakeTelegramBotClient`'s `PromoteChatMemberRequest` never
+validated chat type at all. `TestHarness.PromoteBotToAdmin` now defaults to `ChatType.Supergroup`
+(the type that's actually realistic for this to succeed), and the fake gained `BasicGroupChatIds`
+(makes `PromoteChatMemberRequest` fail the same way real Telegram does) and `ChatsWhereBotIsAdmin`
+(backs the new `GetChatMemberRequest` case, for the sweep's own tests).
+
+**Sanity-checked by breaking something**: reverted the basic-group catch clause (`when (false)`) and
+confirmed the new basic-group test failed; separately disabled the `mod_standard.backgroundProcessing()`
+wiring and confirmed the wiring-specific test failed; separately reverted the `MyChatMember` chat-
+registration block and confirmed `PromotionRegistersTheChatEvenWithNoOtherMessageEverSent` failed.
+All three reverted back afterward, independently confirming each piece is load-bearing.
+
+**Verified live, not just via tests** - genuinely the most thorough live round-trip this project has
+done for a single fix: rebuilt and restarted the local `beefy-livetest` instance, confirmed clean
+startup, then had the user re-promote the bot to admin in the real "Beef Test" basic group. The
+*reactive* event hadn't fired by the time a regular text message registered the chat instead, so the
+real proof came from watching `mod_standard`'s own 5-minute-throttled background pass fire
+independently and correctly detect + gracefully handle the still-admin state - `[TelegramAPI:
+DeAdminSelf] Promoted to admin in -5308893237 (Beef Test), but it's a basic (non-super) group -
+nothing to strip via the API. Explaining instead.` - with the main loop continuing normally
+afterward, no exception, no crash. This specifically proves the background sweep works standing
+entirely on its own, independent of whether the reactive path ever fires - exactly what was asked for.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (96/96, up from 91).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
