@@ -181,4 +181,35 @@ public class LegacyXmlImportTests
 
         Assert.Contains(diffs, d => d.StartsWith("Chats:"));
     }
+
+    [Fact]
+    public void ChatGainingAStubForAModuleItNeverTouchedIsNotAMismatch()
+    {
+        // Confirmed real against data/chat_mangler_bot.xml: a chat that never played xyzzy or used
+        // Steam tracking has no mod_xyzzy_chatdata/mod_steam_chat_data in the source, but
+        // chat.initPlugins() correctly stub-fills every registered module on reload - so the "after"
+        // report always shows one *more* chat carrying that module's data than the source did. That's
+        // expected, not data loss - Diff should only flag a drop, never a gain, for this metric.
+        var beforeSource = BuildSourceSettings();
+        beforeSource.chatData.Single().chatData.RemoveAll(cd => cd is mod_steam_chat_data);
+        var before = ImportReport.From(beforeSource);
+        var after = ImportReport.From(BuildSourceSettings());
+
+        var diffs = ImportReport.Diff(before, after);
+
+        Assert.Empty(diffs);
+    }
+
+    [Fact]
+    public void ChatLosingAModuleItReallyHadIsStillCaughtAsAMismatch()
+    {
+        var before = ImportReport.From(BuildSourceSettings());
+        var afterSource = BuildSourceSettings();
+        afterSource.chatData.Single().chatData.RemoveAll(cd => cd is mod_quote_data);
+        var after = ImportReport.From(afterSource);
+
+        var diffs = ImportReport.Diff(before, after);
+
+        Assert.Contains(diffs, d => d.StartsWith("Chats with mod_quote_data:"));
+    }
 }

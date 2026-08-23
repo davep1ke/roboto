@@ -129,10 +129,23 @@ namespace RobotoChatBot.Persistence
             Check("Quotes", before.QuoteCount, after.QuoteCount);
             Check("Birthdays", before.BirthdayCount, after.BirthdayCount);
 
+            // Only flag a *drop* here, not a gain: chat.initPlugins() correctly stub-fills every
+            // registered module for every chat on reload (see settings.load()'s own comment on the
+            // RemoveAll/Add fix above it) - a chat that genuinely never touched some module (never
+            // played xyzzy, never used Steam tracking) will always show up with one *more* chat
+            // carrying that module's data after reload than the source XML had, and that's correct,
+            // expected behavior, not data loss. A drop, on the other hand, would mean a chat that
+            // really did have real module data in the source came back without it - always a real
+            // problem.
             var allModules = before.ChatsWithModuleData.Keys.Union(after.ChatsWithModuleData.Keys);
             foreach (var module in allModules.OrderBy(x => x))
             {
-                Check($"Chats with {module}", before.ChatsWithModuleData.GetValueOrDefault(module), after.ChatsWithModuleData.GetValueOrDefault(module));
+                var beforeCount = before.ChatsWithModuleData.GetValueOrDefault(module);
+                var afterCount = after.ChatsWithModuleData.GetValueOrDefault(module);
+                if (afterCount < beforeCount)
+                {
+                    diffs.Add($"Chats with {module}: {beforeCount} -> {afterCount}");
+                }
             }
 
             return diffs;

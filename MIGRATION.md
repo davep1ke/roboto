@@ -1031,6 +1031,32 @@ blanket clear and confirmed the new test failed (`/xyzzy_settings`' menu never s
 **Verified**: build clean; `dotnet test` green across repeated runs (84/84, up from 83). Not yet
 re-verified live against `robotolive` - needs the fix to actually ship there first.
 
+### `chat_mangler_bot` import, and a second false-positive class in `ImportReport.Diff`
+
+Ran the same dry-run -> real-import sequence against `data/chat_mangler_bot.xml` (a much smaller,
+fresher export than `robotolive.xml` - 1 chat, no xyzzy catalog/games, 2 birthdays, 0 quotes). Surfaced
+a second, structurally identical false positive to the stat-types-with-no-data one: the real import
+reported `Chats with mod_steam_chat_data: 0 -> 1` and `Chats with mod_xyzzy_chatdata: 0 -> 1` - this
+one chat had never played xyzzy or used Steam tracking, so it had no data for either module in the
+source XML, but `chat.initPlugins()` (see `settings.load()`'s own comment above the `RemoveAll`/`Add`
+fix from the earlier phase 8 bugs) correctly stub-fills every registered module for every chat on
+reload - expected behavior, not data loss.
+
+**Fixed properly this time** rather than patched around per-import: `ImportReport.Diff`'s per-module
+"chats with X" check now only flags a *drop* (a chat that really had a module's data in the source
+coming back without it), never a *gain* (a chat correctly picking up a fresh stub for a module it
+never touched) - the latter will legitimately happen on every real import for any module some chat
+never used, so treating it as a mismatch would cry wolf on essentially every real import from now on.
+2 new tests: a gain producing no diff, a genuine drop still being caught.
+
+**Sanity-checked by breaking something**: reverted the gain/drop distinction back to a plain
+inequality check and confirmed `ChatGainingAStubForAModuleItNeverTouchedIsNotAMismatch` failed with
+exactly the mismatch shape seen live, then reverted.
+
+**Verified**: build clean; `dotnet test` green across repeated runs (86/86, up from 84). Real import
+against `data/chat_mangler_bot.xml` now reports "Counts match" cleanly. `data/chat_mangler_bot/`
+(`roboto.db` + a blank-token `bot.env`) is the result, same as `robotolive`'s.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
