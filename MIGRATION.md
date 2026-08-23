@@ -937,6 +937,20 @@ was created with a blank `TelegramToken` (`InstanceBootstrapper`'s normal first-
 that in with a **test** bot token, never production, is the operator's explicit next step, not
 something this tool does automatically.
 
+### `.github/workflows/docker-publish.yml` - retargeted from the abandoned branch
+
+This branch had no GitHub Actions workflow at all - only `rewrite/dotnet-docker-port` does, scoped
+to `on: push: branches: [rewrite/dotnet-docker-port]`, so pushing *this* branch was confirmed to
+trigger nothing (workflow triggers evaluate using the workflow file as it exists in the pushed ref,
+and this branch had none). Retargeted the abandoned branch's own `docker-publish.yml` at this
+branch's real layout (`Roboto/Roboto.csproj`, not `src/Roboto.Bot/`) - same GHCR destination, same
+`latest` + short-SHA tagging, same manual `workflow_dispatch` escape hatch. Flagged directly to the
+user: once this is pushed, GHCR's `latest` tag comes from pushes to *this* branch instead of the
+abandoned one - anything pulling `latest` (a TrueNAS app set to auto-update, for instance) picks up
+this branch's build from then on. Pushing itself has to happen from the user's own machine - this
+sandboxed session has no GitHub credentials (checked SSH keys, env vars, `.netrc`, git credential
+helpers, `gh` CLI - none present).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

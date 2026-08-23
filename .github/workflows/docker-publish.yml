@@ -1,0 +1,68 @@
+name: Build and publish Docker image
+
+# Retargeted from rewrite/dotnet-docker-port's own docker-publish.yml (same idea, same GHCR
+# destination) at this branch's actual layout - Roboto/Roboto.csproj, not src/Roboto.Bot/. Builds
+# this Dockerfile and publishes it to GitHub Container Registry (ghcr.io) so it can be pulled
+# straight into a TrueNAS app - no separate registry/account to set up, GITHUB_TOKEN is enough to
+# push under this repo's own package namespace (see `permissions` below). Manual dispatch is
+# included so a rebuild can be triggered on demand without an empty commit.
+#
+# NB: this tags the image `latest` unconditionally on every push here, same as the abandoned
+# branch's own workflow did for itself - once this lands, `latest` on GHCR comes from pushes to
+# *this* branch instead, not rewrite/dotnet-docker-port. Anything pulling `latest` (e.g. a TrueNAS
+# app set to auto-update) picks up this branch's build from then on.
+on:
+  push:
+    branches:
+      - rewrite/legacy-structure-port
+    paths:
+      - "Roboto/**"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/docker-publish.yml"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
