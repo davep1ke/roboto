@@ -194,13 +194,28 @@ flagged to confirm once phase 4's scheduler is running and actually driving it r
 **`Core/BackgroundScheduler.cs`**: a genuine dedicated `Thread`, not a timer embedded in the message
 loop - calls `Plugins.backgroundProcessing(false)` every 60s (matching `mod_xyzzy`'s own already-
 declared `backgroundMins=1`), started from `Roboto.cs`'s `startBackground()` right before
-`Messaging.processUpdates()`. This is genuinely new behavior, not a faithful port of anything: tracing
-`Roboto.cs`/`Core/Plugins.cs`/`Core/Messaging.cs` confirmed `Plugins.backgroundProcessing()` was only
-ever invoked once, after the message loop had already exited, or manually via `/background` - legacy
-never actually ran this live on a timer in any version checked. The batching caps in
-`mod_xyzzy_coredata` (5 full-checks + 50 mini-checks per pass) are kept exactly as legacy had them, not
-simplified now that a live timer exists - confirmed still load-bearing (a real background pass
-genuinely takes measurable time even across a small number of games).
+`Messaging.processUpdates()`.
+
+**Correction (found later, prompted by the user noticing real production log volume looked higher
+than they remembered)**: the original phase-4 research here concluded legacy never ran this live on
+a timer *in any version checked* - true for every commit from `a7e2f79` (2020-05-16) onward, but that
+research didn't trace back far enough to catch that this was itself a regression, not the original
+design. Before `a7e2f79` (confirmed present as late as `e8ca7d2`, 2020-04-14), `Settings.
+backgroundProcessing(false)` was called at the end of *every* iteration of the main message loop -
+`a7e2f79`'s own diff shows the exact moment it moved from inside `while (!endLoop)` to after it,
+during a plugin-system refactor whose commit message doesn't mention background processing at all
+(an accidental casualty, not a deliberate redesign). Since `getUpdates` long-polls with a 60s timeout
+(`waitDuration`, still in `settings.cs` today), that loop naturally cycled about once every 60s in a
+quiet chat - and every module's own `backgroundMins` throttle (`mod_xyzzy`'s own comment: `backgroundMins
+= 1; //every 1 min, check the latest 20 chats`) only makes sense against a live cadence roughly that
+frequent. So this scheduler isn't new behavior after all - it's restoring a ~6-year-old regression to
+close to its original cadence, coincidentally landing on almost exactly the same 60s figure
+independently (matched to `mod_xyzzy`'s declared throttle, not to this history - confirmed correct
+by accident, not by tracing it correctly the first time).
+
+The batching caps in `mod_xyzzy_coredata` (5 full-checks + 50 mini-checks per pass) are kept exactly
+as legacy had them, not simplified now that a live timer exists - confirmed still load-bearing (a
+real background pass genuinely takes measurable time even across a small number of games).
 
 **`Core/ChatKeyedLock.cs`**: per-key (chat/user ID) mutual exclusion, needed because a second thread
 now genuinely runs concurrently with live message dispatch for the first time in this codebase's
