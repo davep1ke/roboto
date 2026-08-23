@@ -1298,6 +1298,24 @@ works.
 **Verified**: build clean; `dotnet test` green across repeated runs (96/96, up from 95 net of the
 test consolidation - 5 old tests -> 4 new ones, minus one deleted outright, plus this one).
 
+### `chat_against_humanity_bot` import - the real production-scale case
+
+Third and final real import (`robotolive`, `chat_mangler_bot`, now this one). Confirmed real
+production scale, matching what MIGRATION.md's own phase 3 notes originally flagged as the concern
+behind splitting the xyzzy catalog into real tables: 1,065 chats, 62,847 questions / 205,674 answers /
+1,069 packs, 396 expected replies, 923 players in currently active games. Source file itself was
+refreshed mid-session (85MB, dated today - not the earlier stale 2021/120MB copy), so this is a
+genuinely current export, not historical.
+
+Dry run and real import both clean on the first attempt - no new bugs surfaced (the two real
+persistence bugs from the `robotolive` import, and the `ImportReport.Diff` false-positive from
+`chat_mangler_bot`, were already fixed by this point and held up at 20x the chat count and 15x the
+card count). Whole real import (parse -> save -> reload -> verify) completed in ~23 seconds.
+`data/chat_against_humanity_bot/` (`roboto.db`, ~72MB; `bot.env`, blank token) is the result.
+
+**Verified**: "Counts match" - zero mismatches on a dataset over an order of magnitude larger than
+either prior import.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
