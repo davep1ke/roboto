@@ -194,10 +194,11 @@ live-pointed token, we risk sending bot messages into other people's in-progress
   `TestHarness`/`FakeTelegramBotClient` (adapted from the abandoned rewrite branch's own harness,
   confirmed dispatch-mechanism-agnostic). Tests can't run in parallel with each other - see
   `tests/Roboto.Tests/AssemblyInfo.cs`'s own comment for why (shared static `Roboto.*` state).
-- `.github/workflows/docker-publish.yml` builds and publishes a Docker image to GHCR - **currently
-  still triggers only on pushes to `rewrite/legacy-structure-port`**, not `master`, a leftover from
-  before the port was merged. Worth updating (or retargeting) before relying on it to publish from
-  `master` pushes - flag this to the user rather than assuming it's already been handled.
+- `.github/workflows/docker-publish.yml` builds and publishes a Docker image to GHCR, tagged
+  `latest` unconditionally - triggers on pushes to `master` (retargeted 2026-08-24 from
+  `rewrite/legacy-structure-port`, a leftover from before the port was merged). No `dotnet test` runs
+  as part of it - it builds and publishes directly, so a bad push to `master` would publish `latest`
+  regardless. Not currently gated on CI passing, since no CI job runs `dotnet test` yet either.
 - `CLAUDE.md` + `MIGRATION.md` + the plan file are the primary sources of project context; no other
   docs/README exist. The abandoned rewrite branch's own `CLAUDE.md`/`MIGRATION.md`/
   `MIGRATION_HISTORY.md` (on `rewrite/dotnet-docker-port`) describe a different architecture - useful

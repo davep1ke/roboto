@@ -1,20 +1,23 @@
 name: Build and publish Docker image
 
-# Retargeted from rewrite/dotnet-docker-port's own docker-publish.yml (same idea, same GHCR
-# destination) at this branch's actual layout - Roboto/Roboto.csproj, not src/Roboto.Bot/. Builds
-# this Dockerfile and publishes it to GitHub Container Registry (ghcr.io) so it can be pulled
+# Originally retargeted from rewrite/dotnet-docker-port's own docker-publish.yml (same idea, same
+# GHCR destination) at this branch's actual layout - Roboto/Roboto.csproj, not src/Roboto.Bot/.
+# Builds this Dockerfile and publishes it to GitHub Container Registry (ghcr.io) so it can be pulled
 # straight into a TrueNAS app - no separate registry/account to set up, GITHUB_TOKEN is enough to
 # push under this repo's own package namespace (see `permissions` below). Manual dispatch is
 # included so a rebuild can be triggered on demand without an empty commit.
 #
+# Retargeted again 2026-08-24 from rewrite/legacy-structure-port to master, now that that branch's
+# port has been merged into master and is where pushes actually happen - the branch-specific trigger
+# was a leftover from before the merge that would have silently stopped auto-publishing entirely.
+#
 # NB: this tags the image `latest` unconditionally on every push here, same as the abandoned
-# branch's own workflow did for itself - once this lands, `latest` on GHCR comes from pushes to
-# *this* branch instead, not rewrite/dotnet-docker-port. Anything pulling `latest` (e.g. a TrueNAS
-# app set to auto-update) picks up this branch's build from then on.
+# branch's own workflow did for itself - `latest` on GHCR comes from pushes to master. Anything
+# pulling `latest` (e.g. a TrueNAS app set to auto-update) picks up master's build from then on.
 on:
   push:
     branches:
-      - rewrite/legacy-structure-port
+      - master
     paths:
       - "Roboto/**"
       - "Dockerfile"
