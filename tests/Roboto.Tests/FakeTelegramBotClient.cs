@@ -33,10 +33,16 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
     public List<SentMessage> SentMessages { get; } = [];
     public List<SentPhoto> SentPhotos { get; } = [];
 
-    /// <summary>Records every PromoteChatMember call - TelegramAPI's bot self-de-admin (phase 9)
-    /// calls this with every permission left at its default false, the only "demote" mechanism the
-    /// real API has.</summary>
+    /// <summary>Records every *successful* PromoteChatMember call - TelegramAPI's bot self-de-admin
+    /// (phase 9) calls this with every permission left at its default false, the only "demote"
+    /// mechanism the real API has.</summary>
     public List<(long ChatId, long UserId)> PromoteChatMemberCalls { get; } = [];
+
+    /// <summary>Counts every PromoteChatMemberRequest *attempt*, including ones that go on to throw
+    /// (AdminActionBlockedChatIds/BasicGroupChatIds) - unlike PromoteChatMemberCalls above, which
+    /// only records successes. For DeAdminSelf's retry-throttle tests, where what matters is whether
+    /// the API call was attempted at all, not whether it succeeded.</summary>
+    public int PromoteChatMemberAttempts { get; private set; }
 
     /// <summary>Chat ids that should fail to receive a DM, simulating a user who has never opened
     /// a private chat with the bot (real Telegram behaviour when you try to message such a user).</summary>
@@ -52,6 +58,16 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
     /// administrator - for EnsureNotAdminInAnyChat's background-sweep tests. PromoteChatMemberRequest
     /// removes a chat from this set (successfully de-admining, same as real Telegram).</summary>
     public HashSet<long> ChatsWhereBotIsAdmin { get; } = [];
+
+    /// <summary>Chat ids where GetChatMemberRequest should fail as if the chat itself no longer
+    /// exists (bot removed / chat deleted) - the real "chat not found" error found live - for
+    /// EnsureNotAdminInAnyChat's confirmed-gone detection tests.</summary>
+    public HashSet<long> GoneChatIds { get; } = [];
+
+    /// <summary>Chat ids where PromoteChatMemberRequest should fail with CHAT_ADMIN_REQUIRED - the
+    /// real "bot has some admin flag but can't act on it" permanent state found live - for
+    /// DeAdminSelf's retry-throttle tests.</summary>
+    public HashSet<long> AdminActionBlockedChatIds { get; } = [];
 
     public bool LocalBotServer => false;
     public long BotId => 999;
@@ -113,6 +129,11 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
             case PromoteChatMemberRequest promote:
                 var promoteChatId = promote.ChatId.Identifier
                     ?? throw new InvalidOperationException("FakeTelegramBotClient only supports numeric chat ids");
+                PromoteChatMemberAttempts++;
+                if (AdminActionBlockedChatIds.Contains(promoteChatId))
+                {
+                    throw new ApiRequestException("Bad Request: CHAT_ADMIN_REQUIRED", 400);
+                }
                 if (BasicGroupChatIds.Contains(promoteChatId))
                 {
                     throw new ApiRequestException("Bad Request: method is available for supergroup and channel chats only", 400);
@@ -124,6 +145,10 @@ public sealed class FakeTelegramBotClient : ITelegramBotClient
             case GetChatMemberRequest getMember:
                 var getMemberChatId = getMember.ChatId.Identifier
                     ?? throw new InvalidOperationException("FakeTelegramBotClient only supports numeric chat ids");
+                if (GoneChatIds.Contains(getMemberChatId))
+                {
+                    throw new ApiRequestException("Bad Request: chat not found", 400);
+                }
                 ChatMember member = ChatsWhereBotIsAdmin.Contains(getMemberChatId)
                     ? new ChatMemberAdministrator { User = new User { Id = getMember.UserId, IsBot = true } }
                     : new ChatMemberMember { User = new User { Id = getMember.UserId, IsBot = true } };

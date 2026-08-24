@@ -25,10 +25,21 @@ namespace RobotoChatBot
             // lock only needs to cover the two things that actually do (the initial snapshot, and
             // each Remove) rather than this whole potentially-long dormant-chat sweep, which would
             // otherwise block live message dispatch for its entire duration.
+            //
+            // Also picks up any chat TelegramAPI.EnsureNotAdminInAnyChat has confirmed is gone
+            // (chat not found / bot kicked), regardless of lastupdate age - found live (2026-08-24,
+            // see MIGRATION.md): a confirmed-unreachable chat still had to wait out the full
+            // purgeInactiveChatsAfterXDays window otherwise, getting needlessly re-hit by every
+            // background check in the meantime. Still goes through the same tryPurgeData() veto
+            // below as any other dormant candidate - this only removes the age floor for a chat
+            // already proven unreachable, it doesn't force a purge past a plugin's own objection.
             List<chat> dormant;
             using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                dormant = Roboto.Settings.chatData.Where(x => x.lastupdate < DateTime.Now.Subtract(new TimeSpan(Roboto.Settings.purgeInactiveChatsAfterXDays, 0, 0, 0))).ToList();
+                dormant = Roboto.Settings.chatData.Where(x =>
+                    x.lastupdate < DateTime.Now.Subtract(new TimeSpan(Roboto.Settings.purgeInactiveChatsAfterXDays, 0, 0, 0))
+                    || x.getPluginData<mod_standard_chatdata>()?.confirmedGone == true
+                ).ToList();
             }
 
             logging.longOp lo_s = new logging.longOp("Dormant Chat Check", dormant.Count);

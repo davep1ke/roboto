@@ -225,6 +225,106 @@ public class XyzzyCarriedForwardDeltasTests
     }
 
     [Fact]
+    public void BackgroundSweepBatchesInsteadOfCheckingEveryChatInOnePass()
+    {
+        // Real live bug: unbatched, one blocking GetChatMember call per *every* known chat stalled
+        // the entire single-threaded background scheduler for 5+ minutes on a 1000+-chat bot,
+        // starving everything else behind it (found via chat_against_humanity_bot's own logs,
+        // 2026-08-24 - see MIGRATION.md). Shrinks the batch size to make this checkable without a
+        // 100-chat test.
+        using var bot = new TestHarness();
+        var standardCore = Plugins.plugins.OfType<mod_standard>().Single();
+        ((mod_standard_data)standardCore.getPluginData()).adminSweepBatchSize = 2;
+
+        long[] chatIds = [-801, -802, -803, -804];
+        foreach (long id in chatIds) { bot.SendGroupMessage(id, Alice, "hello", "Alice"); }
+
+        TelegramAPI.EnsureNotAdminInAnyChat();
+
+        int checkedCount = chatIds.Count(id => Chats.getChat(id).getPluginData<mod_standard_chatdata>().lastAdminCheckedTime != DateTime.MinValue);
+        Assert.Equal(2, checkedCount);
+
+        // A second pass picks up the two that were skipped first - oldest-checked-first rotation
+        // means every chat still gets covered, just spread across passes instead of all at once.
+        TelegramAPI.EnsureNotAdminInAnyChat();
+        int checkedAfterSecondPass = chatIds.Count(id => Chats.getChat(id).getPluginData<mod_standard_chatdata>().lastAdminCheckedTime != DateTime.MinValue);
+        Assert.Equal(4, checkedAfterSecondPass);
+    }
+
+    [Fact]
+    public void BackgroundSweepMarksAPermanentlyGoneChatAndStopsRetryingIt()
+    {
+        // Real live finding: the same ~276 chats returned "chat not found" on every single one of
+        // 41 sweep passes across a 5.5-hour window - permanently unreachable, retried forever for
+        // zero chance of success (2026-08-24, see MIGRATION.md).
+        using var bot = new TestHarness();
+        var standardCore = Plugins.plugins.OfType<mod_standard>().Single();
+        ((mod_standard_data)standardCore.getPluginData()).adminSweepBatchSize = 1;
+
+        bot.SendGroupMessage(ChatId, Alice, "hello", "Alice");
+        bot.BotClient.GoneChatIds.Add(ChatId);
+
+        TelegramAPI.EnsureNotAdminInAnyChat();
+        Assert.True(Chats.getChat(ChatId).getPluginData<mod_standard_chatdata>().confirmedGone);
+
+        // A confirmed-gone chat is excluded from future batches entirely, not just deprioritised -
+        // with batch size 1 and only this one chat known, a second pass has nothing left to check.
+        DateTime checkedAt = Chats.getChat(ChatId).getPluginData<mod_standard_chatdata>().lastAdminCheckedTime;
+        TelegramAPI.EnsureNotAdminInAnyChat();
+        Assert.Equal(checkedAt, Chats.getChat(ChatId).getPluginData<mod_standard_chatdata>().lastAdminCheckedTime);
+    }
+
+    [Fact]
+    public void ConfirmedGoneChatIsPurgedRegardlessOfHowRecentlyItWasActive()
+    {
+        // Real live gap: a chat TelegramAPI.EnsureNotAdminInAnyChat had already confirmed was
+        // unreachable still had to wait out the full purgeInactiveChatsAfterXDays window (100 days
+        // by default) before Chats.removeDormantChats() would even consider it - needlessly re-hit
+        // by every other background check in the meantime (2026-08-24, see MIGRATION.md). This only
+        // widens *eligibility* for the dormant-candidate check itself - each plugin's own separate
+        // isPurgable() veto (e.g. mod_xyzzy_chatdata's own "not recently active" check) still applies
+        // untouched, so it's satisfied here too rather than masked, to isolate just that one change.
+        using var bot = new TestHarness();
+        bot.SendGroupMessage(ChatId, Alice, "hello", "Alice");
+        chat testChat = Chats.getChat(ChatId);
+        testChat.getPluginData<mod_standard_chatdata>().confirmedGone = true;
+        testChat.lastupdate = DateTime.Now; // active moments ago, not dormant by age at all
+        testChat.getPluginData<mod_xyzzy_chatdata>().statusChangedTime = DateTime.Now.AddDays(-31);
+        // mod_birthday_data.isPurgable() is an unconditional "never" (unrelated pre-existing veto,
+        // separate from anything this change touches) - remove it so the test isolates just the
+        // confirmedGone eligibility change rather than being blocked by that hard veto too.
+        testChat.chatData.RemoveAll(cd => cd is mod_birthday_data);
+
+        Chats.removeDormantChats();
+
+        Assert.Null(Chats.getChat(ChatId));
+    }
+
+    [Fact]
+    public void DeAdminRetryIsThrottledAfterAPermanentFailureButTheOuterSweepStillRechecksStatus()
+    {
+        // Real live finding: 4182 CHAT_ADMIN_REQUIRED + 779 USER_ID_INVALID failures across the same
+        // 5.5-hour window - neither resolves by retrying 5 minutes later, so re-attempting forever
+        // wastes a real API call for nothing (2026-08-24, see MIGRATION.md).
+        using var bot = new TestHarness();
+        bot.MarkBotAsAdminIn(ChatId);
+        bot.BotClient.AdminActionBlockedChatIds.Add(ChatId);
+
+        TelegramAPI.EnsureNotAdminInAnyChat();
+        Assert.Equal(1, bot.BotClient.PromoteChatMemberAttempts);
+        mod_standard_chatdata chatData = Chats.getChat(ChatId).getPluginData<mod_standard_chatdata>();
+        Assert.NotEqual(DateTime.MinValue, chatData.lastFailedDeAdminAttemptDateTime);
+
+        // Still admin (the fake never actually strips it, matching CHAT_ADMIN_REQUIRED failing every
+        // time) - a second pass shortly after should skip the PromoteChatMember attempt entirely,
+        // not just avoid re-logging it. The outer sweep's own GetChatMember check still runs
+        // regardless, so a genuine change (someone else fixes it, or removes the bot) is still
+        // caught - only this specific doomed-to-fail call is skipped.
+        TelegramAPI.EnsureNotAdminInAnyChat();
+        Assert.Equal(1, bot.BotClient.PromoteChatMemberAttempts);
+    }
+
+    [Fact]
     public void AddBotsLetsASoloStarterReachThreePlayersAndPlayARound()
     {
         using var bot = new TestHarness();

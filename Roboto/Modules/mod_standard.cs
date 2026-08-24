@@ -17,6 +17,14 @@ namespace RobotoChatBot.Modules
         //save - once a day is plenty for a 30-day retention window, and avoids a DELETE query on
         //every single background pass once the real scheduler (a much shorter interval) exists.
         public DateTime lastLogPurgeDateTime = DateTime.MinValue;
+
+        /// <summary>TelegramAPI.EnsureNotAdminInAnyChat's per-pass cap - found live (2026-08-24, see
+        /// MIGRATION.md) doing one blocking GetChatMember call per *every* known chat, unbatched,
+        /// stalled the entire single-threaded background scheduler for 5+ minutes every time it ran
+        /// on a bot with 1000+ chats - everything else (xyzzy's own timeout/reminder checks
+        /// included) backed up behind it. Rotates through the oldest-checked-first chats instead,
+        /// same batching philosophy mod_xyzzy's own background pass already uses.</summary>
+        public int adminSweepBatchSize = 100;
     }
 
     [XmlType("mod_standard_chatdata")]
@@ -36,6 +44,30 @@ namespace RobotoChatBot.Modules
         /// or a constant nag - user's explicit call. DateTime.MinValue (never warned) always
         /// triggers immediately, same as this project's other lastXDateTime throttles.</summary>
         public DateTime lastBasicGroupAdminWarningDateTime = DateTime.MinValue;
+
+        /// <summary>Rotation cursor for EnsureNotAdminInAnyChat's batching (see adminSweepBatchSize's
+        /// own comment) - each pass takes the oldest-checked-first chats, so every chat still gets
+        /// covered eventually rather than the same first N always winning.</summary>
+        public DateTime lastAdminCheckedTime = DateTime.MinValue;
+
+        /// <summary>Set once EnsureNotAdminInAnyChat gets a definitive "this chat is gone" signal
+        /// (chat not found / bot was kicked - not a transient error) - found live (2026-08-24):
+        /// ~26% of chat_against_humanity_bot's whole chat list returned "chat not found" on *every*
+        /// sweep pass, forever, since Chats.removeDormantChats() only purges by inactivity age (100
+        /// days default) with no way to know a chat is confirmedly unreachable sooner. Makes the
+        /// chat immediately eligible for the next dormant-chat pass regardless of age - doesn't
+        /// bypass each plugin's own tryPurgeData() veto, just removes the "wait up to 100 days"
+        /// floor for a chat already proven gone.</summary>
+        public bool confirmedGone = false;
+
+        /// <summary>Throttles re-attempting TelegramAPI.DeAdminSelf's actual PromoteChatMember call
+        /// (not just re-logging, unlike lastBasicGroupAdminWarningDateTime above) after a
+        /// CHAT_ADMIN_REQUIRED/USER_ID_INVALID failure - found live (2026-08-24): both are permanent
+        /// states that don't resolve by retrying 5 minutes later (someone else needs to actually fix
+        /// the chat's admin config), so retrying every pass forever wastes a real API call for
+        /// nothing. The outer sweep still re-checks admin status every pass regardless - this only
+        /// skips the de-admin attempt itself once we already know it'll fail the same way.</summary>
+        public DateTime lastFailedDeAdminAttemptDateTime = DateTime.MinValue;
 
         [XmlIgnore]
         public TimeSpan quietHoursStartTime

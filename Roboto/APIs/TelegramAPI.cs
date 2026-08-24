@@ -241,6 +241,19 @@ namespace RobotoChatBot
         /// instead) - not duplicated per caller.</summary>
         private static void DeAdminSelf(long chatId, string chatTitle)
         {
+            mod_standard_chatdata chatData = Chats.getChat(chatId)?.getPluginData<mod_standard_chatdata>();
+
+            // CHAT_ADMIN_REQUIRED/USER_ID_INVALID (caught below) are permanent states that don't
+            // resolve by retrying 5 minutes later - see lastFailedDeAdminAttemptDateTime's own
+            // comment. Skips the actual PromoteChatMember attempt itself, not just the log, once
+            // we've already seen one of these from this chat this week - the outer sweep still
+            // re-checks admin status every pass regardless, so a genuine change (someone else fixes
+            // the chat, or removes the bot) is still caught, just not by hammering this specific call.
+            if (chatData != null && chatData.lastFailedDeAdminAttemptDateTime.AddDays(7) > DateTime.Now)
+            {
+                return;
+            }
+
             try
             {
                 Client.PromoteChatMember(chatId, BotId).GetAwaiter().GetResult();
@@ -254,7 +267,6 @@ namespace RobotoChatBot
                 // every 5 minutes forever, as long as the bot stays admin in this chat - confirmed
                 // live. Throttled to once a week - a gentle periodic reminder (user's explicit
                 // call), not a one-time warning that's easy to miss, and not a constant nag either.
-                mod_standard_chatdata chatData = Chats.getChat(chatId)?.getPluginData<mod_standard_chatdata>();
                 if (chatData != null && chatData.lastBasicGroupAdminWarningDateTime.AddDays(7) > DateTime.Now)
                 {
                     Roboto.log.log("Still admin in " + chatId + " (" + chatTitle + ") - a basic (non-super) group, warned within the last week already, not re-sending.", logging.loglevel.low);
@@ -269,35 +281,90 @@ namespace RobotoChatBot
                 }
                 catch (Exception ex2) { Roboto.log.log("Failed to send basic-group admin explanation to " + chatId + ": " + ex2.Message, logging.loglevel.high); }
             }
+            catch (ApiRequestException ex) when (ex.Message.Contains("CHAT_ADMIN_REQUIRED", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("USER_ID_INVALID", StringComparison.OrdinalIgnoreCase))
+            {
+                // Found live (2026-08-24, see MIGRATION.md): 4182+779 of these across one 5.5-hour
+                // window on chat_against_humanity_bot alone, retried every single pass forever since
+                // neither resolves on its own - the bot has some admin flag it can't act on
+                // (CHAT_ADMIN_REQUIRED) or Telegram no longer recognizes the bot's own user ID in
+                // this chat context (USER_ID_INVALID). Someone else has to actually fix the chat's
+                // config; retrying accomplishes nothing.
+                Roboto.log.log("Failed to de-admin self in " + chatId + " (" + chatTitle + "): " + ex.Message + " - won't resolve on retry, not re-attempting for a week.", logging.loglevel.high);
+                if (chatData != null) { chatData.lastFailedDeAdminAttemptDateTime = DateTime.Now; }
+            }
             catch (Exception ex)
             {
                 Roboto.log.log("Failed to de-admin self in " + chatId + ": " + ex.Message, logging.loglevel.high);
             }
         }
 
-        /// <summary>Safety-net sweep for mod_standard's backgroundProcessing() - checks every known
-        /// chat's current membership status directly, rather than relying solely on the reactive
+        /// <summary>Safety-net sweep for mod_standard's backgroundProcessing() - checks known chats'
+        /// current membership status directly, rather than relying solely on the reactive
         /// MyChatMember event below (kept, not replaced - added alongside it per explicit request,
-        /// in case a promotion's event was ever missed, e.g. a restart racing it). One GetChatMember
-        /// call per known chat per pass - accepted cost of a real live check rather than trusting an
-        /// event stream alone.</summary>
+        /// in case a promotion's event was ever missed, e.g. a restart racing it).
+        ///
+        /// Batched to mod_standard_data.adminSweepBatchSize chats per pass, oldest-checked-first
+        /// (mod_standard_chatdata.lastAdminCheckedTime) - found live (2026-08-24, see MIGRATION.md):
+        /// unbatched, one blocking GetChatMember call per *every* known chat stalled the entire
+        /// single-threaded background scheduler for 5+ minutes every pass on a 1000+-chat bot,
+        /// backing up everything else behind it (mod_xyzzy's own timeout/reminder checks included).
+        /// Same batching philosophy mod_xyzzy's own background pass already uses. A chat confirmed
+        /// gone (see confirmedGone's own comment) is skipped entirely rather than wasting a batch
+        /// slot re-confirming what's already known.</summary>
         public static void EnsureNotAdminInAnyChat()
         {
-            foreach (chat c in Roboto.Settings.chatData.ToList())
+            int batchSize = Plugins.getPluginData<mod_standard_data>()?.adminSweepBatchSize ?? 100;
+
+            // Snapshot-then-release, not held for the whole pass - same convention as mod_xyzzy's own
+            // background pass (its own comment explains why: the live message thread can add a new
+            // chat to this list at any time, and holding the lock for the whole sweep would block it).
+            List<chat> chatsSnapshot;
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
-                try
+                chatsSnapshot = Roboto.Settings.chatData.ToList();
+            }
+
+            List<chat> batch = chatsSnapshot
+                .Where(c => c.getPluginData<mod_standard_chatdata>()?.confirmedGone != true)
+                .OrderBy(c => c.getPluginData<mod_standard_chatdata>()?.lastAdminCheckedTime ?? DateTime.MinValue)
+                .Take(batchSize)
+                .ToList();
+
+            foreach (chat c in batch)
+            {
+                using (ChatKeyedLock.Acquire(c.chatID))
                 {
-                    ChatMember member = Client.GetChatMember(c.chatID, BotId).GetAwaiter().GetResult();
-                    if (member is ChatMemberAdministrator)
+                    mod_standard_chatdata chatData = c.getPluginData<mod_standard_chatdata>();
+                    if (chatData != null) { chatData.lastAdminCheckedTime = DateTime.Now; }
+
+                    try
                     {
-                        DeAdminSelf(c.chatID, c.chatTitle);
+                        ChatMember member = Client.GetChatMember(c.chatID, BotId).GetAwaiter().GetResult();
+                        if (member is ChatMemberAdministrator)
+                        {
+                            DeAdminSelf(c.chatID, c.chatTitle);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // "chat not found"/kicked are definitive - Telegram is telling us this chat
+                        // can never be reached again, not a transient failure. Anything else (a
+                        // timeout, a rate limit) stays unflagged, so a genuinely temporary blip
+                        // doesn't wrongly mark a live chat as gone.
+                        if (chatData != null && IndicatesChatIsPermanentlyGone(ex))
+                        {
+                            chatData.confirmedGone = true;
+                        }
+                        Roboto.log.log("Couldn't check own admin status for chat " + c.chatID + ": " + ex.Message, logging.loglevel.low);
                     }
                 }
-                catch (Exception ex)
-                {
-                    Roboto.log.log("Couldn't check own admin status for chat " + c.chatID + ": " + ex.Message, logging.loglevel.low);
-                }
             }
+        }
+
+        private static bool IndicatesChatIsPermanentlyGone(Exception ex)
+        {
+            return ex.Message.Contains("chat not found", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("kicked", StringComparison.OrdinalIgnoreCase);
         }
 
         public static void DispatchUpdate(Update update)

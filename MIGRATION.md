@@ -1480,6 +1480,66 @@ creates a timestamped copy, retention trims down to the most recent 10).
 tests + this incident's regression test). Real end-to-end recovery verification as described above,
 against a real copy of `robotolive`'s actual production data.
 
+### Background-processing overload found on `chat_against_humanity_bot` (real production logs)
+
+User flagged, from real 5.5-hour production logs (`chat_against_humanity_bot`, 1000+ chats): "125
+quick xyzzy checks a minute" (expected - `mod_xyzzy`'s own background pass is deliberately batched
+and capped, matching legacy) alongside a real, unbatched problem in
+`TelegramAPI.EnsureNotAdminInAnyChat()` (`mod_standard`'s admin-self-check sweep, `backgroundMins=5`).
+
+Grepping the real logs confirmed three concrete, quantified issues:
+
+1. **No batching at all.** One blocking `GetChatMember` call per *every* known chat (~1065),
+   sequential, every single pass - unlike `mod_xyzzy`'s own background pass, which has always been
+   capped (5 full + 100ish mini per tick). Timing proved the damage: `mod_xyzzy`'s tick normally
+   lands every ~70s; every time the admin sweep fired, the next tick didn't land for 5+ minutes -
+   and since the sweep's own 5-minute throttle only re-arms once it *finishes* (~5 min to run), passes
+   were landing almost back-to-back, eating the large majority of the scheduler's actual time.
+2. **26% of the whole chat list was permanently dead, retried forever.** The same 276 distinct chat
+   IDs returned `chat not found` on *all 41* sweep passes observed - zero chance of ever succeeding,
+   since `Chats.removeDormantChats()` only purges by inactivity age (100 days default) with no path
+   for "confirmed unreachable" to short-circuit that wait.
+3. **4,182 `CHAT_ADMIN_REQUIRED` + 779 `USER_ID_INVALID`** de-admin-self failures across the same
+   window - both permanent until someone else fixes the chat's config, retried (and failing) every
+   pass regardless.
+
+**Fixed all three**, matching the batching philosophy `mod_xyzzy`'s own background pass already
+established:
+
+- `EnsureNotAdminInAnyChat()` now takes `mod_standard_data.adminSweepBatchSize` (default 100) chats
+  per pass, oldest-checked-first (`mod_standard_chatdata.lastAdminCheckedTime`) - rotates through the
+  full list over several passes instead of blocking on all of them at once. Snapshot-then-release +
+  per-chat `ChatKeyedLock`, same convention as `mod_xyzzy`'s own pass (this method didn't lock
+  per-chat at all before - a pre-existing gap, closed as part of the same rewrite rather than a
+  separate one, since the new per-chat state being added needed it anyway).
+- New `mod_standard_chatdata.confirmedGone`, set when the sweep gets a definitive "gone" signal
+  (`chat not found` / kicked specifically, not transient errors) - `Chats.removeDormantChats()`'s
+  candidate-selection now includes these regardless of `lastupdate` age. Doesn't bypass each
+  plugin's own `isPurgable()` veto, just removes the "wait up to 100 days" floor for a chat already
+  proven unreachable.
+- `DeAdminSelf()` now skips the `PromoteChatMember` attempt itself (not just the log) for a week
+  after a `CHAT_ADMIN_REQUIRED`/`USER_ID_INVALID` failure, via new
+  `lastFailedDeAdminAttemptDateTime` - mirrors the existing `lastBasicGroupAdminWarningDateTime`
+  weekly-throttle pattern. The outer sweep's own `GetChatMember` check still runs every pass
+  regardless, so a genuine change (someone fixes the chat, or removes the bot) is still caught -
+  only the specific doomed-to-fail call is skipped.
+
+New tests: `BackgroundSweepBatchesInsteadOfCheckingEveryChatInOnePass`,
+`BackgroundSweepMarksAPermanentlyGoneChatAndStopsRetryingIt`,
+`ConfirmedGoneChatIsPurgedRegardlessOfHowRecentlyItWasActive`,
+`DeAdminRetryIsThrottledAfterAPermanentFailureButTheOuterSweepStillRechecksStatus`. All three fixes
+sanity-checked individually (temporarily reverted, confirmed the corresponding test fails exactly as
+expected, then reverted back) before landing.
+
+Also fixed in passing: `Modules/mod_standard.cs`'s very first line had become `ausing System;` (a
+stray leading character breaking every `using` after it, `CS1529`) - not something this session
+introduced, found only because it broke the build the moment `mod_standard_chatdata` needed new
+`DateTime` fields. Reads as an accidental keystroke while the file was open in the IDE, not a
+logic bug.
+
+**Verified**: build clean; `dotnet test` green across 3 repeated runs. Live verification pending -
+these land in the same deploy as the dummy-pack/DbBackup fix above.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
