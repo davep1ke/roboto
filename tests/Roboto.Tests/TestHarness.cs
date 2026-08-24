@@ -65,6 +65,14 @@ public sealed class TestHarness : IDisposable
         Roboto.Settings = settings.load();
         Roboto.Settings.stats.startup();
         Plugins.startupChecks();
+
+        // startupChecks() just unconditionally seeded the "ZZ Dummy Pack" (mod_xyzzy_coredata's
+        // packs list starts empty for a fresh instance - see its own comment) - clear it back out so
+        // every test gets a clean slate for packs too, the same way each test file's own SeedCards()
+        // helper already clears questions/answers. Tests that seed cards under mod_xyzzy.dummyPackID
+        // still work: with no "CAHBS"-coded pack in test data either, chatdata's lazily-resolved
+        // default pack filter falls back to mod_xyzzy.AllPacksEnabledID, which enables them anyway.
+        ((mod_xyzzy_coredata)Plugins.plugins.OfType<mod_xyzzy>().Single().getPluginData()).packs.Clear();
     }
 
     /// <summary>Runs one full background-processing pass synchronously, bypassing

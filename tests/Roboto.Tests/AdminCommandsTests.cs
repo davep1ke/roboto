@@ -150,12 +150,14 @@ public class AdminCommandsTests
         using var bot = new TestHarness();
         var xyzzy = Plugins.plugins.OfType<mod_xyzzy>().Single();
         var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
-        coreData.questions.Add(new mod_xyzzy_card("Q ___?", mod_xyzzy.primaryPackID, 1));
-        for (int i = 0; i < 40; i++) { coreData.answers.Add(new mod_xyzzy_card("A" + i, mod_xyzzy.primaryPackID)); }
+        coreData.questions.Add(new mod_xyzzy_card("Q ___?", mod_xyzzy.dummyPackID, 1));
+        for (int i = 0; i < 40; i++) { coreData.answers.Add(new mod_xyzzy_card("A" + i, mod_xyzzy.dummyPackID)); }
 
         bot.SendGroupMessage(ChatId, Alice, "/addadmin", "Alice");
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, 3, "/xyzzy_join", "Carol");
         bot.TapButton(Alice, "Start", "Alice");

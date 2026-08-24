@@ -1316,6 +1316,112 @@ card count). Whole real import (parse -> save -> reload -> verify) completed in 
 **Verified**: "Counts match" - zero mismatches on a dataset over an order of magnitude larger than
 either prior import.
 
+### Dummy-pack bootstrap, replacing the hardcoded 7-pack stub list
+
+Found live: `beefy-livetest` (no persisted `xyzzy_packs` rows) crashed on `askQuestion` the moment a
+game actually started - `ArgumentOutOfRangeException` indexing an empty `remainingQuestions`, since
+it had zero cards to deal. Root cause traced to two things working together:
+`mod_xyzzy_coredata.cs` hardcoded 7 empty pack stubs (CAHBS + 4 expansions + 2 more) as a field-
+initializer fallback for a genuinely fresh instance, and `startupChecks()` force-overrode one of them
+(`getPackByCode("CAHBS")`) to a fixed constant GUID every single boot, so other code had a stable
+"the primary pack" identity to reference. That stub list was always a mix of two intents -
+"guarantee a chat can always find/sync the live official decks" and "don't wipe existing data if a
+sync comes back empty" - but CrCast no longer lists those original decks at all, so the "sync it
+live" half is now permanently dead. Worse: on every *real* migrated bot (already carrying genuine
+CAHBS/etc. packs from years of pre-CrCast-deprecation imports), the same stub got recreated fresh
+every boot and immediately collided with the real persisted pack of the same code, triggering
+`startupChecks()`'s pack-code dedup/merge pass (`Found 2 packs for CAHBS - merging...`) on every
+single restart - confirmed via the `critical`-level merge log from `chat_against_humanity_bot`'s own
+first post-migration startup earlier this session.
+
+Replaced the stub list with a small static "ZZ Dummy Pack" - 10 real questions + 10 real answers
+randomly sampled once from `chat_against_humanity_bot`'s real migrated data (then hand-filtered: the
+raw random draw pulled in several non-English cards and one referencing a real mass-shooting
+perpetrator, neither appropriate for a bootstrap pack every fresh instance ships with), bundled as
+plain C# data in `Modules/ModuleStorage/mod_xyzzy_dummy_pack_seed.cs` - no new asset-loading
+mechanism needed for 20 short strings. Seeded only when `mod_xyzzy_coredata.packs.Count == 0`
+(`seedDummyPack()`), auto-dropped again once more than 5 real packs exist
+(`dropDummyPackIfNoLongerNeeded()`, startup-only check, same cadence as the dedup pass).
+`mod_xyzzy.primaryPackID` renamed to `dummyPackID` - its role shifted entirely from "the official
+pack's stable identity" (no longer needed, see below) to "the dummy pack's stable identity", used
+only to find-and-drop it later.
+
+`mod_xyzzy_chatdata.packFilterIDs`'s default (`new List<Guid> { primaryPackID }`) couldn't just
+follow the same rename - it now needs to consult the pack catalog, and its field initializer runs
+inside `chat.initPlugins()`, which fires for *every* chat reconstruction during `settings.load()`'s
+bulk reload at startup, before `Roboto.Settings` is assigned (the same class of hazard the earlier
+`RemoveAll`-before-`Add` chat-stub fix already had to work around). Resolved lazily instead
+(`ensureDefaultPackFilter()`, called from `packEnabled()` and, belt-and-suspenders, from
+`addQuestions()`/`addAllAnswers()` directly): prefers "CAHBS" by pack code if a real one exists (a
+real bot's own persisted pack, stable from years of prior saves - nothing needs to force its GUID
+anymore), else falls back to the existing `AllPacksEnabledID` (`Guid.Empty`) sentinel - which also
+naturally covers just the seeded dummy pack on a fresh instance, and continues covering whatever's
+added later with no cleanup needed once the dummy pack is dropped. Added a `TODO` for a real
+admin-facing way to change this default later; none exists yet. Caching the resolved default in
+`packFilterIDs` needed a second guard, `packFilterResolved` (a real persisted bool, not just an
+`IsEmpty` check) - a player deliberately tapping "None" (disable every pack) also leaves the list
+empty, and without the separate flag `ensureDefaultPackFilter()` would silently refill it the very
+next time anything called `packEnabled()` (e.g. redisplaying the pack list right after "None"
+itself) - caught by two failing tests (`ChangePacksNoneThenAllTogglesEveryPack`,
+`TogglingAnIndividualPackFlipsItsFilterState`) before it could reach anything live.
+
+Also fixed the actual crash directly, regardless of the dummy-pack change (which only makes it far
+less likely to trigger, not impossible - e.g. every pack manually disabled): `askQuestion` now checks
+`remainingQuestions.Count == 0` after its refill attempt and sends a clear "no cards available"
+message instead of indexing into an empty list. Sanity-checked by temporarily reverting the guard -
+confirmed the *exact* live failure mode from tonight reproduces (not a raw crash under the test
+harness, since `Messaging.parseExpectedReplies`'s own outer catch swallows it, matching production -
+the chat gets stuck in `Invites` with no explanation, silently), then reverted back.
+
+Test impact: `TestHarness` now clears `mod_xyzzy_coredata.packs` after `startupChecks()` runs, since
+that method unconditionally seeds the dummy pack the moment it sees zero packs (true for every test
+too) - keeps every test's own `SeedCards()`-style helper as the sole source of truth for card data,
+same as it already was for questions/answers. None of the 7 pre-existing test files that seed cards
+under `mod_xyzzy.dummyPackID` needed changes beyond the mechanical rename: with no "CAHBS"-coded pack
+in test data, `ensureDefaultPackFilter()` falls back to `AllPacksEnabledID`, which enables their
+tagged cards exactly as the old hardcoded default did. New `XyzzyDummyPackTests.cs` covers the seed/
+auto-drop lifecycle directly and the `askQuestion` crash guard end-to-end.
+
+**Verified live**: `beefy-livetest`'s pack tables had stale leftover data from earlier tonight
+(before this feature existed - the old 7-pack stub list had already been persisted, and one
+happened to share the new dummy pack's fixed GUID, so it got mistaken for the dummy pack and
+dropped rather than the real seeding path firing). Cleared `xyzzy_packs`/`xyzzy_cards` in that one
+instance's DB (disposable test data, not production) and restarted clean - confirmed
+`seedDummyPack()` firing ("Seeded ZZ Dummy Pack - fresh instance had no packs.", 10 questions/10
+answers loaded), and a real game reaching 3 players (solo starter + 2 bots, one named "Servo") and
+progressing without the crash from earlier.
+
+That same live session surfaced one more real bug: the solo starter leaving via `/xyzzy_leave`
+*during setup* (still `Invites`, never tapped Start) silently reassigned "judge" to a bot and left
+the game stuck forever - no human left who could ever advance it. `removePlayer()` had no
+equivalent of `askQuestion()`'s own "everyone left" safety stop (`players.All(p => p.isBot)`);
+`askQuestion()` only catches this once a round is actually dealt, which a setup-phase leave never
+reaches. Added the same check directly to `removePlayer()`, right after the existing removal/judge-
+reassignment logic - covers `/xyzzy_leave` and kick uniformly, in any status, not just Invites.
+Sanity-checked by temporarily disabling the new check and confirming the new test
+(`SoloStarterLeavingDuringSetupWithOnlyBotsLeftStopsTheGameInstead`) fails with the chat stuck in
+`Invites` exactly as observed live, then re-enabled.
+
+**Verified**: build clean; `dotnet test` green across 3 repeated runs (101/101, up from 96 - 5 new
+tests total for this delta). Both new crash-shaped bugs sanity-checked by reverting their guards and
+confirming the exact live failure mode reproduces, then reverting back.
+
+### "Use Defaults" adds 2 bots automatically instead of asking
+
+Follow-up to the upfront-bots-prompt work above, at the user's explicit request: "Use Defaults" (the
+fast/no-questions-asked setup path) now calls `addBots(2)` directly and goes straight to the clean
+Start/Cancel screen, rather than asking "Do you want to add any bots?" as a separate step. "Configure
+Game" (the advanced path, already walking through several explicit choices) still asks - only the
+fast path changed. All 17 test call sites across 6 files that relied on the old "Use Defaults then
+decline the upfront prompt" shape were updated: most now explicitly clear the 2 auto-added bots via
+the Invites screen's "Add Bots" -> "Remove All Bots" fallback to keep their original human-only-game
+assertions intact; a few that specifically wanted bots (or didn't care about player composition at
+all) were simplified instead, since "Use Defaults" alone now does what they used to need an extra
+tap for.
+
+**Verified**: build clean; `dotnet test` green across 3 repeated runs (101/101 - no new tests needed,
+existing coverage of the bot-adding mechanics and the Invites flow already exercises this path).
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

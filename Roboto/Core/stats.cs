@@ -413,7 +413,7 @@ namespace RobotoChatBot
             plot.Title(Roboto.Settings.botUserName + " statistics - last " + (granularity.TotalHours * graphYAxisCount).ToString("0") + "h");
             plot.XLabel("Hours ago");
             plot.YLabel("Value / " + granularity.TotalMinutes.ToString("0") + " min" + (granularity.TotalMinutes == 1 ? "" : "s"));
-            plot.ShowLegend();
+            plot.ShowLegend(ScottPlot.Alignment.UpperRight);
 
             byte[] bytes = plot.GetImageBytes(1200, 600, ScottPlot.ImageFormat.Png);
             return new MemoryStream(bytes);

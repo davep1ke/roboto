@@ -25,11 +25,11 @@ public class XyzzySettingsTests
         coreData.answers.Clear();
         for (int i = 0; i < questionCount; i++)
         {
-            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.primaryPackID, 1));
+            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.dummyPackID, 1));
         }
         for (int i = 0; i < answerCount; i++)
         {
-            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.primaryPackID));
+            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.dummyPackID));
         }
     }
 
@@ -39,6 +39,8 @@ public class XyzzySettingsTests
         SeedCards();
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
         bot.TapButton(Alice, "Start", "Alice");
@@ -189,10 +191,15 @@ public class XyzzySettingsTests
         var extraPack = new cardcast_pack("Extra Pack", "extra", "desc");
         coreData.packs.Add(extraPack);
         var chatData = ChatData();
-        Assert.False(chatData.packEnabled(extraPack.packID));
-
+        // No "CAHBS"-coded pack exists in test data, so the default pack filter resolves to "every
+        // pack enabled" (mod_xyzzy.AllPacksEnabledID) - including this one, added after that default
+        // was already resolved by StartThreePlayerGame() dealing the first round. Start from "None"
+        // (every pack explicitly disabled) so toggling one pack back on is what's actually verified.
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_settings", "Alice");
         bot.TapButton(Alice, "Change Packs", "Alice");
+        bot.TapButton(Alice, "None", "Alice");
+        Assert.False(chatData.packEnabled(extraPack.packID));
+
         string packButton = bot.LastKeyboardMessageTo(Alice).KeyboardRows!.SelectMany(r => r).Single(b => b.Text.Contains("Extra Pack")).Text;
 
         bot.TapButton(Alice, packButton, "Alice");

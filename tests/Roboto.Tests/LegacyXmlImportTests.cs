@@ -1,6 +1,7 @@
 using System.IO;
 using System.Xml.Serialization;
 using RobotoChatBot;
+using RobotoChatBot.Helpers;
 using RobotoChatBot.Modules;
 using RobotoChatBot.Persistence;
 
@@ -35,8 +36,16 @@ public class LegacyXmlImportTests
         source.botUserName = "RealProdBot";
 
         var xyzzyCore = new mod_xyzzy_coredata();
-        xyzzyCore.questions.Add(new mod_xyzzy_card("Question ___?", mod_xyzzy.primaryPackID, 1));
-        xyzzyCore.answers.Add(new mod_xyzzy_card("An answer", mod_xyzzy.primaryPackID));
+        // A real pack backing the cards below - mod_xyzzy_coredata.packs starts empty now (the old
+        // hardcoded 7-pack stub list is gone), and settings.load()'s xyzzy special case only
+        // restores questions/answers/packs from the store when it finds at least one persisted pack
+        // (settings.cs's own comment on why) - a card with no pack at all isn't realistic production
+        // data anyway.
+        var fixturePack = new cardcast_pack("Fixture Pack", "FIXTURE", "desc");
+        fixturePack.overrideGUID(mod_xyzzy.dummyPackID);
+        xyzzyCore.packs.Add(fixturePack);
+        xyzzyCore.questions.Add(new mod_xyzzy_card("Question ___?", mod_xyzzy.dummyPackID, 1));
+        xyzzyCore.answers.Add(new mod_xyzzy_card("An answer", mod_xyzzy.dummyPackID));
         source.pluginData.Add(xyzzyCore);
 
         var chat = new chat(-900, "Fixture Chat");

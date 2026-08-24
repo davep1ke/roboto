@@ -28,27 +28,16 @@ namespace RobotoChatBot.Modules
         // Persisted via the real xyzzy_cards/xyzzy_packs tables instead of as part of this module's
         // own blob row - see SqliteStateStore's own comment on why (real scale concern: up to
         // 72k/230k cards in the largest real production export seen). settings.load()/save()
-        // populate/write these directly for this one module type; the field initializers below
-        // (especially the 7 default packs) are what a genuinely fresh instance - no rows in
-        // xyzzy_packs yet - starts with, same "field initializer is the fallback default" pattern
-        // every other module's fresh-instance case already relies on.
+        // populate/write these directly for this one module type. A genuinely fresh instance - no
+        // rows in xyzzy_packs yet - starts with these field initializers empty; startupChecks()'s
+        // seedDummyPack() is what gives it something playable (see that method's own comment for
+        // why this replaced a hardcoded 7-pack stub list that used to live here).
         [JsonIgnore]
         public List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
         [JsonIgnore]
         public List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
         [JsonIgnore]
-        //Add packs for the standard CaH packs.
-        public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>()
-        { 
-            new Helpers.cardcast_pack("Cards Against Humanity", "CAHBS", "Cards Against Humanity"),
-            new Helpers.cardcast_pack("Expansion 1 - CAH", "CAHE1", "Expansion 1 - CAH"),
-            new Helpers.cardcast_pack("Expansion 2 - CAH", "CAHE2", "Expansion 2 - CAH"),
-            new Helpers.cardcast_pack("Expansion 3 - CAH", "CAHE3", "Expansion 3 - CAH"),
-            new Helpers.cardcast_pack("Expansion 4 - CAH", "CAHE4", "Expansion 4 - CAH"),
-            new Helpers.cardcast_pack("CAH Fifth Expansion", "EU6CJ", "CAH Fifth Expansion"),
-            new Helpers.cardcast_pack("CAH Sixth Expansion", "PEU3Q", "CAH Sixth Expansion")
-
-        };
+        public List<Helpers.cardcast_pack> packs = new List<Helpers.cardcast_pack>();
 
 
         public mod_xyzzy_card getQuestionCard(string cardUID)
@@ -107,34 +96,63 @@ namespace RobotoChatBot.Modules
             return packs.Where(x => x.packCode == packCode).ToList();
         }
 
+        /// <summary>Bootstraps a genuinely fresh instance (packs.Count == 0) with something
+        /// playable. Used to be a hardcoded 7-pack stub list (CAHBS + expansions) that assumed the
+        /// official CAH decks could always be (re-)synced live from CrCast - no longer true, CrCast
+        /// no longer lists them - and which, on every *real* bot (already carrying genuine CAHBS/etc
+        /// packs from years of pre-deprecation imports), recreated itself fresh every boot and
+        /// immediately collided with the real persisted pack of the same code, triggering the
+        /// pack-code dedup/merge pass below on every single restart. Replaced with a small static
+        /// "ZZ Dummy Pack" (mod_xyzzy_dummy_pack_seed) - real questions/answers, randomly sampled
+        /// once from production data - so a brand-new chat can actually play immediately, dropped
+        /// again by dropDummyPackIfNoLongerNeeded() once real content exists.</summary>
+        private void seedDummyPack()
+        {
+            var dummyPack = new Helpers.cardcast_pack("ZZ Dummy Pack", "ZZDUMMY", "Placeholder pack for a brand-new instance - safe to ignore/disable once real packs are added.");
+            dummyPack.overrideGUID(mod_xyzzy.dummyPackID);
+            dummyPack.packSource = packSource.manual; // excluded from the CrCast-only background sync
+            packs.Add(dummyPack);
+
+            foreach (var (uniqueID, text, nrAnswers) in mod_xyzzy_dummy_pack_seed.Questions)
+            {
+                questions.Add(new mod_xyzzy_card(text, mod_xyzzy.dummyPackID, nrAnswers) { uniqueID = uniqueID });
+            }
+            foreach (var (uniqueID, text) in mod_xyzzy_dummy_pack_seed.Answers)
+            {
+                answers.Add(new mod_xyzzy_card(text, mod_xyzzy.dummyPackID) { uniqueID = uniqueID });
+            }
+            log("Seeded ZZ Dummy Pack - fresh instance had no packs.", logging.loglevel.high);
+        }
+
+        /// <summary>Once real content exists (more than 5 packs besides the dummy one), the dummy
+        /// pack has done its job - drop it. Its cards are cleaned up by the orphan-answer/orphan-
+        /// question passes later in this same startupChecks() run, same as any other removed pack;
+        /// only a chat that explicitly pinned the dummy pack by GUID (rather than relying on the
+        /// "all packs enabled" default) needs its filter cleaned up here directly. Startup-only,
+        /// matching where the pack-dedup pass below already runs - a live instance won't drop it the
+        /// instant a 6th real pack lands mid-session, only on its next restart.</summary>
+        private void dropDummyPackIfNoLongerNeeded()
+        {
+            Helpers.cardcast_pack dummyPack = getPackByGuid(mod_xyzzy.dummyPackID);
+            if (dummyPack == null || packs.Count(p => p.packID != mod_xyzzy.dummyPackID) <= 5) { return; }
+
+            packs.Remove(dummyPack);
+            foreach (chat c in Roboto.Settings.chatData)
+            {
+                mod_xyzzy_chatdata cd = c.getPluginData<mod_xyzzy_chatdata>();
+                cd?.setPackFilter(mod_xyzzy.dummyPackID, mod_xyzzy_chatdata.packAction.remove);
+            }
+            log("Dropped ZZ Dummy Pack - real packs now exist.", logging.loglevel.high);
+        }
+
         public override void startupChecks()
         {
             //start a logging longop
             logging.longOp lo_startup = new logging.longOp("XYZZY - Coredata Startup", 11);
 
-            
-            Helpers.cardcast_pack primaryPack = getPackByCode("CAHBS");
-            primaryPack.packSource = packSource.manual;
-            
-            //check that our primary pack has the correct guid
-            //does it exist? 
-            if (primaryPack != null)
-            {
-                primaryPack.overrideGUID(mod_xyzzy.primaryPackID); //override this one's guid so we can add it by default to new packs. 
-                log("OK - Primary pack exists", logging.loglevel.verbose);
-            }
-            else
-            {
-                log("No copy of the primary CAH pack could be found!", logging.loglevel.critical);
-            }
 
-            //set our default packs to manual (JIC)
-            getPackByCode("CAHE1").packSource = packSource.manual;
-            getPackByCode("CAHE2").packSource = packSource.manual;
-            getPackByCode("CAHE3").packSource = packSource.manual;
-            getPackByCode("CAHE4").packSource = packSource.manual;
-            getPackByCode("EU6CJ").packSource = packSource.manual;
-            getPackByCode("PEU3Q").packSource = packSource.manual;
+            if (packs.Count == 0) { seedDummyPack(); }
+            dropDummyPackIfNoLongerNeeded();
 
             //DATAFIX: take anything that remains thats unknown and assume its an old cardcast ID
             foreach (Helpers.cardcast_pack p in packs)
@@ -301,7 +319,7 @@ namespace RobotoChatBot.Modules
                 log(p.packCode + "\t" + p.lastPickedDate + "\t" + p.totalPicks + "\t" + packFiltersAddedTo + "\t" + activePackFiltersAddedTo + "\t" + hotPackFiltersAddedTo + "\t" + questions.Where(x => x.packID == p.packID).Count() + "\t" + answers.Where(x => x.packID == p.packID).Count() + "\t" +  p.name, logging.loglevel.verbose);
 
                 if (activePackFiltersAddedTo == 0
-                    && p.packID != mod_xyzzy.primaryPackID
+                    && p.packID != mod_xyzzy.dummyPackID
                     && p.lastPickedDate < (DateTime.Now.Subtract(TimeSpan.FromDays(30))))
                 { 
                     log(p.packCode + " is potentially removable", logging.loglevel.verbose);
@@ -349,7 +367,7 @@ namespace RobotoChatBot.Modules
                 }
                 
                 if (activePackFiltersAddedTo == 0
-                    && p.packID != mod_xyzzy.primaryPackID
+                    && p.packID != mod_xyzzy.dummyPackID
                     && p.lastPickedDate < (DateTime.Now.Subtract(TimeSpan.FromDays(packDormantThresholdDays))))
                 {
                     //log(p.packCode + " is potentially removable", logging.loglevel.verbose);
@@ -359,7 +377,7 @@ namespace RobotoChatBot.Modules
             }*/
 
             log(removablePacks.Count().ToString() + " total packs - removing primary CAH pack", logging.loglevel.verbose);
-            removablePacks.RemoveAll(x => x.packID == mod_xyzzy.primaryPackID);//dont remove the primary pack
+            removablePacks.RemoveAll(x => x.packID == mod_xyzzy.dummyPackID);//dont remove the primary pack
             log(removablePacks.Count().ToString() + " packs remain  - removing recently picked", logging.loglevel.verbose);
             removablePacks.RemoveAll(x => x.lastPickedDate > (DateTime.Now.Subtract(TimeSpan.FromDays(packDormantThresholdDays))));//dont remove anything picked in the lasts x days
             log(removablePacks.Count().ToString() + " packs remain - removing active packs", logging.loglevel.verbose);

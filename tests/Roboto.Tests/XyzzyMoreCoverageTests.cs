@@ -27,11 +27,11 @@ public class XyzzyMoreCoverageTests
         coreData.answers.Clear();
         for (int i = 0; i < questionCount; i++)
         {
-            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.primaryPackID, 1));
+            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.dummyPackID, 1));
         }
         for (int i = 0; i < answerCount; i++)
         {
-            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.primaryPackID));
+            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.dummyPackID));
         }
     }
 
@@ -41,6 +41,8 @@ public class XyzzyMoreCoverageTests
         SeedCards();
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
         bot.TapButton(Alice, "Start", "Alice");
@@ -150,6 +152,8 @@ public class XyzzyMoreCoverageTests
         SeedCards();
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
 

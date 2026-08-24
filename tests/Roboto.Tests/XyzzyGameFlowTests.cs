@@ -8,8 +8,11 @@ namespace RobotoTests;
 /// Drives the primary payload (mod_xyzzy) through a full round: start, join, deal, answer, judge.
 /// Legacy's real card catalog only ever gets populated via CardCast/CrCast import (a network call),
 /// so these tests seed mod_xyzzy_coredata.questions/answers directly with synthetic cards under
-/// mod_xyzzy.primaryPackID (the pack chatdata.packFilterIDs defaults to enabling) rather than
-/// exercising the importer - that's a separate concern.
+/// mod_xyzzy.dummyPackID (an arbitrary marker GUID here, not a pack these tests ever register) -
+/// rather than exercising the importer, that's a separate concern. Drawable by default because no
+/// "CAHBS"-coded pack exists in test data, so chatdata.packFilterIDs's lazily-resolved default
+/// falls through to mod_xyzzy.AllPacksEnabledID (see mod_xyzzy_chatdata.ensureDefaultPackFilter) -
+/// TestHarness also clears the coredata's auto-seeded "ZZ Dummy Pack" so it can't interfere.
 /// </summary>
 public class XyzzyGameFlowTests
 {
@@ -26,11 +29,11 @@ public class XyzzyGameFlowTests
         coreData.answers.Clear();
         for (int i = 0; i < questionCount; i++)
         {
-            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.primaryPackID, 1));
+            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.dummyPackID, 1));
         }
         for (int i = 0; i < answerCount; i++)
         {
-            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.primaryPackID));
+            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.dummyPackID));
         }
     }
 
@@ -43,6 +46,8 @@ public class XyzzyGameFlowTests
         // Alice starts the game - goes to a DM asking Use Defaults / Configure Game / Cancel.
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
 
         // Bob and Carol join from the group.
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
@@ -85,6 +90,8 @@ public class XyzzyGameFlowTests
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
 
         bot.TapButton(Alice, "Start", "Alice");
@@ -106,11 +113,13 @@ public class XyzzyGameFlowTests
         var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
         coreData.questions.Clear();
         coreData.answers.Clear();
-        coreData.questions.Add(new mod_xyzzy_card("First: ___. Second: ___.", mod_xyzzy.primaryPackID, 2));
-        for (int i = 0; i < 40; i++) { coreData.answers.Add(new mod_xyzzy_card("Answer " + i, mod_xyzzy.primaryPackID)); }
+        coreData.questions.Add(new mod_xyzzy_card("First: ___. Second: ___.", mod_xyzzy.dummyPackID, 2));
+        for (int i = 0; i < 40; i++) { coreData.answers.Add(new mod_xyzzy_card("Answer " + i, mod_xyzzy.dummyPackID)); }
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
         bot.TapButton(Alice, "Start", "Alice");
@@ -157,11 +166,13 @@ public class XyzzyGameFlowTests
         var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
         coreData.questions.Clear();
         coreData.answers.Clear();
-        coreData.questions.Add(new mod_xyzzy_card("I found_when I was cleaning", mod_xyzzy.primaryPackID, 1));
-        coreData.answers.Add(new mod_xyzzy_card("a spider", mod_xyzzy.primaryPackID));
+        coreData.questions.Add(new mod_xyzzy_card("I found_when I was cleaning", mod_xyzzy.dummyPackID, 1));
+        coreData.answers.Add(new mod_xyzzy_card("a spider", mod_xyzzy.dummyPackID));
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         // Override (legacy's own existing escape hatch) rather than joining a third player - only
         // one non-judge player needed to keep this deterministic.
@@ -184,11 +195,13 @@ public class XyzzyGameFlowTests
         var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
         coreData.questions.Clear();
         coreData.answers.Clear();
-        coreData.questions.Add(new mod_xyzzy_card("I found ___ when I was cleaning", mod_xyzzy.primaryPackID, 1));
-        coreData.answers.Add(new mod_xyzzy_card("a spider", mod_xyzzy.primaryPackID));
+        coreData.questions.Add(new mod_xyzzy_card("I found ___ when I was cleaning", mod_xyzzy.dummyPackID, 1));
+        coreData.answers.Add(new mod_xyzzy_card("a spider", mod_xyzzy.dummyPackID));
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.TapButton(Alice, "Override", "Alice");
 
@@ -216,11 +229,13 @@ public class XyzzyGameFlowTests
         var coreData = (mod_xyzzy_coredata)xyzzy.getPluginData();
         coreData.questions.Clear();
         coreData.answers.Clear();
-        coreData.questions.Add(new mod_xyzzy_card("I like to___.", mod_xyzzy.primaryPackID, 1));
-        coreData.answers.Add(new mod_xyzzy_card("nap", mod_xyzzy.primaryPackID));
+        coreData.questions.Add(new mod_xyzzy_card("I like to___.", mod_xyzzy.dummyPackID, 1));
+        coreData.answers.Add(new mod_xyzzy_card("nap", mod_xyzzy.dummyPackID));
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.TapButton(Alice, "Override", "Alice");
 
@@ -241,6 +256,8 @@ public class XyzzyGameFlowTests
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
 
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");

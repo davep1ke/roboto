@@ -40,7 +40,18 @@ namespace RobotoChatBot.Modules
         [System.Obsolete("usepackFilterIDs")]
         public List<String> packFilter = new List<string> { };// { "Cards Against Humanity" };
 
-        public List<Guid> packFilterIDs = new List<Guid> { mod_xyzzy.primaryPackID }; //add the default CAH pack
+        // Starts empty rather than defaulting to a specific pack here - this field initializer runs
+        // inside chat.initPlugins() (Storage/chat.cs), which fires for every chat reconstruction
+        // during settings.load()'s bulk reload at startup, before Roboto.Settings is assigned, so it
+        // can't safely consult the pack catalog to pick a real default. Resolved lazily instead, the
+        // first time it's actually needed - see ensureDefaultPackFilter().
+        public List<Guid> packFilterIDs = new List<Guid>();
+
+        // Must be a real persisted field (not transient/[JsonIgnore]) - a player deliberately
+        // emptying packFilterIDs via "None" needs to stay empty across restarts too, not just within
+        // the current process, or ensureDefaultPackFilter() would silently refill it the first time
+        // anything calls packEnabled() after the next reload.
+        public bool packFilterResolved = false;
 
         public int enteredQuestionCount = 10;
         public int maxWaitTimeHours = 0;
@@ -175,6 +186,31 @@ namespace RobotoChatBot.Modules
             return added;
         }
 
+        /// <summary>"Remove All Bots" - companion to addBots, offered on the same keyboard
+        /// (askAddBotsCount) in both the Invites setup flow and /xyzzy_settings. Mid-game, bots are
+        /// removed one at a time via the existing removePlayer so judge-reassignment/mid-round
+        /// bookkeeping (and, if it's genuinely warranted, the "not enough players, ending game"
+        /// wrap-up) stay exactly as they already are for any other player removal. Still in Invites
+        /// (setup, no round dealt yet) that same wrap-up would fire as soon as bot removal dropped
+        /// the roster to 2 - reading "not enough players" and ending a game that was never actually
+        /// started - so pre-game this drops the bot entries straight from the roster instead, with no
+        /// round/judge state to preserve anyway.</summary>
+        internal List<string> removeAllBots()
+        {
+            List<mod_xyzzy_player> bots = players.Where(p => p.isBot).ToList();
+            List<string> removed = bots.Select(b => b.name).ToList();
+
+            if (status == xyzzy_Statuses.Invites)
+            {
+                players.RemoveAll(p => p.isBot);
+            }
+            else
+            {
+                foreach (mod_xyzzy_player bot in bots) { removePlayer(bot.playerID); }
+            }
+            return removed;
+        }
+
         internal bool removePlayer(long playerID)
         {
             log("Removing " + playerID.ToString() + ". Currently " + players.Count + " players. Judge ID is pos " + lastPlayerAsked);
@@ -283,7 +319,7 @@ namespace RobotoChatBot.Modules
                     log("Soemthing went really wrong and couldnt find judge to reset", logging.loglevel.critical);
                 }
                 //clear any expected replies for the player we removed
-                //TODO - move to Messaging class. 
+                //TODO - move to Messaging class.
                 List<ExpectedReply> matchedReplies = Messaging.getExpectedReplies(typeof(mod_xyzzy), chatID, existing.playerID);
                 foreach (ExpectedReply exr in matchedReplies)
                 {
@@ -291,6 +327,19 @@ namespace RobotoChatBot.Modules
                     // with the phase-4 background scheduler thread, see ChatKeyedLock's own comment.
                     Messaging.removeReply(exr);
                     log("Removed expectedReply: " + exr.messageData);
+                }
+
+                // Real live bug: found by leaving a solo-plus-bots game during setup (Invites) -
+                // removePlayer had no equivalent of askQuestion()'s own "everyone left" safety stop,
+                // so the last human leaving during setup silently handed "judge" to a bot and left
+                // the game stuck in Invites forever (no human left who could ever tap Start, or
+                // reply to anything - bots can't). askQuestion() only catches this once a round is
+                // actually dealt, which setup-phase removals never reach at all.
+                if (players.Count > 0 && players.All(p => p.isBot))
+                {
+                    Messaging.SendMessage(chatID, "Everyone left - stopping the game.");
+                    wrapUp();
+                    return true;
                 }
 
                 //cant hurt at this stage...
@@ -355,10 +404,22 @@ namespace RobotoChatBot.Modules
                 log("Out of Question Cards, refilling.", logging.loglevel.high);
                 Messaging.SendMessage(chatID, "All questions have been used up, pack has been refilled!");
                 addQuestions();
-                question = localData.getQuestionCard(remainingQuestions[0]); //if this doesnt work, it will bomb out later when it checks for a null card, hopefully
+
+                // Real crash hit live: an empty/fully-filtered-out card pool leaves
+                // remainingQuestions still empty after the refill attempt above - indexing [0]
+                // unconditionally threw ArgumentOutOfRangeException the moment a game tried to
+                // start. Send a clear message and bail instead of dealing a hand that can't happen.
+                if (remainingQuestions.Count == 0)
+                {
+                    log("Still no question cards available after refilling - no enabled pack has any cards.", logging.loglevel.critical);
+                    Messaging.SendMessage(chatID, "No cards are available to deal - check your pack settings with /xyzzy_settings.");
+                    setStatus(xyzzy_Statuses.waitingForNextHand);
+                    return;
+                }
+                question = localData.getQuestionCard(remainingQuestions[0]);
             }
 
-            
+
             //carry on if force is ticked (e.g. commands from chat for /extend and /question)
             //are we in a quiet period? 
             if (! force && mod_standard.isTimeInQuietPeriod(chatID, DateTime.Now))
@@ -932,14 +993,30 @@ namespace RobotoChatBot.Modules
             Messaging.SendQuestion(chatID, m.userID, "Pick a player to toggle the Mess-With flag", true, typeof(mod_xyzzy), "fuckwith", m.userFullName, -1, true, keyboard);
         }
 
-        /// <summary>"Add Bots" (MIGRATION.md phase 9) - reachable from both the Invites setup
-        /// screen and the /xyzzy_settings menu, which need different follow-ups once bots are
-        /// actually added (mod_xyzzy.cs's "AddBotsCount " + returnContext reply handler), so the
-        /// caller's own context ("Invites"/"Settings") rides along in messageData.</summary>
-        public void askAddBotsCount(message m, string returnContext)
+        /// <summary>"Add Bots" (MIGRATION.md phase 9) - reachable from the upfront Invites prompt,
+        /// the Invites setup screen (manual "Add Bots" reply) and the /xyzzy_settings menu, which
+        /// need different follow-ups once bots are actually added (mod_xyzzy.cs's "AddBotsCount " +
+        /// returnContext reply handler), so the caller's own context ("InvitesUpfront"/"Invites"/
+        /// "Settings") rides along in messageData. promptText lets the upfront ask use its own
+        /// wording instead of the generic retry/manual-invocation one.</summary>
+        public void askAddBotsCount(message m, string returnContext, string promptText = "How many bots would you like to add?")
         {
-            var keyboard = TelegramAPI.createKeyboard(new List<string> { "1", "2", "3", "5", "Cancel" }, 2);
-            Messaging.SendQuestion(chatID, m.userID, "How many bots would you like to add?", true, typeof(mod_xyzzy), "AddBotsCount " + returnContext, m.userFullName, -1, true, keyboard);
+            var keyboard = TelegramAPI.createKeyboard(new List<string> { "1", "2", "3", "5", "Remove All Bots", "Cancel" }, 2);
+            Messaging.SendQuestion(chatID, m.userID, promptText, true, typeof(mod_xyzzy), "AddBotsCount " + returnContext, m.userFullName, -1, true, keyboard);
+        }
+
+        /// <summary>The final, "click Start when ready" step of game setup - kept deliberately clean
+        /// of the "Add Bots" button now that bot-adding is offered upfront as its own step
+        /// (askAddBotsCount with returnContext "InvitesUpfront", called right before this) - see
+        /// MIGRATION.md. Still reachable by manually typing "Add Bots" (mod_xyzzy.cs's "Invites"
+        /// handler), for players who decided against bots upfront but change their mind.</summary>
+        public void sendInvitesStartMessage(message m, bool notEnoughPlayersYet = false)
+        {
+            string text = (notEnoughPlayersYet ? "Not enough players yet. " : "")
+                + "To start the game once enough players have joined click the \"Start\" button below. "
+                + "You will need three or more players to start the game, or it will be topped up with bots.";
+            var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Cancel" }, 2);
+            Messaging.SendQuestion(chatID, m.userID, text, true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
         }
 
 
@@ -1836,7 +1913,7 @@ namespace RobotoChatBot.Modules
             }
 
             //Now build up keybaord
-            List<String> keyboardResponse = new List<string> { "Continue", "Import Pack", "All", "None" };
+            List<String> keyboardResponse = new List<string> { "Import Pack", "All", "None" };
             if (totalPageCount > 1)
             {
 
@@ -1882,14 +1959,41 @@ namespace RobotoChatBot.Modules
                 response += "(Page " + pageNr + " of " + totalPageCount + ")";
             }
 
-            //now send the new list. 
+            //now send the new list. "Continue" is appended as its own trailing row (rather than
+            //chunked in with everything else) so it always lands alone on the last row, spanning
+            //both columns, instead of being buried as the first, easy-to-miss button.
             var keyboard = TelegramAPI.createKeyboard(keyboardResponse, 2);//todo columns
+            keyboard.Add(new List<string> { "Continue" });
             Messaging.SendQuestion(chatID, m.userID, response, true, typeof(mod_xyzzy), "setPackFilter " + pageNr, m.userFullName,  -1, false, keyboard, true);
         }
 
 
+        /// <summary>packFilterIDs starts empty (see its own field-initializer comment) rather than
+        /// via a static default, since that can't safely consult the pack catalog at construction
+        /// time. Resolves the real default the first time it's actually needed and caches it in
+        /// place - packFilterIDs then persists normally from then on, same as an explicit choice, so
+        /// this only ever runs once per chat - guarded by packFilterResolved rather than just
+        /// checking packFilterIDs.Count == 0, since an empty list is also the genuinely correct,
+        /// deliberate result of a player tapping "None" (disable every pack) - relying on Count alone
+        /// would silently re-fill it the very next time anything calls packEnabled() (e.g.
+        /// redisplaying the pack list right after "None" itself). Prefers "CAHBS" by pack code if a
+        /// real one exists (a real bot's own persisted pack, stable since long before this ran),
+        /// otherwise falls back to AllPacksEnabledID - which also naturally covers just the seeded
+        /// "ZZ Dummy Pack" on a fresh instance, without needing to name it specifically or clean
+        /// anything up once it's dropped.
+        /// TODO: no admin-facing way to change this default yet - worth a settings option later.</summary>
+        private void ensureDefaultPackFilter()
+        {
+            if (packFilterResolved) { return; }
+            packFilterResolved = true;
+            if (packFilterIDs.Count > 0) { return; }
+            Helpers.cardcast_pack cahbs = getLocalData().getPackByCode("CAHBS");
+            packFilterIDs.Add(cahbs != null ? cahbs.packID : mod_xyzzy.AllPacksEnabledID);
+        }
+
         public bool packEnabled(Guid packID)
         {
+            ensureDefaultPackFilter();
             if (packFilterIDs.Contains(mod_xyzzy.AllPacksEnabledID) || packFilterIDs.Contains(packID))
             {
                 return true;
@@ -1926,6 +2030,9 @@ namespace RobotoChatBot.Modules
 
         internal void addQuestions()
         {
+            // Guards the case packEnabled() never gets called at all (localData.questions is
+            // empty) - ensures a chat that's never played still resolves its default pack filter.
+            ensureDefaultPackFilter();
             //get a filtered list of q's and a's
             mod_xyzzy_coredata localData = getLocalData();
             List<mod_xyzzy_card> questions = new List<mod_xyzzy_card>();
@@ -1948,6 +2055,7 @@ namespace RobotoChatBot.Modules
 
         public void addAllAnswers()
         {
+            ensureDefaultPackFilter(); // see addQuestions()'s own comment
             List<mod_xyzzy_card> answers = new List<mod_xyzzy_card>();
             
             foreach (mod_xyzzy_card a in getLocalData().answers)

@@ -29,11 +29,11 @@ public class XyzzyCarriedForwardDeltasTests
         coreData.answers.Clear();
         for (int i = 0; i < questionCount; i++)
         {
-            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.primaryPackID, 1));
+            coreData.questions.Add(new mod_xyzzy_card($"Question {i} ___?", mod_xyzzy.dummyPackID, 1));
         }
         for (int i = 0; i < answerCount; i++)
         {
-            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.primaryPackID));
+            coreData.answers.Add(new mod_xyzzy_card($"Answer {i}", mod_xyzzy.dummyPackID));
         }
     }
 
@@ -51,6 +51,8 @@ public class XyzzyCarriedForwardDeltasTests
         // necessarily the Settings one - a pre-existing interaction, not what this test is about).
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
         bot.TapButton(Alice, "Start", "Alice");
@@ -74,6 +76,8 @@ public class XyzzyCarriedForwardDeltasTests
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
         bot.TapButton(Alice, "Start", "Alice");
@@ -229,11 +233,8 @@ public class XyzzyCarriedForwardDeltasTests
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
 
-        // Solo - just Alice so far. Add 2 bots to reach 3 players without needing Bob/Carol.
-        bot.TapButton(Alice, "Add Bots", "Alice");
-        Assert.Contains("How many bots", bot.BotClient.SentMessages[^1].Text);
-        bot.TapButton(Alice, "2", "Alice");
-
+        // Solo - just Alice so far. "Use Defaults" now adds 2 bots automatically (no separate
+        // prompt), reaching 3 players without needing Bob/Carol.
         var chatData = (mod_xyzzy_chatdata)Chats.getChat(ChatId).getPluginData(typeof(mod_xyzzy_chatdata), true);
         Assert.Equal(3, chatData.players.Count);
         Assert.Equal(2, chatData.players.Count(p => p.isBot));
@@ -284,6 +285,63 @@ public class XyzzyCarriedForwardDeltasTests
     }
 
     [Fact]
+    public void SoloStarterLeavingDuringSetupWithOnlyBotsLeftStopsTheGameInstead()
+    {
+        // Real live bug: a solo starter who added bots to reach the minimum, then left during
+        // setup (still Invites - never tapped Start), silently handed "judge" to a bot and left the
+        // game stuck forever - no human left who could ever tap Start or reply to anything.
+        // askQuestion()'s own "everyone left" safety stop never even got a chance to run, since a
+        // setup-phase leave never reaches askQuestion() at all.
+        using var bot = new TestHarness();
+        SeedCards();
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice"); // auto-adds 2 bots now - reaches 3 players solo
+
+        var chatData = (mod_xyzzy_chatdata)Chats.getChat(ChatId).getPluginData(typeof(mod_xyzzy_chatdata), true);
+        Assert.Equal(xyzzy_Statuses.Invites, chatData.status);
+        Assert.Equal(3, chatData.players.Count);
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_leave", "Alice");
+
+        Assert.DoesNotContain(chatData.players, p => !p.isBot);
+        Assert.Equal(xyzzy_Statuses.Stopped, chatData.status);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Everyone left"));
+    }
+
+    [Fact]
+    public void RemoveAllBotsClearsEveryBotAndReportsWhenNoneRemain()
+    {
+        using var bot = new TestHarness();
+        SeedCards();
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice"); // auto-adds 2 bots
+
+        var chatData = (mod_xyzzy_chatdata)Chats.getChat(ChatId).getPluginData(typeof(mod_xyzzy_chatdata), true);
+        Assert.Equal(3, chatData.players.Count);
+        Assert.Equal(2, chatData.players.Count(p => p.isBot));
+
+        // "Remove All Bots" is on the same Add Bots menu, reached here via the Invites screen's
+        // manual "Add Bots" fallback - answering the still-outstanding Start/Cancel Invites reply
+        // directly, rather than going via /xyzzy_settings (which would queue behind it instead of
+        // sending immediately - Messaging's per-user single-outstanding-message rule, unrelated to
+        // this feature).
+        bot.TapButton(Alice, "Add Bots", "Alice");
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
+
+        Assert.Single(chatData.players);
+        Assert.DoesNotContain(chatData.players, p => p.isBot);
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == Alice && m.Text.StartsWith("Removed:"));
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == Alice && m.Text.Contains("click the \"Start\" button"));
+
+        // Asking again with no bots left reports that cleanly rather than erroring.
+        bot.TapButton(Alice, "Add Bots", "Alice");
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == Alice && m.Text == "There are no bots to remove.");
+    }
+
+    [Fact]
     public void SettingsMenuQueuedBehindAnOutstandingAnswerSurvivesIntoTheNextRound()
     {
         // Legacy's own TODO in askQuestion() ("this causes issues if someone is changing settings
@@ -299,9 +357,7 @@ public class XyzzyCarriedForwardDeltasTests
         SeedCards();
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
-        bot.TapButton(Alice, "Use Defaults", "Alice");
-        bot.TapButton(Alice, "Add Bots", "Alice");
-        bot.TapButton(Alice, "2", "Alice");
+        bot.TapButton(Alice, "Use Defaults", "Alice"); // auto-adds 2 bots
         bot.TapButton(Alice, "Start", "Alice");
 
         var chatData = (mod_xyzzy_chatdata)Chats.getChat(ChatId).getPluginData(typeof(mod_xyzzy_chatdata), true);
@@ -330,6 +386,8 @@ public class XyzzyCarriedForwardDeltasTests
 
         bot.SendGroupMessage(ChatId, Alice, "/xyzzy_start", "Alice");
         bot.TapButton(Alice, "Use Defaults", "Alice");
+        bot.TapButton(Alice, "Add Bots", "Alice"); // Use Defaults now auto-adds 2 bots - clear them for a clean human-only baseline
+        bot.TapButton(Alice, "Remove All Bots", "Alice");
         bot.SendGroupMessage(ChatId, Bob, "/xyzzy_join", "Bob");
         bot.SendGroupMessage(ChatId, Carol, "/xyzzy_join", "Carol");
         bot.TapButton(Alice, "Start", "Alice");

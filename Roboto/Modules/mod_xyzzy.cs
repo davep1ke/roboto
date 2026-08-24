@@ -15,7 +15,14 @@ namespace RobotoChatBot.Modules
     /// </summary>
     public class mod_xyzzy : RobotoModuleTemplate
     {
-        public static Guid primaryPackID = new Guid("FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE");
+        // Was "primaryPackID" - the fixed identity of the always-present official CAH pack. That
+        // role is gone: CrCast no longer serves those decks, so nothing forces a pack to this GUID
+        // any more (mod_xyzzy_chatdata's default pack filter now looks up "CAHBS" by pack code
+        // instead, so a real bot's own persisted pack - already stable from years of prior saves -
+        // just works without this). What's left is solely the seeded "ZZ Dummy Pack"'s own stable
+        // identity, used to find and auto-drop it once real packs exist - see
+        // mod_xyzzy_coredata.seedDummyPack()/dropDummyPack().
+        public static Guid dummyPackID = new Guid("FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE");
         public static Guid AllPacksEnabledID = Guid.Empty;
 
         /// <summary>
@@ -567,12 +574,18 @@ namespace RobotoChatBot.Modules
                 {
                     if (m.text_msg == "Use Defaults")
                     {
-                        //add all the q's and a's based on the previous settings / defaults if a new game. 
+                        //add all the q's and a's based on the previous settings / defaults if a new game.
                         chatData.addQuestions();
                         chatData.addAllAnswers();
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
-                        Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
                         chatData.setStatus(xyzzy_Statuses.Invites);
+
+                        // "Use Defaults" means defaults for bots too - add 2 straight away rather
+                        // than asking, keeping this the fast/no-questions-asked path. "Configure
+                        // Game" still asks explicitly (askAddBotsCount "InvitesUpfront" below) -
+                        // that path is already about walking through choices one at a time.
+                        List<string> added = chatData.addBots(2);
+                        Messaging.SendMessage(m.userID, "Added: " + String.Join(", ", added) + ".");
+                        chatData.sendInvitesStartMessage(m);
                     }
                     else if (m.text_msg == "Configure Game")
                     {
@@ -764,10 +777,9 @@ namespace RobotoChatBot.Modules
                     if (success && chatData.status == xyzzy_Statuses.setMinHours)//could be at another status if being set mid-game
                     {
 
-                        //Ready to start game - tell the player they can start when they want
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
-                        Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        //Ready to start game - ask about bots upfront, then leave the final "click Start" step clean
                         chatData.setStatus(xyzzy_Statuses.Invites);
+                        chatData.askAddBotsCount(m, "InvitesUpfront", "Do you want to add any bots to the game?");
 
                     }
                     else if (success)
@@ -808,6 +820,9 @@ namespace RobotoChatBot.Modules
                     }
                     else if (m.text_msg == "Add Bots")
                     {
+                        // No longer on the Invites keyboard (bots are offered upfront now, see
+                        // askAddBotsCount "InvitesUpfront" above) - kept as a manual-reply fallback
+                        // for anyone who declined upfront and changes their mind.
                         chatData.askAddBotsCount(m, "Invites");
                     }
                     else if (m.text_msg == "Start" && chatData.players.Count > 2)
@@ -817,13 +832,11 @@ namespace RobotoChatBot.Modules
                     }
                     else if (m.text_msg == "Start")
                     {
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
-                        Messaging.SendQuestion(chatData.chatID, m.userID, "Not enough players yet. You need three or more players to start the game. To start the game once enough players have joined click the \"Start\" button below.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        chatData.sendInvitesStartMessage(m, notEnoughPlayersYet: true);
                     }
                     else
                     {
-                        var keyboard = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
-                        Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, keyboard);
+                        chatData.sendInvitesStartMessage(m);
                     }
 
                     processed = true;
@@ -875,23 +888,40 @@ namespace RobotoChatBot.Modules
                     processed = true;
                 }
 
-                //"Add Bots" (MIGRATION.md phase 9) - reachable from both the Invites setup screen
-                //and the /xyzzy_settings menu (chatData.askAddBotsCount carries which one in
-                //messageData), which need different follow-ups once bots are actually added.
+                //"Add Bots" (MIGRATION.md phase 9) - reachable from the upfront Invites prompt
+                //("InvitesUpfront"), the Invites setup screen's manual "Add Bots" reply ("Invites")
+                //and the /xyzzy_settings menu ("Settings") - chatData.askAddBotsCount carries which
+                //one in messageData, since each needs different follow-ups once bots are added or
+                //removed.
                 else if (e.messageData.StartsWith("AddBotsCount"))
                 {
                     string returnContext = e.messageData.Substring("AddBotsCount".Length).Trim();
+                    bool invitesFlow = returnContext == "Invites" || returnContext == "InvitesUpfront";
 
                     if (m.text_msg == "Cancel")
                     {
-                        if (returnContext == "Invites")
+                        if (invitesFlow)
                         {
-                            var kb = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
-                            Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, kb);
+                            chatData.sendInvitesStartMessage(m);
                         }
                         else
                         {
                             chatData.sendSettingsMessage(m);
+                        }
+                    }
+                    else if (m.text_msg == "Remove All Bots")
+                    {
+                        List<string> removed = chatData.removeAllBots();
+                        string removedText = removed.Count == 0 ? "There are no bots to remove." : "Removed: " + String.Join(", ", removed) + ".";
+                        Messaging.SendMessage(m.userID, removedText);
+
+                        if (invitesFlow)
+                        {
+                            chatData.sendInvitesStartMessage(m);
+                        }
+                        else if (removed.Count > 0)
+                        {
+                            Messaging.SendMessage(chatData.chatID, String.Join(", ", removed) + (removed.Count == 1 ? " was removed from the game." : " were removed from the game."));
                         }
                     }
                     else
@@ -901,16 +931,14 @@ namespace RobotoChatBot.Modules
                         {
                             List<string> added = chatData.addBots(count);
                             string addedText = "Added: " + String.Join(", ", added) + ".";
+                            Messaging.SendMessage(m.userID, addedText);
 
-                            if (returnContext == "Invites")
+                            if (invitesFlow)
                             {
-                                Messaging.SendMessage(m.userID, addedText);
-                                var kb = TelegramAPI.createKeyboard(new List<string> { "Start", "Add Bots", "Cancel" }, 2);
-                                Messaging.SendQuestion(chatData.chatID, m.userID, "To start the game once enough players have joined click the \"Start\" button below. You will need three or more players to start the game.", true, typeof(mod_xyzzy), "Invites", m.userFullName, -1, true, kb);
+                                chatData.sendInvitesStartMessage(m);
                             }
                             else
                             {
-                                Messaging.SendMessage(m.userID, addedText);
                                 Messaging.SendMessage(chatData.chatID, String.Join(", ", added) + (added.Count == 1 ? " joined the game as a bot." : " joined the game as bots."));
                             }
                         }
