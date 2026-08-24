@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using RobotoChatBot;
 using RobotoChatBot.Modules;
@@ -116,5 +117,95 @@ public class SteamTests
 
         Assert.Contains("UNLOCKED_ONE", result);
         Assert.DoesNotContain("LOCKED_ONE", result);
+    }
+
+    private static void AddGaben(TestHarness bot)
+    {
+        mod_steam_steamapi.HttpGetOverride = url => """
+            { "response": { "players": [ { "personaname": "Gaben", "communityvisibilitystate": 3 } ] } }
+            """;
+        bot.SendGroupMessage(ChatId, Alice, "/steam_addplayer", "Alice");
+        bot.TapButton(Alice, "76561197960287930", "Alice");
+    }
+
+    /// <summary>checkAchievements() (mod_steam.cs) chains three separate Steam endpoints through the
+    /// same sendPOST/HttpGetOverride chokepoint - GetRecentlyPlayedGames, then GetUserStatsForGame per
+    /// game, then (since a freshly-added game's achievement cache is empty) GetSchemaForGame to refresh
+    /// it before the friendly display text is available. Dispatches on the request URL, same seam
+    /// SteamTests' other tests already use for the single-endpoint flows.</summary>
+    private static void StubFullAchievementCheck(string gameID, string gameName, string achievementCode, string achievementDisplayName, string achievementDescription)
+    {
+        mod_steam_steamapi.HttpGetOverride = url =>
+        {
+            if (url.Contains("GetRecentlyPlayedGames"))
+            {
+                return $$"""{ "response": { "games": [ { "appid": "{{gameID}}", "name": "{{gameName}}" } ] } } """;
+            }
+            if (url.Contains("GetUserStatsForGame"))
+            {
+                return $$"""{ "playerstats": { "achievements": [ { "name": "{{achievementCode}}", "achieved": 1 } ] } } """;
+            }
+            if (url.Contains("GetSchemaForGame"))
+            {
+                return $$"""
+                    { "game": { "availableGameStats": { "achievements": [
+                        { "name": "{{achievementCode}}", "displayName": "{{achievementDisplayName}}", "description": "{{achievementDescription}}" }
+                    ] } } }
+                    """;
+            }
+            throw new InvalidOperationException("Unexpected Steam API URL in test: " + url);
+        };
+    }
+
+    [Fact]
+    public void SteamCheckAnnouncesANewlyDetectedAchievement()
+    {
+        using var bot = new TestHarness();
+        AddGaben(bot);
+        StubFullAchievementCheck("440", "Team Fortress 2", "FIRST_BLOOD", "First Blood", "Get your first kill");
+
+        bot.SendGroupMessage(ChatId, Alice, "/steam_check", "Alice");
+
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId
+            && m.Text.Contains("Gaben got the following achievements")
+            && m.Text.Contains("*First Blood* - Get your first kill in Team Fortress 2"));
+    }
+
+    [Fact]
+    public void BackgroundProcessingAlsoAnnouncesNewlyDetectedAchievements()
+    {
+        // checkChat()/checkAchievements() is reachable two ways - the manual /steam_check command
+        // (covered above) and mod_steam.backgroundProcessing's own periodic sweep over every chat's
+        // tracked players (mod_steam.cs:447). Only the manual path had any coverage before this.
+        using var bot = new TestHarness();
+        AddGaben(bot);
+        StubFullAchievementCheck("570", "Dota 2", "FIRST_BLOOD_DOTA", "First Blood", "Get your first kill");
+
+        bot.RunBackgroundProcessing();
+
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId
+            && m.Text.Contains("Gaben got the following achievements")
+            && m.Text.Contains("*First Blood* - Get your first kill in Dota 2"));
+    }
+
+    [Fact]
+    public void RemovePlayerStopsTrackingThem()
+    {
+        // Real bug found while adding this coverage, not from a report: /steam_remove's SendQuestion
+        // passed isPrivateMessage:false, the one remaining call site of the group-targeted-question
+        // bug MIGRATION.md's other 5 call sites were already fixed for - every call threw
+        // NotImplementedException (Messaging.processNewExpectedReply's own guard), so this command was
+        // completely non-functional. Fixed alongside adding this test.
+        using var bot = new TestHarness();
+        AddGaben(bot);
+
+        bot.SendGroupMessage(ChatId, Alice, "/steam_remove", "Alice");
+        var keyboard = bot.LastKeyboardMessageTo(Alice).KeyboardRows!;
+        string gabenButton = keyboard.SelectMany(r => r).Single(b => b.Text == "Gaben").Text;
+        bot.TapButton(Alice, gabenButton, "Alice");
+
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("Player Gaben removed"));
+        var chatData = (mod_steam_chat_data)Chats.getChat(ChatId).getPluginData(typeof(mod_steam_chat_data));
+        Assert.DoesNotContain(chatData.players, p => p.playerName == "Gaben");
     }
 }

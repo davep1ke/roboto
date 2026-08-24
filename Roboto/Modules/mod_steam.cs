@@ -420,8 +420,16 @@ namespace RobotoChatBot.Modules
                     }
                     playerKeyboard.Add("Cancel");
                     var playerKeyboardText = TelegramAPI.createKeyboard(playerKeyboard, 2);
-                    Messaging.SendQuestion(c.chatID, m.userID, "Which player do you want to stop tracking?", false, typeof(mod_steam), "REMOVEPLAYER", m.userFullName, m.message_id, true, playerKeyboardText);
-                    
+                    // isPrivateMessage:true - this was the one remaining call site missed when the
+                    // rest of this bug class (group-targeted SendQuestion never actually registering
+                    // for matching - see Messaging.processNewExpectedReply's own comment) got fixed
+                    // (MIGRATION.md). Left isPrivateMessage:false, /steam_remove threw
+                    // NotImplementedException on every single call - found live while adding phase-7
+                    // test coverage for mod_steam, not from a bug report. replyReceived's REMOVEPLAYER
+                    // handler already replies via c.chatID regardless (same as ADDPLAYER), so this
+                    // needs no other change.
+                    Messaging.SendQuestion(c.chatID, m.userID, "Which player do you want to stop tracking?", true, typeof(mod_steam), "REMOVEPLAYER", m.userFullName, m.message_id, true, playerKeyboardText);
+
                 }
             }
             return processed;

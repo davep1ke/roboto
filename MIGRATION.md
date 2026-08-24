@@ -1540,16 +1540,107 @@ logic bug.
 **Verified**: build clean; `dotnet test` green across 3 repeated runs. Live verification pending -
 these land in the same deploy as the dummy-pack/DbBackup fix above.
 
+### `mod_xyzzy_chatdata.getStatus()` NullReferenceException - real production crash, root-caused
+
+The user's own original report from earlier tonight, root-caused here: `/xyzzy_status` during a
+`Question` round called `getLocalData().getQuestionCard(currentQuestion).text` with no null check
+(`mod_xyzzy_chatdata.cs`, the `case xyzzy_Statuses.Question:` branch). `getQuestionCard` returns
+`null` if the round's current card is no longer in the catalog - the same "card vanished mid-game"
+class the dummy-pack GUID-collision incident could trigger (a pack getting dropped/disabled while a
+round referencing one of its cards is still live), and exactly what `askQuestion()`'s own empty-pool
+guard already treats as real rather than hypothetical. The exception itself is caught by
+`TelegramAPI.getUpdates()`'s outer `catch (Exception e)`, so it doesn't crash the whole process - but
+it does silently drop the response (the user gets nothing back) and abort any other updates batched
+in the same poll cycle.
+
+**Fix**: guard the null case and send a clear fallback ("...its pack may have been removed... check
+your pack filters") instead of indexing into it. Covered by
+`XyzzyMoreCoverageTests.StatusDuringAQuestionRoundHandlesTheCurrentCardHavingBeenRemoved` (clears the
+whole card catalog out from under an in-progress round, same shape as the live incident). **Sanity-
+checked by breaking something**: reverted the guard, confirmed the test failed with the exact live
+`NullReferenceException` at the exact line, then reverted back.
+
+### `expected_replies` durability - closing the gap phase 3 deliberately left open
+
+Phase 3's own notes (see above) flagged this explicitly at the time: `SaveExpectedReplies` was a full
+delete+reinsert done only at the periodic `settings.save()` flush, not per-mutation write-through, so
+an unclean shutdown between saves could lose in-flight conversational state (a queued reply, or -
+worse - a *sent* reply's `outboundMessageID`, which is what an incoming reply is actually matched
+against, reverting it to "never sent" on restart and orphaning the real Telegram message already on
+its way to the user).
+
+**Fix**: `ExpectedReply` gained a `dbId` field (0 = not yet persisted). `SqliteStateStore` gained
+`InsertExpectedReply`/`UpdateExpectedReply`/`DeleteExpectedReply` (all per-row, not per-list) alongside
+the existing full-flush `LoadExpectedReplies`/`SaveExpectedReplies` - the latter now also refreshes
+`dbId` on every survivor after its full delete+reinsert, so the two mechanisms can't drift apart
+(without this, a periodic flush would silently orphan every row a later per-mutation delete/update
+tried to target by its now-stale id). Every direct `Roboto.Settings.expectedReplies.Add`/`Remove`/
+`RemoveAll` call site in `Messaging.cs` (9 of them) now goes through two new private chokepoints,
+`addExpectedReply`/`removeExpectedReply`, which mutate the in-memory list and write through to SQLite
+in the same call. `ExpectedReply.sendMessage()` itself calls `UpdateExpectedReply` when `dbId != 0`,
+so a reply that was queued (persisted unsent) and only *later* actually sent - the exact "Settings
+menu queued behind an outstanding answer" shape from the fix earlier tonight - gets its real
+`outboundMessageID`/`timeSentToUser` persisted the moment it's sent, not just at the next flush.
+`settings.save()`'s own full flush is kept, now explicitly as a consistency resync rather than the
+last line of defence.
+
+Covered by 3 new `ExpectedReplyDurabilityTests`, each opening a second, independent
+`SqliteStateStore` against the same on-disk file mid-test and reading it back directly - proving the
+row is really on disk, not just correct in memory - **without ever calling `settings.save()`**:
+a queued reply is on disk immediately; a removed reply is gone from disk immediately; and a reply
+queued behind an outstanding one (reusing the exact live "Settings menu" scenario) has its
+`outboundMessageID` persisted the moment it's actually sent, not only after the next flush.
+**Sanity-checked by breaking something**: temporarily stripped the `InsertExpectedReply` call out of
+`addExpectedReply`, confirmed 2 of the 3 tests failed exactly as expected (the third, deletion, has
+nothing to delete so trivially still passes), then reverted.
+
+### Phase 7 test-coverage audit - one real gap found (and a real bug alongside it), two already closed
+
+Re-checked all three items this file's own "still open" section (below, now corrected) had listed as
+outstanding:
+
+- **`mod_wordcraft`**: already has full coverage (`WordcraftTests`, 3 tests - `/craft`, add/remove a
+  word, removing one that was never added) from an earlier pass this session. Nothing to do.
+- **`ChatKeyedLockTests` re-derivation**: already done (3 tests - real cross-thread mutual exclusion,
+  different keys running concurrently not serialized, same-thread reentrancy) from an earlier pass.
+  Nothing to do.
+- **`mod_steam`'s network-bound flows**: the one genuine gap. `SteamTests` covered `/steam_addplayer`
+  and the raw `getAchievements` filtering, but not `/steam_check`, the background sweep, or
+  `/steam_remove`. Added `SteamCheckAnnouncesANewlyDetectedAchievement` and
+  `BackgroundProcessingAlsoAnnouncesNewlyDetectedAchievements` (both drive `checkAchievements()`'s
+  full 3-endpoint chain - `GetRecentlyPlayedGames` -> `GetUserStatsForGame` -> `GetSchemaForGame`,
+  the last one only hit because a freshly-added game's achievement-name cache starts empty - through
+  `mod_steam_steamapi.HttpGetOverride`, dispatching on request URL).
+
+  **A real bug found while writing `/steam_remove`'s test, not from a report**: its `SendQuestion`
+  call still passed `isPrivateMessage:false` - the one remaining call site of the exact group-
+  targeted-question bug the other 5 call sites (`/steam_addplayer` among them) were already fixed
+  for earlier this session (see above). Every call threw `NotImplementedException`
+  (`Messaging.processNewExpectedReply`'s own guard) - `/steam_remove` has been completely
+  non-functional this whole time. Fixed the same way the others were (`isPrivateMessage:true`) -
+  `replyReceived`'s `REMOVEPLAYER` handler already replies via the group's `c.chatID` regardless, so
+  no other change was needed. Covered by `RemovePlayerStopsTrackingThem`. **Sanity-checked by
+  breaking something**: reverted to `isPrivateMessage:false`, confirmed the test failed with the
+  exact `NotImplementedException`, then reverted back.
+
+**Verified** (all three items above together): build clean; `dotnet test` green across 3 repeated
+runs, 116/116 (up from 109).
+
 ## What's still open
 
-Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually
+Phase 10 only - phase 8 (migrator) is done (corrected above; this section previously and incorrectly
+still listed it). See the phase table above and the full plan file for what phase 10 actually
 involves, the confirmed architecture decisions (real background scheduler, decomposed persistence +
 relational tables for whole-bot lists, carry-forward deltas), and the resolved/open sub-decisions
 (chatPriority sort - decided, implement; daily XML backup - decided, not needed, TrueNAS snapshots
-instead; background-scheduler batching caps - decided, keep as legacy has them). Phase 9 was done out
-of plan order (ahead of phase 8) at the user's explicit request. Phase 5 (hybrid keyboards) is
-deliberately deferred, not blocking - see its own notes above for why, and the design to pick back up
-if it's ever revisited (which also resolves the card/pack-ID-for-callback_data sub-decision, since
-that only matters once inline keyboards exist). Phase 7's own deferred items (mod_wordcraft, mod_steam's
-network-bound flows, `ChatKeyedLockTests` re-derivation) are additional, narrower follow-ups, not
-separately tracked here.
+instead; background-scheduler batching caps - decided, keep as legacy has them). In substance, most of
+phase 10 has already happened organically rather than as a discrete step: the legacy/abandoned-rewrite
+cross-check (found and fixed one real Steam achievements bug), a dry-run import against real
+production XML (three real bots: `chat_mangler_bot`, `chat_against_humanity_bot`, `robotolive`), and
+live round-trips against `beefy`, `chat_mangler_bot`, `chat_against_humanity_bot`, and `robotolive` -
+the last two being actual production bots already running this code. What's left is closer to
+paperwork/sign-off than new engineering. Phase 5 (hybrid keyboards) is deliberately deferred
+indefinitely, not blocking and not currently planned to be picked back up - user call (2026-08-24):
+not required. Two smaller items are explicitly **not** being pursued either, same call: the
+mini-check "wave" self-synchronization noise (investigated and confirmed benign - see its own
+addendum above) and any jitter fix for it.

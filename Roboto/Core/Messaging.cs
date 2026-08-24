@@ -19,6 +19,31 @@ namespace RobotoChatBot
         public enum returnCodes { OK, Fatal, Unavail, Timeout };
 
         /// <summary>
+        /// Adds an ExpectedReply to the in-memory queue AND immediately persists it (SqliteStateStore
+        /// .InsertExpectedReply sets e.dbId) so a crash before the next periodic settings.save() can't
+        /// lose it - every direct Roboto.Settings.expectedReplies.Add(...) in this file goes through
+        /// here instead, see ExpectedReply.dbId's own comment. Caller must already hold
+        /// ChatKeyedLock.GlobalListsKey.
+        /// </summary>
+        private static void addExpectedReply(ExpectedReply e)
+        {
+            Roboto.Settings.expectedReplies.Add(e);
+            Roboto.Store.InsertExpectedReply(e);
+        }
+
+        /// <summary>
+        /// Removes an ExpectedReply from the in-memory queue AND its persisted row, for the same
+        /// durability reason as addExpectedReply - every direct
+        /// Roboto.Settings.expectedReplies.Remove(...)/RemoveAll(...) in this file goes through here
+        /// instead. Caller must already hold ChatKeyedLock.GlobalListsKey.
+        /// </summary>
+        private static void removeExpectedReply(ExpectedReply e)
+        {
+            Roboto.Settings.expectedReplies.Remove(e);
+            if (e.dbId != 0) { Roboto.Store.DeleteExpectedReply(e.dbId); }
+        }
+
+        /// <summary>
         /// Quits any active update loops. 
         /// </summary>
         public static void quit()
@@ -185,7 +210,7 @@ namespace RobotoChatBot
                 //now remove them
                 foreach (ExpectedReply reply in repliesToRemove)
                 {
-                    Roboto.Settings.expectedReplies.Remove(reply);
+                    removeExpectedReply(reply);
                     Roboto.log.log("Removed " + reply.text + " from expected replies", logging.loglevel.high);
                 }
             }
@@ -293,13 +318,13 @@ namespace RobotoChatBot
                 //block every other chat's message processing for the call's whole duration).
                 if (e.expectsReply)
                 {
-                    using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Add(e); }
+                    using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { addExpectedReply(e); }
                 }
             }
             else
             {
                 //chuck it on the queue
-                using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Add(e); }
+                using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { addExpectedReply(e); }
             }
 
             //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed. Potentially recursive.
@@ -350,7 +375,7 @@ namespace RobotoChatBot
                     {
                         using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
                         {
-                            Roboto.Settings.expectedReplies.Remove(oldest);
+                            removeExpectedReply(oldest);
                         }
                     }
                     //make sure we are in a safe state. This will make sure if we sent a message-only, that the next message(s) are processed.
@@ -393,11 +418,13 @@ namespace RobotoChatBot
                             if (c == null) { deadERs.Add(er); }
                         }
                     }
-                    foreach (ExpectedReply er in deadERs) { Roboto.Settings.expectedReplies.Remove(er); }
+                    foreach (ExpectedReply er in deadERs) { removeExpectedReply(er); }
                     Roboto.log.log("Removed " + deadERs.Count() + " dead expected replies, now " + Roboto.Settings.expectedReplies.Count() + " remain", deadERs.Count() == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
 
                     //remove any expired ones
-                    int i = Roboto.Settings.expectedReplies.RemoveAll(x => x.timeLogged < DateTime.Now.Subtract(TimeSpan.FromDays(Roboto.Settings.killInactiveChatsAfterXDays)));
+                    List<ExpectedReply> expiredERs = Roboto.Settings.expectedReplies.Where(x => x.timeLogged < DateTime.Now.Subtract(TimeSpan.FromDays(Roboto.Settings.killInactiveChatsAfterXDays))).ToList();
+                    foreach (ExpectedReply er in expiredERs) { removeExpectedReply(er); }
+                    int i = expiredERs.Count;
                     Roboto.log.log("Removed " + i + " expected replies, now " + Roboto.Settings.expectedReplies.Count() + " remain", i == 0 ? logging.loglevel.verbose : logging.loglevel.warn);
 
                     //Build up a list of user IDs
@@ -411,7 +438,7 @@ namespace RobotoChatBot
                     }
                     foreach (ExpectedReply e in messagesToRemove)
                     {
-                        Roboto.Settings.expectedReplies.Remove(e);
+                        removeExpectedReply(e);
                     }
                 }
 
@@ -498,7 +525,7 @@ namespace RobotoChatBot
                     //remove here too (still under the same lock acquisition as the search above) -
                     //so a concurrent match on another thread for the same ExpectedReply genuinely
                     //can't happen, not just "unlikely".
-                    if (processed && er != null) { Roboto.Settings.expectedReplies.Remove(er); }
+                    if (processed && er != null) { removeExpectedReply(er); }
                 }
             }
             catch (Exception e)
@@ -561,7 +588,7 @@ namespace RobotoChatBot
         public static void parseFailedReply(ExpectedReply er)
         {
 
-            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Remove(er); }
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { removeExpectedReply(er); }
             Modules.RobotoModuleTemplate pluginToCall = null;
 
             foreach (Modules.RobotoModuleTemplate plugin in Plugins.plugins)
@@ -616,7 +643,7 @@ namespace RobotoChatBot
 
         public static void removeReply(ExpectedReply r)
         {
-            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { Roboto.Settings.expectedReplies.Remove(r); }
+            using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey)) { removeExpectedReply(r); }
         }
 
     }

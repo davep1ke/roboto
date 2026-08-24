@@ -235,6 +235,13 @@ namespace RobotoChatBot
             // a concurrent logStat() call elsewhere. Acceptable here specifically because these are
             // fast local SQLite writes, not network calls - a bounded, brief hold, not the "block
             // everything for an arbitrarily long call" case this pass otherwise avoids.
+            //
+            // SaveExpectedReplies's full delete+reinsert is no longer the only thing keeping
+            // expected_replies durable - Messaging.cs's addExpectedReply/removeExpectedReply and
+            // ExpectedReply.sendMessage() write through per-mutation now (see ExpectedReply.dbId's
+            // own comment). This periodic full flush is still worth keeping as a consistency
+            // resync (and it refreshes every survivor's dbId to the row it just reinserted, so the
+            // two mechanisms can't drift apart), not because it's the last line of defence anymore.
             using (ChatKeyedLock.Acquire(ChatKeyedLock.GlobalListsKey))
             {
                 store.SaveExpectedReplies(expectedRepliesSnapshot);

@@ -39,7 +39,14 @@ namespace RobotoChatBot
         public string messageData;
         public string pluginType;
         public long outboundMessageID;
-        
+
+        /// <summary>SQLite row id once persisted, 0 = not yet written. Messaging.cs's
+        /// addExpectedReply/removeExpectedReply and ExpectedReply.sendMessage() (below) use this to
+        /// write through per-mutation instead of relying solely on the periodic full
+        /// settings.save() flush - see SqliteStateStore.cs's expected_replies notes and
+        /// MIGRATION.md's ER-durability addendum for why an unclean shutdown could otherwise lose
+        /// in-flight conversational state.</summary>
+        internal long dbId = 0;
 
         internal ExpectedReply() { }
         
@@ -112,6 +119,14 @@ namespace RobotoChatBot
             outboundMessageID = TelegramAPI.postExpectedReplyToPlayer(this);
 
             timeSentToUser = DateTime.Now;
+
+            // If this reply was queued (already persisted - see dbId's own comment) before being
+            // sent, e.g. sitting behind another outstanding question, its row was written with no
+            // outboundMessageID/timeSentToUser yet. Refresh those two columns now so a crash right
+            // after send but before the next periodic settings.save() still matches an incoming
+            // reply against the right outboundMessageID on restart, instead of silently reverting to
+            // "never sent".
+            if (dbId != 0) { Roboto.Store.UpdateExpectedReply(this); }
 
             return outboundMessageID;
         }

@@ -1098,8 +1098,21 @@ namespace RobotoChatBot.Modules
                 switch (status)
                 {
                     case xyzzy_Statuses.Question:
+                        // getQuestionCard(currentQuestion) can return null here - real production
+                        // crash found live (/xyzzy_status during a Question round, no response sent
+                        // at all - the card the round is currently asking had gone missing from the
+                        // catalog, e.g. its pack got dropped/disabled mid-game). Guarded rather than
+                        // assumed present, matching the same "card may not exist any more" reality
+                        // askQuestion()'s own empty-pool guard already treats as real, not
+                        // hypothetical.
+                        mod_xyzzy_card currentQuestionCard = getLocalData().getQuestionCard(currentQuestion);
+                        if (currentQuestionCard == null)
+                        {
+                            response += "The current question card is no longer available (its pack may have been removed) - use /xyzzy_settings to check your pack filters.";
+                            break;
+                        }
                         response += "The current question is : " + "\r\n" +
-                            Helpers.common.escapeMarkDownChars(getLocalData().getQuestionCard(currentQuestion).text) + "\r\n" +
+                            Helpers.common.escapeMarkDownChars(currentQuestionCard.text) + "\r\n" +
                             "Still waiting on the following players :";
                         bool unsentMessages = false;
                         bool first = true;
@@ -1117,7 +1130,7 @@ namespace RobotoChatBot.Modules
                                         response += "(*)";
                                         unsentMessages = true;
                                     }
-                                    
+
                                 }
                             }
                             response += "\r\n";

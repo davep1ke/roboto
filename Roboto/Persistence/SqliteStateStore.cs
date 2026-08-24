@@ -246,12 +246,33 @@ namespace RobotoChatBot.Persistence
         }
 
         // -- expected_replies -------------------------------------------------------------------
-        // Kept to the same "load everything into memory at startup, flush everything back at
-        // save()" timing model settings.cs's whole graph already used under XmlSerializer (see
-        // MIGRATION.md's phase 3 notes on this scoping choice) - a full delete+reinsert per save(),
-        // not per-mutation write-through. Real durability of in-flight ExpectedReply state across an
-        // unclean shutdown is a real, separately-scoped follow-up, not silently assumed to be solved
-        // by "it's a table now".
+        // Startup still does one bulk LoadExpectedReplies(). Day-to-day mutation no longer relies
+        // solely on the periodic full settings.save() flush (SaveExpectedReplies below) - Messaging.cs's
+        // addExpectedReply/removeExpectedReply and ExpectedReply.sendMessage() call
+        // InsertExpectedReply/UpdateExpectedReply/DeleteExpectedReply per-mutation instead, so an
+        // in-flight reply (and, critically, the outboundMessageID it gets once actually sent) survives
+        // a crash between saves rather than only being durable at the next periodic flush. See
+        // ExpectedReply.dbId's own comment and MIGRATION.md's ER-durability addendum.
+
+        private static void BindExpectedReplyParams(SqliteCommand command, ExpectedReply er)
+        {
+            command.Parameters.AddWithValue("$chat_id", er.chatID);
+            command.Parameters.AddWithValue("$user_id", er.userID);
+            command.Parameters.AddWithValue("$user_name", (object)er.userName ?? DBNull.Value);
+            command.Parameters.AddWithValue("$is_private_message", er.isPrivateMessage ? 1 : 0);
+            command.Parameters.AddWithValue("$time_logged", er.timeLogged.ToString("O"));
+            command.Parameters.AddWithValue("$time_sent_to_user", er.timeSentToUser.ToString("O"));
+            command.Parameters.AddWithValue("$text", er.text ?? "");
+            command.Parameters.AddWithValue("$reply_to_message_id", er.replyToMessageID);
+            command.Parameters.AddWithValue("$selective", er.selective ? 1 : 0);
+            command.Parameters.AddWithValue("$keyboard_json", er.keyboard == null ? (object)DBNull.Value : JsonSerializer.Serialize(er.keyboard, JsonOptions));
+            command.Parameters.AddWithValue("$expects_reply", er.expectsReply ? 1 : 0);
+            command.Parameters.AddWithValue("$mark_down", er.markDown ? 1 : 0);
+            command.Parameters.AddWithValue("$clear_keyboard", er.clearKeyboard ? 1 : 0);
+            command.Parameters.AddWithValue("$message_data", (object)er.messageData ?? DBNull.Value);
+            command.Parameters.AddWithValue("$plugin_type", (object)er.pluginType ?? DBNull.Value);
+            command.Parameters.AddWithValue("$outbound_message_id", er.outboundMessageID);
+        }
 
         public List<ExpectedReply> LoadExpectedReplies()
         {
@@ -259,7 +280,7 @@ namespace RobotoChatBot.Persistence
             using var command = connection.CreateCommand();
             command.CommandText =
                 """
-                SELECT chat_id, user_id, user_name, is_private_message, time_logged, time_sent_to_user,
+                SELECT id, chat_id, user_id, user_name, is_private_message, time_logged, time_sent_to_user,
                        text, reply_to_message_id, selective, keyboard_json, expects_reply, mark_down,
                        clear_keyboard, message_data, plugin_type, outbound_message_id
                 FROM expected_replies;
@@ -271,26 +292,84 @@ namespace RobotoChatBot.Persistence
             {
                 results.Add(new ExpectedReply
                 {
-                    chatID = reader.GetInt64(0),
-                    userID = reader.GetInt64(1),
-                    userName = reader.IsDBNull(2) ? "" : reader.GetString(2),
-                    isPrivateMessage = reader.GetInt64(3) != 0,
-                    timeLogged = DateTime.Parse(reader.GetString(4), null, System.Globalization.DateTimeStyles.RoundtripKind),
-                    timeSentToUser = DateTime.Parse(reader.GetString(5), null, System.Globalization.DateTimeStyles.RoundtripKind),
-                    text = reader.GetString(6),
-                    replyToMessageID = reader.GetInt64(7),
-                    selective = reader.GetInt64(8) != 0,
-                    keyboard = reader.IsDBNull(9) ? null : JsonSerializer.Deserialize<List<List<string>>>(reader.GetString(9), JsonOptions),
-                    expectsReply = reader.GetInt64(10) != 0,
-                    markDown = reader.GetInt64(11) != 0,
-                    clearKeyboard = reader.GetInt64(12) != 0,
-                    messageData = reader.IsDBNull(13) ? null : reader.GetString(13),
-                    pluginType = reader.IsDBNull(14) ? null : reader.GetString(14),
-                    outboundMessageID = reader.GetInt64(15),
+                    dbId = reader.GetInt64(0),
+                    chatID = reader.GetInt64(1),
+                    userID = reader.GetInt64(2),
+                    userName = reader.IsDBNull(3) ? "" : reader.GetString(3),
+                    isPrivateMessage = reader.GetInt64(4) != 0,
+                    timeLogged = DateTime.Parse(reader.GetString(5), null, System.Globalization.DateTimeStyles.RoundtripKind),
+                    timeSentToUser = DateTime.Parse(reader.GetString(6), null, System.Globalization.DateTimeStyles.RoundtripKind),
+                    text = reader.GetString(7),
+                    replyToMessageID = reader.GetInt64(8),
+                    selective = reader.GetInt64(9) != 0,
+                    keyboard = reader.IsDBNull(10) ? null : JsonSerializer.Deserialize<List<List<string>>>(reader.GetString(10), JsonOptions),
+                    expectsReply = reader.GetInt64(11) != 0,
+                    markDown = reader.GetInt64(12) != 0,
+                    clearKeyboard = reader.GetInt64(13) != 0,
+                    messageData = reader.IsDBNull(14) ? null : reader.GetString(14),
+                    pluginType = reader.IsDBNull(15) ? null : reader.GetString(15),
+                    outboundMessageID = reader.GetInt64(16),
                 });
             }
 
             return results;
+        }
+
+        /// <summary>Inserts one new expected_replies row and stashes its id back on the object
+        /// (er.dbId) so a later UpdateExpectedReply/DeleteExpectedReply for the same reply can target
+        /// it. Called from Messaging.addExpectedReply the moment a reply is queued, not batched with
+        /// anything else - see this section's own comment for why.</summary>
+        public void InsertExpectedReply(ExpectedReply er)
+        {
+            using var connection = Open();
+            using (var insertCommand = connection.CreateCommand())
+            {
+                insertCommand.CommandText =
+                    """
+                    INSERT INTO expected_replies
+                        (chat_id, user_id, user_name, is_private_message, time_logged, time_sent_to_user,
+                         text, reply_to_message_id, selective, keyboard_json, expects_reply, mark_down,
+                         clear_keyboard, message_data, plugin_type, outbound_message_id)
+                    VALUES
+                        ($chat_id, $user_id, $user_name, $is_private_message, $time_logged, $time_sent_to_user,
+                         $text, $reply_to_message_id, $selective, $keyboard_json, $expects_reply, $mark_down,
+                         $clear_keyboard, $message_data, $plugin_type, $outbound_message_id);
+                    """;
+                BindExpectedReplyParams(insertCommand, er);
+                insertCommand.ExecuteNonQuery();
+            }
+
+            using var idCommand = connection.CreateCommand();
+            idCommand.CommandText = "SELECT last_insert_rowid();";
+            er.dbId = (long)idCommand.ExecuteScalar();
+        }
+
+        /// <summary>Refreshes the two fields that mutate after a reply is already persisted (set once
+        /// the reply is actually sent - see ExpectedReply.sendMessage()). Everything else about a row
+        /// is fixed at insert time.</summary>
+        public void UpdateExpectedReply(ExpectedReply er)
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                UPDATE expected_replies
+                SET time_sent_to_user = $time_sent_to_user, outbound_message_id = $outbound_message_id
+                WHERE id = $id;
+                """;
+            command.Parameters.AddWithValue("$time_sent_to_user", er.timeSentToUser.ToString("O"));
+            command.Parameters.AddWithValue("$outbound_message_id", er.outboundMessageID);
+            command.Parameters.AddWithValue("$id", er.dbId);
+            command.ExecuteNonQuery();
+        }
+
+        public void DeleteExpectedReply(long id)
+        {
+            using var connection = Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "DELETE FROM expected_replies WHERE id = $id;";
+            command.Parameters.AddWithValue("$id", id);
+            command.ExecuteNonQuery();
         }
 
         public void SaveExpectedReplies(List<ExpectedReply> replies)
@@ -307,36 +386,32 @@ namespace RobotoChatBot.Persistence
 
             foreach (var er in replies)
             {
-                using var insertCommand = connection.CreateCommand();
-                insertCommand.Transaction = transaction;
-                insertCommand.CommandText =
-                    """
-                    INSERT INTO expected_replies
-                        (chat_id, user_id, user_name, is_private_message, time_logged, time_sent_to_user,
-                         text, reply_to_message_id, selective, keyboard_json, expects_reply, mark_down,
-                         clear_keyboard, message_data, plugin_type, outbound_message_id)
-                    VALUES
-                        ($chat_id, $user_id, $user_name, $is_private_message, $time_logged, $time_sent_to_user,
-                         $text, $reply_to_message_id, $selective, $keyboard_json, $expects_reply, $mark_down,
-                         $clear_keyboard, $message_data, $plugin_type, $outbound_message_id);
-                    """;
-                insertCommand.Parameters.AddWithValue("$chat_id", er.chatID);
-                insertCommand.Parameters.AddWithValue("$user_id", er.userID);
-                insertCommand.Parameters.AddWithValue("$user_name", (object)er.userName ?? DBNull.Value);
-                insertCommand.Parameters.AddWithValue("$is_private_message", er.isPrivateMessage ? 1 : 0);
-                insertCommand.Parameters.AddWithValue("$time_logged", er.timeLogged.ToString("O"));
-                insertCommand.Parameters.AddWithValue("$time_sent_to_user", er.timeSentToUser.ToString("O"));
-                insertCommand.Parameters.AddWithValue("$text", er.text ?? "");
-                insertCommand.Parameters.AddWithValue("$reply_to_message_id", er.replyToMessageID);
-                insertCommand.Parameters.AddWithValue("$selective", er.selective ? 1 : 0);
-                insertCommand.Parameters.AddWithValue("$keyboard_json", er.keyboard == null ? (object)DBNull.Value : JsonSerializer.Serialize(er.keyboard, JsonOptions));
-                insertCommand.Parameters.AddWithValue("$expects_reply", er.expectsReply ? 1 : 0);
-                insertCommand.Parameters.AddWithValue("$mark_down", er.markDown ? 1 : 0);
-                insertCommand.Parameters.AddWithValue("$clear_keyboard", er.clearKeyboard ? 1 : 0);
-                insertCommand.Parameters.AddWithValue("$message_data", (object)er.messageData ?? DBNull.Value);
-                insertCommand.Parameters.AddWithValue("$plugin_type", (object)er.pluginType ?? DBNull.Value);
-                insertCommand.Parameters.AddWithValue("$outbound_message_id", er.outboundMessageID);
-                insertCommand.ExecuteNonQuery();
+                using (var insertCommand = connection.CreateCommand())
+                {
+                    insertCommand.Transaction = transaction;
+                    insertCommand.CommandText =
+                        """
+                        INSERT INTO expected_replies
+                            (chat_id, user_id, user_name, is_private_message, time_logged, time_sent_to_user,
+                             text, reply_to_message_id, selective, keyboard_json, expects_reply, mark_down,
+                             clear_keyboard, message_data, plugin_type, outbound_message_id)
+                        VALUES
+                            ($chat_id, $user_id, $user_name, $is_private_message, $time_logged, $time_sent_to_user,
+                             $text, $reply_to_message_id, $selective, $keyboard_json, $expects_reply, $mark_down,
+                             $clear_keyboard, $message_data, $plugin_type, $outbound_message_id);
+                        """;
+                    BindExpectedReplyParams(insertCommand, er);
+                    insertCommand.ExecuteNonQuery();
+                }
+
+                // Reassign dbId to the freshly-reinserted row's new autoincrement id - without this,
+                // every ExpectedReply still in memory after this full delete+reinsert would carry a
+                // stale id that no longer matches any row, silently no-op-ing its next
+                // UpdateExpectedReply/DeleteExpectedReply (a slow orphaned-row leak, not a crash).
+                using var idCommand = connection.CreateCommand();
+                idCommand.Transaction = transaction;
+                idCommand.CommandText = "SELECT last_insert_rowid();";
+                er.dbId = (long)idCommand.ExecuteScalar();
             }
 
             transaction.Commit();

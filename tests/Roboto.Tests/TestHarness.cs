@@ -27,6 +27,11 @@ public sealed class TestHarness : IDisposable
     public FakeTelegramBotClient BotClient { get; } = new();
     private readonly string _dbPath;
 
+    /// <summary>The temp SQLite file this harness's Roboto.Store points at - for tests that need to
+    /// open a second, independent SqliteStateStore against the same file (e.g. ER-durability tests
+    /// checking a mutation is on disk without ever calling Roboto.Settings.save()).</summary>
+    public string DbPath => _dbPath;
+
     public TestHarness()
     {
         if (!_pluginsLoaded)

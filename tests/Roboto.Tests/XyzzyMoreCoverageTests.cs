@@ -176,4 +176,25 @@ public class XyzzyMoreCoverageTests
 
         Assert.Contains("not in any active games", bot.BotClient.SentMessages[^1].Text);
     }
+
+    [Fact]
+    public void StatusDuringAQuestionRoundHandlesTheCurrentCardHavingBeenRemoved()
+    {
+        // Real production crash (2026-08-24): /xyzzy_status mid-round threw a NullReferenceException
+        // and the user got no response at all. getQuestionCard(currentQuestion) returns null once the
+        // card the round is currently on is no longer in the catalog - e.g. its pack got
+        // dropped/disabled after the round started - and getStatus() dereferenced .text on that
+        // straight away with no guard. Simulated here by clearing the whole catalog out from under an
+        // in-progress round, same "card vanished mid-game" shape as the live incident.
+        using var bot = StartThreePlayerGame();
+        var chatData = ChatData();
+        Assert.Equal(xyzzy_Statuses.Question, chatData.status);
+
+        var coreData = (mod_xyzzy_coredata)Plugins.plugins.OfType<mod_xyzzy>().Single().getPluginData();
+        coreData.questions.Clear();
+
+        bot.SendGroupMessage(ChatId, Alice, "/xyzzy_status", "Alice");
+
+        Assert.Contains(bot.BotClient.SentMessages, m => m.ChatId == ChatId && m.Text.Contains("no longer available"));
+    }
 }
