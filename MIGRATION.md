@@ -1,19 +1,25 @@
 # Roboto: legacy-structure Linux/Docker migration plan
 
-Working document tracking the port of the legacy WinForms/.NET Framework bot (`Roboto/`) to modern
-.NET on Linux/Docker, **on this branch (`rewrite/legacy-structure-port`)** - a from-legacy port that
-deliberately keeps legacy's actual class/dispatch/game-logic structure intact, replacing only what
-must change to run modern/cross-platform. Not a rewrite: see the full plan and its rationale at
-`/home/davepike/.claude/plans/rustling-launching-cake.md` for how this branch's approach differs from
-the abandoned `rewrite/dotnet-docker-port` branch (kept, untouched, as a reference/parity-check
-source and an infra-pieces-to-copy-from source - see that plan's "What happens to
-rewrite/dotnet-docker-port").
+> **Migration complete, merged to `master` 2026-08-24.** This file is now a historical record of the
+> port, not an active progress tracker - kept for the "why does this look like this" context and the
+> real-incident write-ups below, most of which also have their own durable comment in the actual code
+> they describe. For current project orientation, safety rules, and ongoing conventions, see
+> `CLAUDE.md` instead - it no longer depends on this file being current. Nothing below has been
+> updated to reflect anything that happens after the merge; treat it as frozen at that point in time.
 
-**This file is temporary** - a working plan/progress-tracker, not durable project context. See
-`CLAUDE.md` for durable orientation (repo layout, safety rules, dev environment, architecture
-decisions). Detailed "what we tried, what broke, how it got fixed" narratives live as **comments in
-the code itself**, not here - check the file you're about to change before assuming its current shape
-is arbitrary.
+Working document tracking the port of the legacy WinForms/.NET Framework bot (`Roboto/`) to modern
+.NET on Linux/Docker, on the branch `rewrite/legacy-structure-port` (now merged into `master`, see
+banner above) - a from-legacy port that deliberately kept legacy's actual class/dispatch/game-logic
+structure intact, replacing only what had to change to run modern/cross-platform. Not a rewrite: see
+the full plan and its rationale at `/home/davepike/.claude/plans/rustling-launching-cake.md` for how
+this port's approach differed from the abandoned `rewrite/dotnet-docker-port` branch (kept, untouched,
+as a reference/parity-check source and an infra-pieces-to-copy-from source - see that plan's "What
+happens to rewrite/dotnet-docker-port").
+
+**This file was always meant to be temporary** - a working plan/progress-tracker, not durable project
+context (see the banner above for what changed now that the port is done). Detailed "what we tried,
+what broke, how it got fixed" narratives live as **comments in the code itself** too, not only here -
+check the file you're about to change before assuming its current shape is arbitrary.
 
 ## Phase status
 
@@ -26,12 +32,12 @@ is arbitrary.
 | 3b. Split the xyzzy card/pack catalog out of its blob into the `xyzzy_cards`/`xyzzy_packs` tables | Done, verified | `0d8e1c3` |
 | 3c. `logs` table + custom Serilog DB sink + 30-day purge task | Done, verified | `0d8e1c3` |
 | 4. Real periodic background scheduler + `ChatKeyedLock` | Done, verified | `521b9eb` |
-| 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Deferred - user call, see notes | — |
+| 5. Hybrid keyboards (`InlineKeyboardMarkup`/`CallbackQuery` bridged into `ExpectedReply`) | Not pursued - user call (2026-08-24): not required, not planned | — |
 | 6. Charting: ScottPlot on legacy's own `stats.cs` data shape | Done, verified | `a98f277` |
 | 7. Test harness + business-logic test suite | Done, verified (partial coverage - see notes) | `28d4714` |
 | 8. Migrator retarget (`XmlImporter` → new decomposed store) | Done, verified against a real copy of production XML | — |
 | 9. Carry-forward deltas (multi-answer, bot self-de-admin, Add Bots, judge-kick-skip, bolded winner, real Abandon confirm, pack-default fix, pagination fix, kick-below-MinPlayers) | Done, verified - see notes (most items were already-true-by-construction, not actual deltas) | `abe3dea` |
-| 10. Cutover prep | Not started | — |
+| 10. Cutover prep | Done in substance, see "What's still open" below | `424def2` |
 
 "Verified" means actually built + run, not just "compiles" - see commit messages and in-code
 comments for what was specifically tested and any bugs caught along the way.
@@ -1628,19 +1634,20 @@ runs, 116/116 (up from 109).
 
 ## What's still open
 
-Phase 10 only - phase 8 (migrator) is done (corrected above; this section previously and incorrectly
-still listed it). See the phase table above and the full plan file for what phase 10 actually
-involves, the confirmed architecture decisions (real background scheduler, decomposed persistence +
-relational tables for whole-bot lists, carry-forward deltas), and the resolved/open sub-decisions
+Nothing - **the port is done and merged into `master`** (2026-08-24, fast-forward from
+`legacy-winforms-baseline`, commit `424def2`). Local `master` is ahead of `origin/master`; pushing it
+is the one remaining step, gated on explicit go-ahead per `CLAUDE.md`'s standing safety rule, not
+technical readiness. In substance, phase 10's own cutover-prep goals had already happened organically
+before the merge, not as a discrete step: the legacy/abandoned-rewrite cross-check (found and fixed
+one real Steam achievements bug), a dry-run import against real production XML (three real bots:
+`chat_mangler_bot`, `chat_against_humanity_bot`, `robotolive`), and live round-trips against `beefy`,
+`chat_mangler_bot`, `chat_against_humanity_bot`, and `robotolive` - the last two being actual
+production bots already running this code before the merge. See the phase table above and the full
+plan file for the confirmed architecture decisions (real background scheduler, decomposed persistence
++ relational tables for whole-bot lists, carry-forward deltas) and the resolved/open sub-decisions
 (chatPriority sort - decided, implement; daily XML backup - decided, not needed, TrueNAS snapshots
-instead; background-scheduler batching caps - decided, keep as legacy has them). In substance, most of
-phase 10 has already happened organically rather than as a discrete step: the legacy/abandoned-rewrite
-cross-check (found and fixed one real Steam achievements bug), a dry-run import against real
-production XML (three real bots: `chat_mangler_bot`, `chat_against_humanity_bot`, `robotolive`), and
-live round-trips against `beefy`, `chat_mangler_bot`, `chat_against_humanity_bot`, and `robotolive` -
-the last two being actual production bots already running this code. What's left is closer to
-paperwork/sign-off than new engineering. Phase 5 (hybrid keyboards) is deliberately deferred
-indefinitely, not blocking and not currently planned to be picked back up - user call (2026-08-24):
-not required. Two smaller items are explicitly **not** being pursued either, same call: the
+instead; background-scheduler batching caps - decided, keep as legacy has them). Phase 5 (hybrid
+keyboards) was deliberately never pursued - user call (2026-08-24): not required, not planned. Two
+smaller items are explicitly **not** being pursued either, same call: the
 mini-check "wave" self-synchronization noise (investigated and confirmed benign - see its own
 addendum above) and any jitter fix for it.
