@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using System.Linq;
 using System.Text;
@@ -88,7 +89,7 @@ namespace RobotoChatBot
                 //plugin.initData(); //this data probably already exists if loaded by XML, but if not, allow the plugin to create it. 
             }
 
-            logging.longOp lo_modules = new logging.longOp("Module Startup Checks", plugins.Count() * 2);
+            Stopwatch sw = Stopwatch.StartNew();
             foreach (Modules.RobotoModuleTemplate plugin in plugins)
             {
                 Roboto.log.log("Startup Checks for " + plugin.ToString(), logging.loglevel.warn);
@@ -110,15 +111,13 @@ namespace RobotoChatBot
                 }
                 Roboto.log.log("Checking coredata for " + plugin.ToString(), logging.loglevel.warn);
                 plugin.getPluginData().startupChecks();
-                lo_modules.addone();
                 Roboto.log.log("Checking module for " + plugin.ToString(), logging.loglevel.warn);
                 plugin.startupChecks();
-                lo_modules.addone();
 
             }
-            lo_modules.complete();
 
-
+            sw.Stop();
+            Roboto.Settings.stats.logStat(new statItem("Module Startup Checks Duration (ms)", typeof(Plugins), (int)sw.ElapsedMilliseconds));
         }
 
         /// <summary>

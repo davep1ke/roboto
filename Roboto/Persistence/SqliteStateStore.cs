@@ -122,14 +122,10 @@ namespace RobotoChatBot.Persistence
                     fail_count INTEGER NOT NULL
                 );
 
-                CREATE TABLE IF NOT EXISTS logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp_utc TEXT NOT NULL,
-                    level TEXT NOT NULL,
-                    source_context TEXT,
-                    message TEXT NOT NULL
+                CREATE TABLE IF NOT EXISTS datafixes (
+                    name TEXT PRIMARY KEY NOT NULL,
+                    applied_utc TEXT NOT NULL
                 );
-                CREATE INDEX IF NOT EXISTS idx_logs_timestamp_utc ON logs(timestamp_utc);
                 """;
             command.ExecuteNonQuery();
         }
@@ -683,39 +679,36 @@ namespace RobotoChatBot.Persistence
             transaction.Commit();
         }
 
-        // -- logs -------------------------------------------------------------------------------
-        // Additive to the console sink, not a replacement (see Core/DbLogSink.cs) - legacy logged to
-        // a file as well as its WPF window; console-only after the WPF removal (phase 0/1) was a
-        // real functionality loss versus that. WriteLogEvent is called once per log line (a genuine
-        // write-through, unlike the rest of this phase's blob/table saves) since a log line is
-        // useless if only durable at the next periodic settings.save() - the whole point is
-        // capturing what happened even through a crash.
-
-        public void WriteLogEvent(DateTime timestampUtc, string level, string sourceContext, string message)
+        // -- datafixes --------------------------------------------------------------------------
+        // One-time scripts that run once per name, ever, the first time a deploy carrying them
+        // boots against a given DB - for schema/data cleanup that isn't safe to just fold silently
+        // into Initialize()'s CREATE TABLE IF NOT EXISTS block (e.g. dropping a table that used to
+        // exist). Runs right after Initialize() and before anything else touches the DB, covered by
+        // DbBackup's pre-open snapshot the same way startupChecks() is. See DataFixes.cs for the
+        // actual list - this method is just the runner.
+        public void RunPendingDataFixes(IReadOnlyList<(string Name, Action<SqliteConnection, SqliteTransaction> Apply)> fixes)
         {
             using var connection = Open();
-            using var command = connection.CreateCommand();
-            command.CommandText =
-                """
-                INSERT INTO logs (timestamp_utc, level, source_context, message)
-                VALUES ($timestamp_utc, $level, $source_context, $message);
-                """;
-            command.Parameters.AddWithValue("$timestamp_utc", timestampUtc.ToString("O"));
-            command.Parameters.AddWithValue("$level", level);
-            command.Parameters.AddWithValue("$source_context", (object)sourceContext ?? DBNull.Value);
-            command.Parameters.AddWithValue("$message", message ?? "");
-            command.ExecuteNonQuery();
-        }
+            foreach (var fix in fixes)
+            {
+                using var checkCommand = connection.CreateCommand();
+                checkCommand.CommandText = "SELECT 1 FROM datafixes WHERE name = $name;";
+                checkCommand.Parameters.AddWithValue("$name", fix.Name);
+                if (checkCommand.ExecuteScalar() != null) { continue; }
 
-        /// <returns>How many rows were purged - logged by the caller so the purge itself leaves a
-        /// trace.</returns>
-        public int PurgeLogsOlderThan(DateTime cutoffUtc)
-        {
-            using var connection = Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM logs WHERE timestamp_utc < $cutoff;";
-            command.Parameters.AddWithValue("$cutoff", cutoffUtc.ToString("O"));
-            return command.ExecuteNonQuery();
+                using var transaction = connection.BeginTransaction();
+                fix.Apply(connection, transaction);
+
+                using var recordCommand = connection.CreateCommand();
+                recordCommand.Transaction = transaction;
+                recordCommand.CommandText =
+                    "INSERT INTO datafixes (name, applied_utc) VALUES ($name, $applied_utc);";
+                recordCommand.Parameters.AddWithValue("$name", fix.Name);
+                recordCommand.Parameters.AddWithValue("$applied_utc", DateTime.UtcNow.ToString("O"));
+                recordCommand.ExecuteNonQuery();
+
+                transaction.Commit();
+            }
         }
     }
 }

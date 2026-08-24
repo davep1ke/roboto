@@ -17,8 +17,9 @@ namespace RobotoChatBot
     /// longOp/loglevel/setWindowTitle/cleanse) so the hundreds of existing call sites across every
     /// module didn't need to change, minus the colour parameter itself (mechanically stripped from
     /// every call site - it only ever drove LogWindow text color, nothing else). Output now goes
-    /// through Serilog (console sink here; a DB sink with a 30-day purge is added in a later phase -
-    /// see MIGRATION.md).
+    /// through Serilog (console sink) plus, when enableFileLogging is set, a rotating plain-text
+    /// log file (see load()/write() below) - a DB sink was added in an earlier phase and then
+    /// removed (see the constructor's own comment for why).
     /// </summary>
     public class logging
     {
@@ -116,84 +117,15 @@ namespace RobotoChatBot
             }
         }
 
-        /// <summary>
-        /// Was a WPF progress-bar abstraction (Roboto.logWindow.addOrUpdateLongOp/removeProgressBar) -
-        /// no UI to drive any more, so this now just logs its own start/step/completion as plain log
-        /// lines instead of rendering a progress bar. Kept as a class (not deleted outright) since
-        /// every call site (Plugins.cs, mod_xyzzy.cs, Roboto.cs startup) constructs one positionally
-        /// and calls addone()/complete() - changing those call sites isn't needed for this to work.
-        /// </summary>
-        public class longOp
-        {
-            public string name;
-            public int totalLength;
-            private int currentPos = 0;
-
-            private longOp parent;
-
-            public int CurrentPos
-            {
-                get
-                {
-                    return currentPos;
-                }
-            }
-
-            public longOp Parent
-            {
-                get
-                {
-                    return parent;
-                }
-
-            }
-
-            public longOp(string name, int totalLength)
-            {
-                this.name = name;
-                this.totalLength = totalLength;
-                Roboto.log.registerLongOp(this);
-                Roboto.log.log($"{name}: starting ({totalLength} steps)", loglevel.low);
-            }
-
-            public longOp(string name, int totalLength, longOp parent)
-            {
-                this.name = name;
-                this.totalLength = totalLength;
-                this.parent = parent;
-                Roboto.log.registerLongOp(this);
-                Roboto.log.log($"{name}: starting ({totalLength} steps)", loglevel.low);
-            }
-
-            public void updateLongOp(int current, bool complete = false)
-            {
-                this.currentPos = current;
-                Roboto.log.log($"{name}: {current}/{totalLength}", loglevel.verbose);
-
-                if (complete) { this.complete(); }
-            }
-
-            public void complete()
-            {
-                Roboto.log.unregisterLongOp(this);
-                Roboto.log.log($"{name}: complete", loglevel.low);
-            }
-
-            public void addone()
-            {
-                updateLongOp(currentPos + 1);
-            }
-        }
-
-        protected void unregisterLongOp(longOp longOp)
-        {
-            longOps.Remove(longOp);
-        }
-
-        protected void registerLongOp(longOp longOp)
-        {
-            longOps.Add(longOp);
-        }
+        // longOp (a WPF progress-bar abstraction - Roboto.logWindow.addOrUpdateLongOp/
+        // removeProgressBar) was removed entirely, not just stubbed: it was pure UI plumbing (a
+        // List<longOp> registered/unregistered per operation but never read back anywhere, plus a
+        // .Parent/.CurrentPos never read either) that, post-port, only added log volume (a "starting"
+        // line, a verbose line per step, a "complete" line) with nothing left to consume it. Every
+        // former call site now times itself with a Stopwatch and records duration (plus, where the
+        // step count was a real variable business quantity rather than a fixed phase counter, an item
+        // count) via Roboto.Settings.stats.logStat instead - see e.g. mod_xyzzy.startupChecks()'s
+        // "... Duration (ms)" stat registrations.
 
         public enum loglevel { verbose, low, normal, warn, high, critical }
         private StreamWriter textWriter = null;
@@ -203,20 +135,21 @@ namespace RobotoChatBot
         private DateTime logLastFlushed = DateTime.Now;
         private static string windowTitleCore = "Roboto ChatBot";
         private string windowTitle = windowTitleCore;
-        private List<longOp> longOps = new List<longOp>();
         private ILogger serilog;
 
         public logging()
         {
-            //DbLogSink writes to Roboto.Store (the logs table) - see its own comment on why this is
-            //additive to the console sink, not a replacement, and why it's safe to construct here
-            //even though Roboto.Store doesn't exist yet at this point (this runs from Roboto.log's
-            //static field initializer, before startBackground()'s instance bootstrap) - it just
-            //no-ops until the store is actually available.
+            // A DB sink (writing every log line to a `logs` table) was added here in an earlier
+            // phase, then removed: nothing in the codebase ever read the table back out, and it
+            // meant every single log() call opened a fresh SqliteConnection and did a synchronous
+            // INSERT+commit - measured at ~30-80ms per call, which dominated the cost of any
+            // startup path that logs per-item/per-chat (e.g. mod_xyzzy_coredata.startupChecks).
+            // enableFileLogging's rotating text log (below) already gives the same "survives a
+            // crash" durability the DB sink existed for. See Persistence/DataFixes.cs's
+            // "0001_drop_logs_table" for the corresponding schema cleanup.
             serilog = new LoggerConfiguration()
                 .MinimumLevel.Verbose()
                 .WriteTo.Console(outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-                .WriteTo.Sink(new DbLogSink())
                 .CreateLogger();
         }
 

@@ -54,6 +54,7 @@ public sealed class TestHarness : IDisposable
         };
         Roboto.Store = new SqliteStateStore(_dbPath);
         Roboto.Store.Initialize();
+        Roboto.Store.RunPendingDataFixes(DataFixes.All);
 
         TelegramAPI.SetClientForTesting(BotClient);
 

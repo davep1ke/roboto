@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using System.Linq;
 using System.Text;
@@ -42,7 +43,7 @@ namespace RobotoChatBot
                 ).ToList();
             }
 
-            logging.longOp lo_s = new logging.longOp("Dormant Chat Check", dormant.Count);
+            Stopwatch sw = Stopwatch.StartNew();
 
             Roboto.log.log("Checking for Purgable chats / chat data", logging.loglevel.high, false, true);
             foreach (chat c in dormant)
@@ -68,10 +69,11 @@ namespace RobotoChatBot
                         Roboto.log.log("Skipping purge of chat " + c.chatID + " as one or more plugins reported they shouldn't be purged");
                     }
                 }
-                lo_s.addone();
             }
-            lo_s.complete();
 
+            sw.Stop();
+            Roboto.Settings.stats.logStat(new statItem("Dormant Chat Check Duration (ms)", typeof(Chats), (int)sw.ElapsedMilliseconds));
+            Roboto.Settings.stats.logStat(new statItem("Dormant Chats Checked", typeof(Chats), dormant.Count));
         }
 
 

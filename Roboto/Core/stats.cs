@@ -42,6 +42,7 @@ namespace RobotoChatBot
         {
             this.name = name;
             this.moduleType = moduleType;
+            this.c = c;
             this.displayMode = displayMode;
             this.statMode = statMode;
         }
@@ -237,6 +238,17 @@ namespace RobotoChatBot
             registerStatType("Hammering Prevention", typeof(Roboto), Color.Turquoise, stats.displaymode.bar);
             registerStatType("Chats Purged", typeof(Roboto), Color.DarkRed, displaymode.bar);
 
+            // Replaces the old longOp progress-bar construct for these core (non-module) long-running
+            // passes - duration as a snapshot-per-run gauge (absolute, same treatment as e.g.
+            // "Background Wait"), not summed across a stat time-slice. Dormant Chat Check's item count
+            // (how many candidates it actually looked at) is a real variable quantity nothing else
+            // tracks, so it gets a count stat too; Core Startup/Module Startup Checks' old "step
+            // counts" were fixed phase counters, not a business quantity worth trending.
+            registerStatType("Core Startup Duration (ms)", typeof(Roboto), Color.LimeGreen, displaymode.line, statmode.absolute);
+            registerStatType("Module Startup Checks Duration (ms)", typeof(Plugins), Color.SteelBlue, displaymode.line, statmode.absolute);
+            registerStatType("Dormant Chat Check Duration (ms)", typeof(Chats), Color.SaddleBrown, displaymode.line, statmode.absolute);
+            registerStatType("Dormant Chats Checked", typeof(Chats), Color.Sienna);
+
             logStat(new statItem("Startup", typeof(Roboto)));
         }
 
@@ -386,6 +398,33 @@ namespace RobotoChatBot
 
             var plot = new ScottPlot.Plot();
 
+            // Dark theme, matching the terminal/dashboard look the bot's other tooling already has,
+            // rather than ScottPlot's white-background default. "Liberation Sans" (not literally
+            // Arial/Segoe UI, both proprietary and unavailable on Linux) is metric-compatible with
+            // Arial and was built specifically as its open-source replacement - it's what's actually
+            // installed in the runtime container (Dockerfile installs fonts-liberation alongside the
+            // pre-existing fonts-dejavu-core) so this renders correctly in production, not just here
+            // in dev where a desktop's system fonts would silently paper over a missing-font fallback.
+            ScottPlot.Color white = new ScottPlot.Color("#FFFFFF");
+            ScottPlot.Color figureBg = new ScottPlot.Color("#1E1E1E");
+            ScottPlot.Color dataBg = new ScottPlot.Color("#252526");
+            ScottPlot.Color gridLine = new ScottPlot.Color("#585858");
+
+            plot.Font.Set("Liberation Sans");
+            plot.FigureBackground.Color = figureBg;
+            plot.DataBackground.Color = dataBg;
+            plot.Axes.Color(white);
+            plot.Axes.Title.Label.ForeColor = white;
+            plot.Grid.MajorLineColor = gridLine;
+            plot.Grid.MinorLineColor = gridLine.WithAlpha(0.35);
+
+            // A wide/no-args /statgraph query can easily pull in 20-30+ registered series - past a
+            // point the legend itself becomes unreadable clutter that covers half the chart. Every
+            // series still gets plotted regardless; only the legend is capped, by leaving LegendText
+            // unset for anything past the cap (ScottPlot's auto-legend skips plottables with no
+            // legend text entirely - confirmed against the installed 5.1.59 package, not assumed).
+            const int maxLegendEntries = 10;
+            int legendEntries = 0;
             foreach (statSeriesData s in seriesData)
             {
                 // getSeries() adds points newest-first (i=0 is "now", i=graphYAxisCount-1 is the
@@ -396,7 +435,11 @@ namespace RobotoChatBot
                 double[] ys = ordered.Select(p => p.value).ToArray();
 
                 var scatter = plot.Add.Scatter(xs, ys);
-                scatter.LegendText = s.title;
+                if (legendEntries < maxLegendEntries)
+                {
+                    scatter.LegendText = s.title;
+                    legendEntries++;
+                }
                 scatter.MarkerSize = 0;
                 scatter.LineWidth = 2;
 
@@ -410,10 +453,20 @@ namespace RobotoChatBot
                 }
             }
 
-            plot.Title(Roboto.Settings.botUserName + " statistics - last " + (granularity.TotalHours * graphYAxisCount).ToString("0") + "h");
+            string titleText = Roboto.Settings.botUserName + " statistics - last " + (granularity.TotalHours * graphYAxisCount).ToString("0") + "h";
+            if (seriesData.Count > maxLegendEntries)
+            {
+                titleText += " (showing key for " + maxLegendEntries + " of " + seriesData.Count + " series)";
+            }
+            plot.Title(titleText);
             plot.XLabel("Hours ago");
             plot.YLabel("Value / " + granularity.TotalMinutes.ToString("0") + " min" + (granularity.TotalMinutes == 1 ? "" : "s"));
-            plot.ShowLegend(ScottPlot.Alignment.UpperRight);
+
+            ScottPlot.Legend legend = plot.ShowLegend(ScottPlot.Alignment.UpperLeft);
+            legend.BackgroundColor = dataBg.WithAlpha(0.85);
+            legend.FontColor = white;
+            legend.FontName = "Liberation Sans";
+            legend.OutlineColor = gridLine;
 
             byte[] bytes = plot.GetImageBytes(1200, 600, ScottPlot.ImageFormat.Png);
             return new MemoryStream(bytes);

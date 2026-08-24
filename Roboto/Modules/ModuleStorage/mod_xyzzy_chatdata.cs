@@ -1444,7 +1444,7 @@ namespace RobotoChatBot.Modules
 
         public override void startupChecks()
         {
-            
+
             int i = packFilterIDs.Count();
             if (i > 250) //i.e enough that its stupid
             {
@@ -1454,8 +1454,15 @@ namespace RobotoChatBot.Modules
             }
 
             packFilterIDs = packFilterIDs.Distinct().ToList();
-            log("Removed " + (i - packFilterIDs.Count()) + " filters (now " + packFilterIDs.Count() + ")", logging.loglevel.verbose);
-            
+            // This runs once per chat (Core/Plugins.cs's startupChecks loop) - only log when there's
+            // actually something to report. Logging the common no-op case unconditionally meant a
+            // log() call, and its cost, for every single chat on every startup regardless of whether
+            // any duplicates existed.
+            if (packFilterIDs.Count() != i)
+            {
+                log("Removed " + (i - packFilterIDs.Count()) + " filters (now " + packFilterIDs.Count() + ")", logging.loglevel.verbose);
+            }
+
         }
 
         /// <summary>

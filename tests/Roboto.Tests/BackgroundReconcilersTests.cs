@@ -1,41 +1,64 @@
 using System;
 using System.Linq;
+using Microsoft.Data.Sqlite;
 using RobotoChatBot;
 using RobotoChatBot.Modules;
+using RobotoChatBot.Persistence;
 
 namespace RobotoTests;
 
 /// <summary>
 /// Covers whole-bot background housekeeping that lives outside any one module's own
-/// backgroundProcessing: SqliteStateStore's logs-table 30-day purge (phase 3c) and
-/// Chats.removeDormantChats (phase 4's per-chat lock applied to the same dormant-chat sweep legacy
-/// always had).
+/// backgroundProcessing: SqliteStateStore's datafix runner and Chats.removeDormantChats (phase 4's
+/// per-chat lock applied to the same dormant-chat sweep legacy always had).
 /// </summary>
 public class BackgroundReconcilersTests
 {
     [Fact]
-    public void PurgeLogsOlderThanRemovesOnlyRowsPastTheCutoff()
+    public void DropLogsTableDataFixRemovesAPreExistingLogsTableAndIsIdempotent()
     {
-        using var bot = new TestHarness();
-        Roboto.Store.WriteLogEvent(DateTime.UtcNow.AddDays(-40), "Information", "Test", "old message 1");
-        Roboto.Store.WriteLogEvent(DateTime.UtcNow.AddDays(-40), "Information", "Test", "old message 2");
-        Roboto.Store.WriteLogEvent(DateTime.UtcNow.AddDays(-5), "Information", "Test", "recent message");
+        // Standalone SqliteStateStore rather than TestHarness - TestHarness already runs
+        // RunPendingDataFixes as part of its own startup, before this test gets control, so a fresh
+        // harness DB never has a `logs` table to drop in the first place. Simulates a DB from before
+        // the `logs` table (Serilog DbLogSink's target) was removed.
+        string dbPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"roboto-test-{Guid.NewGuid():N}.db");
+        var store = new SqliteStateStore(dbPath);
+        store.Initialize();
 
-        int purged = Roboto.Store.PurgeLogsOlderThan(DateTime.UtcNow.AddDays(-30));
+        using (var connection = store.Open())
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "CREATE TABLE logs (id INTEGER PRIMARY KEY, message TEXT);";
+            command.ExecuteNonQuery();
+        }
 
-        Assert.Equal(2, purged);
+        store.RunPendingDataFixes(DataFixes.All);
+
+        Assert.False(TableExists(store, "logs"));
+
+        // Idempotent: running again (e.g. next startup) doesn't error and doesn't reapply.
+        store.RunPendingDataFixes(DataFixes.All);
     }
 
     [Fact]
-    public void PurgeLogsOlderThanIsIdempotentOnceRowsAreAlreadyGone()
+    public void RunPendingDataFixesNoOpsWhenTheTargetTableNeverExisted()
     {
+        // A fresh instance created after the `logs` table was removed from Initialize() never has
+        // one - "0001_drop_logs_table"'s DROP TABLE IF EXISTS must not throw here.
         using var bot = new TestHarness();
-        Roboto.Store.WriteLogEvent(DateTime.UtcNow.AddDays(-40), "Information", "Test", "old message");
-        Roboto.Store.PurgeLogsOlderThan(DateTime.UtcNow.AddDays(-30));
 
-        int purgedAgain = Roboto.Store.PurgeLogsOlderThan(DateTime.UtcNow.AddDays(-30));
+        Roboto.Store.RunPendingDataFixes(DataFixes.All);
 
-        Assert.Equal(0, purgedAgain);
+        Assert.False(TableExists(Roboto.Store, "logs"));
+    }
+
+    private static bool TableExists(SqliteStateStore store, string tableName)
+    {
+        using var connection = store.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name;";
+        command.Parameters.AddWithValue("$name", tableName);
+        return command.ExecuteScalar() != null;
     }
 
     [Fact]

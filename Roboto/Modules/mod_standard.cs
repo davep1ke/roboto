@@ -13,10 +13,6 @@ namespace RobotoChatBot.Modules
     public class mod_standard_data : RobotoModuleDataTemplate
     {
         public DateTime lastSaveToDiskDateTime = DateTime.Now;
-        //Throttles the logs-table purge the same way lastSaveToDiskDateTime throttles the settings
-        //save - once a day is plenty for a 30-day retention window, and avoids a DELETE query on
-        //every single background pass once the real scheduler (a much shorter interval) exists.
-        public DateTime lastLogPurgeDateTime = DateTime.MinValue;
 
         /// <summary>TelegramAPI.EnsureNotAdminInAnyChat's per-pass cap - found live (2026-08-24, see
         /// MIGRATION.md) doing one blocking GetChatMember call per *every* known chat, unbatched,
@@ -193,16 +189,6 @@ namespace RobotoChatBot.Modules
             // phase 9) - added alongside it, not instead, per explicit request.
             TelegramAPI.EnsureNotAdminInAnyChat();
             Chats.removeDormantChats();
-
-            //purge the logs table of anything older than 30 days - once a day is plenty (see
-            //lastLogPurgeDateTime's own comment).
-            if (((mod_standard_data)localData).lastLogPurgeDateTime.AddDays(1) < DateTime.Now)
-            {
-                ((mod_standard_data)localData).lastLogPurgeDateTime = DateTime.Now;
-                int purged = Roboto.Store.PurgeLogsOlderThan(DateTime.UtcNow.AddDays(-30));
-                if (purged > 0) { Roboto.log.log("Purged " + purged + " log rows older than 30 days", logging.loglevel.low); }
-            }
-
         }
 
         public override bool chatEvent(message m, chat c = null)

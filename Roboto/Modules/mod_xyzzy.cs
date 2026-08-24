@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using System.IO;
@@ -319,7 +320,8 @@ namespace RobotoChatBot.Modules
         protected override void backgroundProcessing()
         {
             mod_xyzzy_coredata localdata = (mod_xyzzy_coredata)getPluginData();
-            logging.longOp lo_bg = new logging.longOp("XYZZY - background", 5);
+            Stopwatch sw_bg = Stopwatch.StartNew();
+            int chatsProcessed = 0;
 
             // Roboto.Settings.chatData is the shared top-level list - snapshot it under
             // GlobalListsKey (same convention as everywhere else this pass touches that list) rather
@@ -354,7 +356,6 @@ namespace RobotoChatBot.Modules
 
             //sync packs where needed
             localdata.packSyncCheck();
-            lo_bg.addone();
 
             //Handle background processing per chat (Timeouts / Throttle etc..)
             //create a temporary list of chatdata so we can pick the oldest X records
@@ -384,7 +385,6 @@ namespace RobotoChatBot.Modules
 
 
             log("There are " + dataToCheck.Count() + " games to check. Checking oldest " + localdata.backgroundChatsToProcess , logging.loglevel.normal);
-            lo_bg.totalLength = 5 + localdata.backgroundChatsToProcess + localdata.backgroundChatsToMiniProcess;
 
             //do a full check on the oldest n records. Dont check more than once per day.
             bool firstrec = true;
@@ -399,10 +399,9 @@ namespace RobotoChatBot.Modules
                     }
                     chatData.check(true);
                     firstrec = false;
-                    lo_bg.addone();
+                    chatsProcessed++;
                 }
             }
-            lo_bg.updateLongOp(localdata.backgroundChatsToProcess + 5);
 
             //also do a quick check on the oldest x ordered by statusMiniCheckTime
             log("There are " + dataToMiniCheck.Count() + " games to quick-check. Checking oldest " + localdata.backgroundChatsToMiniProcess, logging.loglevel.normal);
@@ -418,15 +417,16 @@ namespace RobotoChatBot.Modules
                     }
                     chatData.check();
                     firstrec = false;
-                    lo_bg.addone();
+                    chatsProcessed++;
                 }
             }
 
             //check if we need to remove any dormant packs
             //TODO DISABLE AS CARDCAST DEAD - localdata.removeDormantPacks();
-            lo_bg.addone();
 
-            lo_bg.complete();
+            sw_bg.Stop();
+            Roboto.Settings.stats.logStat(new statItem("Background Processing Duration (ms)", this.GetType(), (int)sw_bg.ElapsedMilliseconds));
+            Roboto.Settings.stats.logStat(new statItem("Background Chats Processed", this.GetType(), chatsProcessed));
         }
 
         public override string getStats()
@@ -1078,35 +1078,29 @@ namespace RobotoChatBot.Modules
             Roboto.Settings.stats.registerStatType("Background Wait (Quickcheck)", this.GetType(), System.Drawing.Color.Red, stats.displaymode.line, stats.statmode.absolute);
             Roboto.Settings.stats.registerStatType("Background Wait (Pack Sync)", this.GetType(), System.Drawing.Color.Cyan, stats.displaymode.line, stats.statmode.absolute);
 
+            // Replaces the old per-operation longOp progress-bar construct (see logging.cs's own
+            // comment on why that was removed) - duration as a snapshot-per-run gauge (absolute), plus
+            // an item-count stat wherever the old totalLength was a real variable business quantity
+            // rather than a fixed phase counter (e.g. "XYZZY - Coredata Startup"'s old 11 steps was
+            // just a checklist of code sections, not worth trending). Item counts that already have a
+            // purpose-built domain stat (Packs Synced, Dormant Packs Removed/Total) aren't duplicated
+            // here. "Coredata Startup Duration (ms)" is registered in mod_xyzzy_coredata.startupChecks()
+            // instead, not here - see that registration's own comment for why (ordering).
+            Roboto.Settings.stats.registerStatType("Background Processing Duration (ms)", this.GetType(), System.Drawing.Color.MidnightBlue, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Background Chats Processed", this.GetType(), System.Drawing.Color.RoyalBlue);
+            Roboto.Settings.stats.registerStatType("Dormant Pack Archive Duration (ms)", this.GetType(), System.Drawing.Color.Chocolate, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Pack Removal Duration (ms)", this.GetType(), System.Drawing.Color.Firebrick, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Pack Cards Removed", this.GetType(), System.Drawing.Color.IndianRed);
+            Roboto.Settings.stats.registerStatType("Pack Sync Check Duration (ms)", this.GetType(), System.Drawing.Color.DodgerBlue, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Pack Import Duration (ms)", this.GetType(), System.Drawing.Color.Navy, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Question Cache Reconcile Duration (ms)", this.GetType(), System.Drawing.Color.DarkGoldenrod, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Question Cache Reconciled", this.GetType(), System.Drawing.Color.Goldenrod);
+            Roboto.Settings.stats.registerStatType("Answer Cache Reconcile Duration (ms)", this.GetType(), System.Drawing.Color.DarkOliveGreen, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Answer Cache Reconciled", this.GetType(), System.Drawing.Color.YellowGreen);
+            Roboto.Settings.stats.registerStatType("Fresh Pack Import Duration (ms)", this.GetType(), System.Drawing.Color.Indigo, stats.displaymode.line, stats.statmode.absolute);
+            Roboto.Settings.stats.registerStatType("Fresh Pack Cards Imported", this.GetType(), System.Drawing.Color.MediumPurple);
+
             Console.WriteLine(localPluginData.questions.Count.ToString() + " questions and " + localPluginData.answers.Count.ToString() + " answers loaded for xyzzy");
-
-            //logging.longOp lo_s = new logging.longOp("XYZZY - Startup Checks", 5);
-            
-
-            /*TODO - move this somewhere else, dumping the chat list is daft
-            //check through our chatData and log some stats
-            lo_s.totalLength = Roboto.Settings.chatData.Count();
-            log("XYZZY Chatdata:", logging.loglevel.verbose);
-            log("ChatID\tstatus\tStatus Changed On\tplayers\tfilters:", logging.loglevel.verbose);
-            foreach (chat c in Roboto.Settings.chatData)
-            {
-
-                mod_xyzzy_chatdata cd = (mod_xyzzy_chatdata)c.getPluginData(typeof(mod_xyzzy_chatdata));
-                if (cd != null)
-                {
-                    log(cd.chatID.ToString().PadRight(15," ".ToCharArray()[0]) 
-                        + "\t" + cd.status.ToString().PadRight(22, " ".ToCharArray()[0]) 
-                        + "\t" + cd.statusChangedTime 
-                        + "\t" + cd.players.Count() 
-                        + "\t" + cd.packFilterIDs.Count, logging.loglevel.verbose);
-                    
-                }
-                lo_s.addone();
-            }
-            */
-            //lo_s.complete();
-            
-            
         }
 
     }

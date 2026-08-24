@@ -2,6 +2,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Net;
@@ -88,7 +89,7 @@ namespace RobotoChatBot
 
         private static void startBackground()
         {
-            logging.longOp lo_s = new logging.longOp("Core Startup", 6);
+            Stopwatch coreStartupTimer = Stopwatch.StartNew();
 
             //Resolve which instance we are (ROBOTO_INSTANCE, default "default"), where its data
             //lives (ROBOTO_DATADIR, default /data), and its credentials ({DataDir}/{Instance}/
@@ -117,7 +118,6 @@ namespace RobotoChatBot
             // work too, merged into the same filter - handy for a quick local override without
             // touching the instance's own config.
             pluginFilter.AddRange(plugins);
-            lo_s.addone();
 
             // Snapshot before anything (startupChecks() included) can touch the DB - see DbBackup's
             // own comment for why. Keeps the last 10 timestamped copies alongside the live file.
@@ -128,12 +128,11 @@ namespace RobotoChatBot
             log.log("Opening database", logging.loglevel.high);
             Store = new Persistence.SqliteStateStore(dbPath);
             Store.Initialize();
-            lo_s.addone();
+            Store.RunPendingDataFixes(Persistence.DataFixes.All);
 
             //Load plugins before settings so that we know which module types to look for.
             log.log("Loading Plugins", logging.loglevel.high);
             Plugins.initPluginAssemblies();
-            lo_s.addone();
 
             log.log("Loading Settings & data from disk", logging.loglevel.high);
             Settings = settings.load();
@@ -142,11 +141,11 @@ namespace RobotoChatBot
                 return;
             } //unable to load - abort.
 
-            lo_s.addone();
-
             log.log("Loading Log", logging.loglevel.high);
             log.load();
-            lo_s.complete();
+
+            coreStartupTimer.Stop();
+            Settings.stats.logStat(new statItem("Core Startup Duration (ms)", typeof(Roboto), (int)coreStartupTimer.ElapsedMilliseconds));
 
 
             log.log("I am " + Settings.botUserName, logging.loglevel.critical, false, true);

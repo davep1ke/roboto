@@ -28,8 +28,10 @@ WORKDIR /app
 # erroring, so every title/axis label/legend on a real chart would come back blank in production even
 # though the same code produces a fully-labelled image everywhere it's dev-tested (a normal desktop
 # Linux always has system fonts already installed). fonts-dejavu-core is small, Debian's own default
-# sans-serif, and covers the plain ASCII this bot's stat names/labels ever use.
-RUN apt-get update && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core \
+# sans-serif, and covers the plain ASCII this bot's stat names/labels ever use. fonts-liberation adds
+# Liberation Sans - stats.generateImage's chart font, chosen as the open-source metric-compatible
+# replacement for Arial (neither Arial nor Segoe UI is legally redistributable/installable here).
+RUN apt-get update && apt-get install -y --no-install-recommends fontconfig fonts-dejavu-core fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 # $APP_UID is a non-root user baked into the official .NET images for exactly this purpose.
