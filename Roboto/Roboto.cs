@@ -119,8 +119,14 @@ namespace RobotoChatBot
             pluginFilter.AddRange(plugins);
             lo_s.addone();
 
+            // Snapshot before anything (startupChecks() included) can touch the DB - see DbBackup's
+            // own comment for why. Keeps the last 10 timestamped copies alongside the live file.
+            string dbPath = System.IO.Path.Combine(Options.InstanceDir, "roboto.db");
+            log.log("Backing up database", logging.loglevel.high);
+            Persistence.DbBackup.RunBeforeOpen(dbPath);
+
             log.log("Opening database", logging.loglevel.high);
-            Store = new Persistence.SqliteStateStore(System.IO.Path.Combine(Options.InstanceDir, "roboto.db"));
+            Store = new Persistence.SqliteStateStore(dbPath);
             Store.Initialize();
             lo_s.addone();
 

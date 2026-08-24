@@ -22,7 +22,16 @@ namespace RobotoChatBot.Modules
         // just works without this). What's left is solely the seeded "ZZ Dummy Pack"'s own stable
         // identity, used to find and auto-drop it once real packs exist - see
         // mod_xyzzy_coredata.seedDummyPack()/dropDummyPack().
-        public static Guid dummyPackID = new Guid("FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE");
+        //
+        // CRITICAL: must be a value no real pack could ever already carry. The original value here
+        // reused the old primaryPackID constant "for continuity" - but every real production bot's
+        // actual CAHBS pack had *already* been force-stamped with that exact GUID, every boot, for
+        // years, by the legacy code this replaced. On robotolive's first restart on this code,
+        // dropDummyPackIfNoLongerNeeded() found that real, populated CAHBS pack by this GUID,
+        // mistook it for the dummy pack, and dropped it - deleting 457 real answer cards and 90
+        // real question cards from production (2026-08-24 incident - see MIGRATION.md). Freshly
+        // generated, never reused anywhere else in this codebase.
+        public static Guid dummyPackID = new Guid("EEF6A1C3-14D6-49C2-A215-26716785D564");
         public static Guid AllPacksEnabledID = Guid.Empty;
 
         /// <summary>

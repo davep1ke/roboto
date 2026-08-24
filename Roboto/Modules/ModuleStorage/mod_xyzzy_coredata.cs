@@ -130,11 +130,19 @@ namespace RobotoChatBot.Modules
         /// only a chat that explicitly pinned the dummy pack by GUID (rather than relying on the
         /// "all packs enabled" default) needs its filter cleaned up here directly. Startup-only,
         /// matching where the pack-dedup pass below already runs - a live instance won't drop it the
-        /// instant a 6th real pack lands mid-session, only on its next restart.</summary>
+        /// instant a 6th real pack lands mid-session, only on its next restart.
+        ///
+        /// Requires packCode == "ZZDUMMY" too, not just the GUID match - defense in depth after a
+        /// real incident: dummyPackID used to reuse the old primaryPackID constant's value, and every
+        /// real bot's actual CAHBS pack had been force-stamped with that exact GUID for years by
+        /// legacy code, so a GUID-only check found and dropped a real, populated pack on
+        /// robotolive's first restart on this code (2026-08-24, see MIGRATION.md). dummyPackID is a
+        /// freshly generated value now, so this shouldn't be reachable again - but a pack code check
+        /// costs nothing and means a GUID collision alone can never be enough to delete real data.</summary>
         private void dropDummyPackIfNoLongerNeeded()
         {
             Helpers.cardcast_pack dummyPack = getPackByGuid(mod_xyzzy.dummyPackID);
-            if (dummyPack == null || packs.Count(p => p.packID != mod_xyzzy.dummyPackID) <= 5) { return; }
+            if (dummyPack == null || dummyPack.packCode != "ZZDUMMY" || packs.Count(p => p.packID != mod_xyzzy.dummyPackID) <= 5) { return; }
 
             packs.Remove(dummyPack);
             foreach (chat c in Roboto.Settings.chatData)

@@ -1422,6 +1422,64 @@ tap for.
 **Verified**: build clean; `dotnet test` green across 3 repeated runs (101/101 - no new tests needed,
 existing coverage of the bot-adding mechanics and the Invites flow already exercises this path).
 
+### Incident: dummyPackID's GUID collided with real production data, deleting real cards
+
+The exact risk `dropDummyPackIfNoLongerNeeded()`'s design comment warned about happened for real,
+within hours of deploying it. `mod_xyzzy.dummyPackID` was minted by reusing the old `primaryPackID`
+constant's value (`FACEBABE-DEAD-BEEF-ABBA-FACEBABEFADE`) "for continuity" - but every real
+production bot's actual CAHBS pack had been force-stamped with that *exact* GUID, every single boot,
+for years, by the legacy code this replaced (`startupChecks()`'s old `primaryPack.overrideGUID(...)`
+call). On `robotolive`'s first restart on the new code, `dropDummyPackIfNoLongerNeeded()` found that
+real, populated CAHBS pack by GUID, mistook it for the dummy pack (more than 5 other real packs
+existed), and dropped it. That fed straight into the existing orphan-answer/orphan-question passes,
+which deleted **457 real answer cards and 90 real question cards** - confirmed via the live
+production log (`Dropped ZZ Dummy Pack - real packs now exist.`, followed by the exact same counts
+in `Removed 457 orphaned answers`/`Removed 90 orphaned questions`). `chat_mangler_bot` was also
+restarted on this code but never loads `mod_xyzzy` at all (its `Plugins=` allow-list excludes it),
+so it was never at risk. `chat_against_humanity_bot` had not yet been restarted - caught before it
+could hit the same bug.
+
+**Fixed two ways**: `dummyPackID` is now a freshly generated, never-reused GUID
+(`EEF6A1C3-14D6-49C2-A215-26716785D564`) - the actual root cause. `dropDummyPackIfNoLongerNeeded()`
+also now requires the pack's `packCode == "ZZDUMMY"` in addition to the GUID match before dropping
+anything - defense in depth, so a GUID collision alone can never again be sufficient to delete real
+data. New regression test `ARealPackThatHappensToShareTheDummyPackIDIsNeverDropped` reproduces the
+exact incident shape (a real "CAHBS"-coded pack sharing `dummyPackID`'s GUID) and asserts it survives
+- sanity-checked by temporarily reverting the pack-code guard and confirming the test fails with the
+real pack vanishing from the collection, then reverting back.
+
+**Recovered the lost data**: `robotolive.xml` (the original pre-migration export, still on disk
+locally, dated March 2021) still had the complete CAHBS pack and all its cards. Extracted the pack's
+own metadata and exactly 90 questions / 457 answers (parsed by GUID match against the XML's
+`<cardcast_pack>`/`<mod_xyzzy_card>` elements) - counts matched the log's reported removal exactly,
+confirming this recovers precisely what was lost, nothing more or less. Re-inserted into a local
+copy of `robotolive`'s live `roboto.db` (backed up first, before any edits) via direct SQL matching
+`SqliteStateStore`'s exact expected formats (`pack_source` as the enum name string, dates as .NET
+`"O"`-format strings) - `packSource` set to `manual` explicitly (its true classification, not
+present in the 2021 XML export format) rather than left as the `unknown` default. Verified for real,
+not just by inspection: booted an actual instance against a copy of the recovered DB (using the
+`beefy` test bot's token so it could never reach real users, killed within seconds of confirming
+clean startup) - `Found 50 unique pack codes against 50 packs`, `One valid pack for CAHBS`, and the
+startup packlist dump showing exactly `90` questions / `457` answers for CAHBS, no exceptions.
+One known caveat: `lastPickedDate`/`totalPicks` reset to their 2021-era values (not present/stale in
+that export) rather than reflecting years of real play - the card *content* is what actually
+mattered and is fully restored; the stats are a cosmetic loss, not a data-integrity one. Recovered
+`roboto.db` staged locally at `data/robotolive/` for the user to deploy back to the live server
+themselves (this session has no access to the remote host) - the pre-recovery file is kept alongside
+it as `roboto.db.before-cahbs-recovery` in case anything needs to be re-checked.
+
+**Also added, going forward**: `Persistence/DbBackup.cs` - every startup now snapshots the live
+`roboto.db` to a timestamped `roboto.<yyyyMMdd-HHmmss>.db` copy alongside it, *before*
+`Plugins.startupChecks()` (or anything else) can touch it, keeping the most recent 10. Means any
+future startup-time bug - in this code or anything else - always has a same-day fallback to restore
+from, rather than depending on whoever happens to be watching the log catching it before the next
+restart overwrites the evidence. Covered by `DbBackupTests.cs` (no-op on a genuinely fresh instance,
+creates a timestamped copy, retention trims down to the most recent 10).
+
+**Verified**: build clean; `dotnet test` green across 3 repeated runs (105/105 - 3 new `DbBackup`
+tests + this incident's regression test). Real end-to-end recovery verification as described above,
+against a real copy of `robotolive`'s actual production data.
+
 ## What's still open
 
 Phases 8 and 10 - see the phase table above and the full plan file for what each phase actually

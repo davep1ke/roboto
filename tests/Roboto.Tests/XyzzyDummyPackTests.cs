@@ -72,6 +72,42 @@ public class XyzzyDummyPackTests
     }
 
     [Fact]
+    public void ARealPackThatHappensToShareTheDummyPackIDIsNeverDropped()
+    {
+        // Real incident (2026-08-24, see MIGRATION.md): dummyPackID used to reuse the old
+        // primaryPackID constant's GUID "for continuity" - but every real production bot's actual
+        // CAHBS pack had been force-stamped with that exact GUID for years by legacy code. On
+        // robotolive's first restart on the new code, dropDummyPackIfNoLongerNeeded() found that
+        // real, populated CAHBS pack by GUID alone, mistook it for the dummy pack, and dropped it -
+        // deleting 457 real answer cards and 90 real question cards from production. Reproduces the
+        // exact shape: a real pack whose GUID collides with dummyPackID, but whose pack code is
+        // "CAHBS" (or anything other than "ZZDUMMY") - must never be dropped, regardless of the
+        // >5-other-packs threshold, since the code-mismatch alone proves it isn't the dummy pack.
+        using var bot = new TestHarness();
+        var coreData = CoreData();
+        coreData.packs.Clear();
+        coreData.questions.Clear();
+        coreData.answers.Clear();
+
+        var realPackWithCollidingGuid = new cardcast_pack("Cards Against Humanity", "CAHBS", "The real base pack");
+        realPackWithCollidingGuid.overrideGUID(mod_xyzzy.dummyPackID);
+        coreData.packs.Add(realPackWithCollidingGuid);
+        coreData.questions.Add(new mod_xyzzy_card("A real question ___?", mod_xyzzy.dummyPackID, 1));
+        coreData.answers.Add(new mod_xyzzy_card("A real answer", mod_xyzzy.dummyPackID));
+
+        for (int i = 0; i < 10; i++)
+        {
+            coreData.packs.Add(new cardcast_pack("Real Pack " + i, "REAL" + i, "desc"));
+        }
+
+        coreData.startupChecks();
+
+        Assert.Contains(coreData.packs, p => p.packID == mod_xyzzy.dummyPackID && p.packCode == "CAHBS");
+        Assert.Contains(coreData.questions, q => q.packID == mod_xyzzy.dummyPackID);
+        Assert.Contains(coreData.answers, a => a.packID == mod_xyzzy.dummyPackID);
+    }
+
+    [Fact]
     public void StartingAGameWithNoCardsAvailableSendsAMessageInsteadOfCrashing()
     {
         using var bot = new TestHarness();
